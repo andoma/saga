@@ -5,6 +5,37 @@
 
 namespace saga {
 
+static const char *
+fwdalgostr(cudnnConvolutionFwdAlgo_t algo)
+{
+  switch(algo) {
+  case CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM:
+    return "ImplicitGemm";
+  case CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM:
+    return "ImplicitPrecompGemm";
+  case CUDNN_CONVOLUTION_FWD_ALGO_GEMM:
+    return "AlogGem";
+  case CUDNN_CONVOLUTION_FWD_ALGO_DIRECT:
+    return "Direct";
+  case CUDNN_CONVOLUTION_FWD_ALGO_FFT:
+    return "FFT";
+  case CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING:
+    return "FFT-Tiling";
+  case CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD:
+    return "Winograd";
+  case CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED:
+    return "Winograd-Nonfused";
+  default:
+    return "?";
+  }
+}
+
+
+
+
+
+
+
 
 class Convolution : public Layer {
 
@@ -88,8 +119,11 @@ public:
 
   std::string name() const override {
     std::stringstream ss;
-    ss << "Convolution " << input_->name() <<
-      " x " << kernel_.name() << " => " << output_->name();
+
+    ss << "Convolution " << input_->name()
+       << " x " << kernel_.name()
+       << " (>" << fwdalgostr(conv_fwd_algo_)
+       <<  ") => " << output_->name();
     return ss.str();
   }
 
