@@ -176,11 +176,17 @@ public:
 
   void backprop(std::shared_ptr<Tensor> dy);
 
+  void setOptimizer(std::function<std::unique_ptr<Optimizer>(const Size &s,
+                                                             const Network &net)> fn) {
+    optimizer_factory_ = fn;
+  }
+
   std::unique_ptr<Optimizer> makeOptimizer(const Size &s) const;
 
   std::vector<std::shared_ptr<Layer>> layers_;
 
-  OptimizerFactory *optimizer_factory_;
+  std::function<std::unique_ptr<Optimizer>(const Size &s,
+                                           const Network &net)> optimizer_factory_;
 
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
