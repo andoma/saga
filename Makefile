@@ -10,7 +10,10 @@ CXXFLAGS += --std=c++14
 
 NVCC := /usr/local/cuda-10.1/bin/nvcc
 
-SRCS += ${SAGA_SRCS} main.cpp
+SRCS += main.cpp \
+	test/mnist.cpp \
+
+SRCS += ${SAGA_SRCS}
 
 LDFLAGS += -lnvidia-ml -lcublas -lcudnn -lpthread
 

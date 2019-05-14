@@ -16,7 +16,8 @@ public:
     , input_(input)
     , weights_(input->dataType(), Size(num_inputs_, num_outputs, 1, 1))
     , bias_(input->dataType(), Size(1, num_outputs, 1, 1))
-    , output_(Tensor::make(input->dataType(), Size(1, num_outputs, 1, 1)))
+    , output_(Tensor::make(input->dataType(), Size(input->size().n,
+                                                   num_outputs, 1, 1)))
   {
     weights_.loadOrRandomize(id, "weights", sqrt(1.0 / num_inputs_));
     bias_.loadOrRandomize(id, "bias", 0);
@@ -75,26 +76,29 @@ public:
     , weights_grad_(weights_)
     , bias_grad_(bias_)
     , batch_of_one_(input->dataType(), Size(n.batch_size_, 1, 1, 1))
+    , weights_optimizer_(n.makeOptimizer(weights_.size()))
+    , bias_optimizer_(n.makeOptimizer(bias_.size()))
   {
     batch_of_one_.fill(1.0f);
   }
 
 
 
-  void backprop(const Network &n, const Tensor &dy) override {
+  std::shared_ptr<Tensor> backprop(const Network &n,
+                                   std::shared_ptr<Tensor> dy) override {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
                         num_inputs_, num_outputs_, n.batch_size_,
                         &alpha,
                         (const float *)input_->deviceMem(), num_inputs_,
-                        (const float *)dy.deviceMem(), num_outputs_,
+                        (const float *)dy->deviceMem(), num_outputs_,
                         &beta,
                         (float *)weights_grad_.deviceMem(), num_inputs_));
 
     chkCuda(cublasSgemv(n.cublas_, CUBLAS_OP_N, num_outputs_, n.batch_size_,
                         &alpha,
-                        (const float *)dy.deviceMem(), num_outputs_,
+                        (const float *)dy->deviceMem(), num_outputs_,
                         (const float *)batch_of_one_.deviceMem(), 1,
                         &beta,
                         (float *)bias_grad_.deviceMem(), 1));
@@ -103,14 +107,16 @@ public:
                         num_inputs_, n.batch_size_, num_outputs_,
                         &alpha,
                         (const float *)weights_.deviceMem(), num_inputs_,
-                        (const float *)dy.deviceMem(), num_outputs_,
+                        (const float *)dy->deviceMem(), num_outputs_,
                         &beta,
                         (float *)input_grad_->deviceMem(), num_inputs_));
-  }
 
-  void updateWeights(const Network &n) override {
-  }
+    weights_optimizer_->optimize(weights_, weights_grad_, n);
+    bias_optimizer_->optimize(bias_, bias_grad_, n);
 
+
+    return input_grad_;
+  }
 
 
 protected:
@@ -119,6 +125,9 @@ protected:
   const Tensor weights_grad_;
   const Tensor bias_grad_;
   Tensor batch_of_one_;
+
+  std::unique_ptr<Optimizer> weights_optimizer_;
+  std::unique_ptr<Optimizer> bias_optimizer_;
 
 };
 

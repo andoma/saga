@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <functional>
 
 #include <cudnn.h>
 #include <cublas_v2.h>
@@ -27,9 +28,10 @@ enum class PoolingMode {
 
 
 struct Size {
-  const int n, c, h, w;
+  const unsigned int n, c, h, w;
 
-  Size(int n, int c, int h, int w) : n(n), c(c), h(h), w(w) {};
+  Size(unsigned int n, unsigned int c,
+       unsigned int h, unsigned int w) : n(n), c(c), h(h), w(w) {};
   size_t elements() const { return n * c * h * w; };
 
   std::string name() const;
@@ -92,13 +94,27 @@ public:
                                     blueprint.size_);
   }
 
-private:
+  void save(float *data);
+
+  void load(const std::vector<float> &data);
+
+  void load(const uint8_t **data);
+
+  void load(const float *data);
+
+  void load(const uint8_t *data);
 
   void load(const TensorValues &v);
 
-  void loadFloat(const float *src);
-
   void randomize(float sigma);
+
+  void dump(const char *prefix, bool intensity) const;
+
+  void check() const;
+
+  float peak() const;
+
+private:
 
   const cudnnDataType_t data_type_;
   const Size size_;
@@ -120,9 +136,10 @@ public:
 
   virtual void forward(const Network &n) = 0;
 
-  virtual void backprop(const Network &n, const Tensor &dy) {};
-
-  virtual void updateWeights(const Network &n) {};
+  virtual std::shared_ptr<Tensor> backprop(const Network &n,
+                                           std::shared_ptr<Tensor> dy) {
+    return nullptr;
+  }
 
   size_t workspaceSize() const { return workspace_size_; };
 
@@ -135,22 +152,41 @@ protected:
 
 
 
+class Optimizer {
+
+public:
+
+  virtual ~Optimizer() {};
+
+  virtual void optimize(Tensor &x, const Tensor &grad, const Network &n) = 0;
+
+};
+
+typedef std::unique_ptr<Optimizer> (OptimizerFactory)(const Size &s,
+                                                      const Network &net);
+
 class Network {
 
 public:
-  Network(const Tensor &input, bool backprop);
+  Network(int batch_size, bool backprop);
 
   std::shared_ptr<Tensor> addLayer(std::shared_ptr<Layer> layer);
 
-  void initialize();
+  void forward();
 
+  void backprop(std::shared_ptr<Tensor> dy);
+
+  std::unique_ptr<Optimizer> makeOptimizer(const Size &s) const;
 
   std::vector<std::shared_ptr<Layer>> layers_;
+
+  OptimizerFactory *optimizer_factory_;
 
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
 
   int batch_size_;
+  int iter_;
 
   bool backprop_;
   bool inference_;
@@ -158,8 +194,6 @@ public:
   void *workspace_;
   size_t workspace_size_;
 };
-
-
 
 
 std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
@@ -185,6 +219,15 @@ std::shared_ptr<Layer> makePooling(PoolingMode mode, int size, int stride,
 
 std::shared_ptr<Layer> makeSoftmax(std::shared_ptr<Tensor> input,
                                    const Network &n);
+
+
+// Optimizers
+
+std::unique_ptr<Optimizer> makeAdamOptimizer(const Size &s,
+                                             const Network &net);
+
+std::unique_ptr<Optimizer> makeGradientDescentOptimizer(const Size &s,
+                                                        const Network &net);
 
 
 }

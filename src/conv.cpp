@@ -148,6 +148,8 @@ public:
     , input_grad_(Tensor::make(*input))
     , kernel_grad_(kernel_)
     , bias_grad_(*bias_)
+    , kernel_optimizer_(n.makeOptimizer(kernel_.size()))
+    , bias_optimizer_(n.makeOptimizer(bias_->size()))
   {
     chkCUDNN(cudnnGetConvolutionBackwardDataAlgorithm(n.cudnn_,
                                                       filter_desc_,
@@ -193,20 +195,32 @@ public:
 
 
 
-  void backprop(const Network &n, const Tensor &dy) override {
+  std::shared_ptr<Tensor> backprop(const Network &n,
+                                   std::shared_ptr<Tensor> dy) override {
 
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnConvolutionBackwardBias(n.cudnn_, &alpha,
-                                          dy.desc(), dy.deviceMem(),
+                                          dy->desc(), dy->deviceMem(),
                                           &beta,
                                           bias_grad_.desc(),
                                           bias_grad_.deviceMem()));
 
+    chkCUDNN(cudnnConvolutionBackwardFilter(n.cudnn_, &alpha,
+                                            input_->desc(),
+                                            input_->deviceMem(),
+                                            dy->desc(), dy->deviceMem(),
+                                            conv_desc_,
+                                            bwd_filter_algo_,
+                                            n.workspace_, n.workspace_size_,
+                                            &beta,
+                                            filter_desc_,
+                                            kernel_grad_.deviceMem()));
+
     chkCUDNN(cudnnConvolutionBackwardData(n.cudnn_, &alpha,
                                           filter_desc_,
                                           kernel_.deviceMem(),
-                                          dy.desc(), dy.deviceMem(),
+                                          dy->desc(), dy->deviceMem(),
                                           conv_desc_,
                                           bwd_data_algo_,
                                           n.workspace_, n.workspace_size_,
@@ -214,21 +228,12 @@ public:
                                           input_grad_->desc(),
                                           input_grad_->deviceMem()));
 
-    chkCUDNN(cudnnConvolutionBackwardFilter(n.cudnn_, &alpha,
-                                            input_->desc(),
-                                            input_->deviceMem(),
-                                            dy.desc(), dy.deviceMem(),
-                                            conv_desc_,
-                                            bwd_filter_algo_,
-                                            n.workspace_, n.workspace_size_,
-                                            &beta,
-                                            filter_desc_,
-                                            kernel_grad_.deviceMem()));
+    kernel_optimizer_->optimize(kernel_, kernel_grad_, n);
+    bias_optimizer_->optimize(*bias_, bias_grad_, n);
+
+    return input_grad_;
   }
 
-  void updateWeights(const Network &nc) override {
-
-  }
 
 private:
   cudnnConvolutionBwdDataAlgo_t bwd_data_algo_;
@@ -238,6 +243,9 @@ private:
   const Tensor kernel_grad_;
   const Tensor bias_grad_;
 
+
+  std::unique_ptr<Optimizer> kernel_optimizer_;
+  std::unique_ptr<Optimizer> bias_optimizer_;
 };
 
 

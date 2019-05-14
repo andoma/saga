@@ -52,17 +52,21 @@ public:
   {}
 
 
-  void backprop(const Network &n, const Tensor &dy) override {
+  std::shared_ptr<Tensor> backprop(const Network &n,
+                                   std::shared_ptr<Tensor> dy) override {
     float alpha = -1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnSoftmaxBackward(n.cudnn_, CUDNN_SOFTMAX_ACCURATE,
                                   CUDNN_SOFTMAX_MODE_CHANNEL,
                                   &alpha,
-                                  input_->desc(), input_->deviceMem(),
-                                  dy.desc(), dy.deviceMem(),
+                                  output_->desc(), output_->deviceMem(),
+                                  dy->desc(), dy->deviceMem(),
                                   &beta,
                                   input_grad_->desc(),
                                   input_grad_->deviceMem()));
+
+
+    return input_grad_;
   }
 
 protected:

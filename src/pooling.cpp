@@ -70,17 +70,19 @@ public:
   {}
 
 
-  void backprop(const Network &n, const Tensor &dy) override {
+  std::shared_ptr<Tensor> backprop(const Network &n,
+                                   std::shared_ptr<Tensor> dy) override {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnPoolingBackward(n.cudnn_, desc_,
                                   &alpha,
                                   output_->desc(), output_->deviceMem(),
-                                  dy.desc(), dy.deviceMem(),
+                                  dy->desc(), dy->deviceMem(),
                                   input_->desc(), input_->deviceMem(),
                                   &beta,
                                   input_grad_->desc(),
                                   input_grad_->deviceMem()));
+    return input_grad_;
   }
 
 protected:

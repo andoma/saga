@@ -7,4 +7,6 @@ SAGA_SRCS += \
 	src/fc.cpp \
 	src/activation.cpp \
 	src/pooling.cpp \
-	src/softmax.cpp
+	src/softmax.cpp \
+	src/gd.cpp \
+	src/adam.cpp \
