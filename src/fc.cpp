@@ -85,20 +85,20 @@ public:
 
 
   std::shared_ptr<Tensor> backprop(const Network &n,
-                                   std::shared_ptr<Tensor> dy) override {
+                                   const Tensor &dy) override {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
                         num_inputs_, num_outputs_, n.batch_size_,
                         &alpha,
                         (const float *)input_->deviceMem(), num_inputs_,
-                        (const float *)dy->deviceMem(), num_outputs_,
+                        (const float *)dy.deviceMem(), num_outputs_,
                         &beta,
                         (float *)weights_grad_.deviceMem(), num_inputs_));
 
     chkCuda(cublasSgemv(n.cublas_, CUBLAS_OP_N, num_outputs_, n.batch_size_,
                         &alpha,
-                        (const float *)dy->deviceMem(), num_outputs_,
+                        (const float *)dy.deviceMem(), num_outputs_,
                         (const float *)batch_of_one_.deviceMem(), 1,
                         &beta,
                         (float *)bias_grad_.deviceMem(), 1));
@@ -107,7 +107,7 @@ public:
                         num_inputs_, n.batch_size_, num_outputs_,
                         &alpha,
                         (const float *)weights_.deviceMem(), num_inputs_,
-                        (const float *)dy->deviceMem(), num_outputs_,
+                        (const float *)dy.deviceMem(), num_outputs_,
                         &beta,
                         (float *)input_grad_->deviceMem(), num_inputs_));
 

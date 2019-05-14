@@ -137,7 +137,7 @@ public:
   virtual void forward(const Network &n) = 0;
 
   virtual std::shared_ptr<Tensor> backprop(const Network &n,
-                                           std::shared_ptr<Tensor> dy) {
+                                           const Tensor &dy) {
     return nullptr;
   }
 

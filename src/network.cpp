@@ -60,7 +60,7 @@ void Network::forward()
 void Network::backprop(std::shared_ptr<Tensor> dy)
 {
   for(ssize_t i = layers_.size() - 1; i >= 0; i--) {
-    dy = layers_[i]->backprop(*this, dy);
+    dy = layers_[i]->backprop(*this, *dy);
   }
   iter_++;
 }

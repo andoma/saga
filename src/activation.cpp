@@ -70,13 +70,13 @@ public:
 
 
   std::shared_ptr<Tensor> backprop(const Network &n,
-                                   std::shared_ptr<Tensor> dy) override {
+                                   const Tensor &dy) override {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnActivationBackward(n.cudnn_, desc_,
                                      &alpha,
                                      output_->desc(), output_->deviceMem(),
-                                     dy->desc(), dy->deviceMem(),
+                                     dy.desc(), dy.deviceMem(),
                                      input_->desc(), input_->deviceMem(),
                                      &beta,
                                      input_grad_->desc(),

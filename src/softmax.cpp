@@ -53,14 +53,14 @@ public:
 
 
   std::shared_ptr<Tensor> backprop(const Network &n,
-                                   std::shared_ptr<Tensor> dy) override {
+                                   const Tensor &dy) override {
     float alpha = -1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnSoftmaxBackward(n.cudnn_, CUDNN_SOFTMAX_ACCURATE,
                                   CUDNN_SOFTMAX_MODE_CHANNEL,
                                   &alpha,
                                   output_->desc(), output_->deviceMem(),
-                                  dy->desc(), dy->deviceMem(),
+                                  dy.desc(), dy.deviceMem(),
                                   &beta,
                                   input_grad_->desc(),
                                   input_grad_->deviceMem()));

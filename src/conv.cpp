@@ -230,12 +230,12 @@ public:
 
 
   std::shared_ptr<Tensor> backprop(const Network &n,
-                                   std::shared_ptr<Tensor> dy) override {
+                                   const Tensor &dy) override {
 
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnConvolutionBackwardBias(n.cudnn_, &alpha,
-                                          dy->desc(), dy->deviceMem(),
+                                          dy.desc(), dy.deviceMem(),
                                           &beta,
                                           bias_grad_.desc(),
                                           bias_grad_.deviceMem()));
@@ -243,7 +243,7 @@ public:
     chkCUDNN(cudnnConvolutionBackwardFilter(n.cudnn_, &alpha,
                                             input_->desc(),
                                             input_->deviceMem(),
-                                            dy->desc(), dy->deviceMem(),
+                                            dy.desc(), dy.deviceMem(),
                                             conv_desc_,
                                             bwd_filter_algo_,
                                             n.workspace_, n.workspace_size_,
@@ -254,7 +254,7 @@ public:
     chkCUDNN(cudnnConvolutionBackwardData(n.cudnn_, &alpha,
                                           filter_desc_,
                                           kernel_.deviceMem(),
-                                          dy->desc(), dy->deviceMem(),
+                                          dy.desc(), dy.deviceMem(),
                                           conv_desc_,
                                           bwd_data_algo_,
                                           n.workspace_, n.workspace_size_,
