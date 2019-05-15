@@ -15,7 +15,7 @@ public:
 
   void optimize(Tensor &x, const Tensor &grad, const Network &n) override {
 
-    assert(x.size() == grad.size());
+    assert(x == grad);
 
     const float learning_rate = 0.01 * powf(1.0 + 0.0001 * n.iter_, -0.75);
     const float alpha = -learning_rate;

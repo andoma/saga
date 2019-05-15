@@ -79,7 +79,7 @@ makeLabeledImages(const uint8_t *images,
 static void
 loadInputTensor(Tensor &t, const LabeledImage *lis)
 {
-  const size_t batch_size = t.size().n;
+  const size_t batch_size = t.n;
 
   const uint8_t *images[batch_size];
   for(size_t j = 0; j < batch_size; j++) {
@@ -92,8 +92,8 @@ loadInputTensor(Tensor &t, const LabeledImage *lis)
 static void
 loadOutputTensor(Tensor &t, const LabeledImage *lis)
 {
-  const size_t n = t.size().n;
-  const size_t c = t.size().c;
+  const size_t n = t.n;
+  const size_t c = t.c;
 
   float values[n * c];
 
@@ -162,45 +162,45 @@ mnist_main(int argc, char **argv)
 
   Network net(batch_size, true);
 
-  auto input = std::make_shared<Tensor>(CUDNN_DATA_FLOAT,
-                                        Size(batch_size, 1, 28, 28));
+  Tensor input(TensorDescriptor(CUDNN_DATA_FLOAT,
+                                Size(batch_size, 1, 28, 28)));
 
-  auto tail = input;
+  const Tensor *tail = &input;
 
-  tail = net.addLayer(makeConvolution(32, 5, 1, 0, tail, {}, net));
-  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, tail, net));
-  tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 2, tail, net));
+  tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, {}, net));
+  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
+  tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 2, *tail, net));
 
-  tail = net.addLayer(makeConvolution(64, 5, 1, 0, tail, {}, net));
-  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, tail, net));
-  tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 2, tail, net));
+  tail = net.addLayer(makeConvolution(64, 5, 1, 0, *tail, {}, net));
+  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
+  tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 2, *tail, net));
 
-  tail = net.addLayer(makeFullyConnected(1024, tail, {}, net));
-  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, tail, net));
+  tail = net.addLayer(makeFullyConnected(1024, *tail, {}, net));
+  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 
-  tail = net.addLayer(makeFullyConnected(labels, tail, {}, net));
-  tail = net.addLayer(makeSoftmax(tail, net));
+  tail = net.addLayer(makeFullyConnected(labels, *tail, {}, net));
+  tail = net.addLayer(makeSoftmax(*tail, net));
 
+  Tensor dy{TensorDescriptor(*tail)};
 
-  auto dy = std::make_shared<Tensor>(*tail);
-  printf("%d vs %zd\n", dy->size().n, batch_size);
-  assert(dy->size().n == batch_size);
-  assert(dy->size().c == labels);
+  printf("%d vs %zd\n", dy.n, batch_size);
+  assert(dy.n == batch_size);
+  assert(dy.c == labels);
 
   while(1) {
     std::random_shuffle(train_data.begin(), train_data.end());
 
     for(size_t i = 0; i < train_inputs; i += batch_size) {
-      loadInputTensor(*input, &train_data[i]);
-      net.forward();
-      loadOutputTensor(*dy, &train_data[i]);
-      net.backprop(dy);
+      loadInputTensor(input, &train_data[i]);
+      net.forward(&input, false);
+      loadOutputTensor(dy, &train_data[i]);
+      net.backprop(&input, &dy);
     }
 
     int correct = 0;
     for(size_t i = 0; i < test_inputs; i += batch_size) {
-      loadInputTensor(*input, &test_data[i]);
-      net.forward();
+      loadInputTensor(input, &test_data[i]);
+      net.forward(&input, true);
 
       float result[batch_size * labels];
       tail->save(result);

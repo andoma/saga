@@ -10,72 +10,78 @@ namespace saga {
 class Softmax : public Layer {
 
 public:
-  Softmax(std::shared_ptr<Tensor> input)
+  Softmax(const TensorDescriptor &input)
     : input_(input)
-    , output_(Tensor::make(*input))
+    , output_(input)
   {}
 
-  std::shared_ptr<Tensor> output() const override {
-    return output_;
+  const Tensor *output() const override {
+    return &output_;
   }
 
   std::string name() const override {
     std::stringstream ss;
-    ss << "Softmax " << input_->name() << " => " << output_->name();
+    ss << "Softmax " << input_.name() << " => " << output_.name();
     return ss.str();
   }
 
 
-  void forward(const Network &n) override {
+  const Tensor *forward(const Network &n,
+                        const Tensor &input,
+                        bool inference) override {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnSoftmaxForward(n.cudnn_,
                                  CUDNN_SOFTMAX_ACCURATE,
                                  CUDNN_SOFTMAX_MODE_CHANNEL,
                                  &alpha,
-                                 input_->desc(), input_->deviceMem(),
+                                 input.desc(), input.deviceMem(),
                                  &beta,
-                                 output_->desc(), output_->deviceMem()));
+                                 output_.desc(), output_.deviceMem()));
+
+    return &output_;
   }
 
 protected:
-  const std::shared_ptr<Tensor> input_;
-  const std::shared_ptr<Tensor> output_;
+  const TensorDescriptor input_;
+  Tensor output_;
 };
 
 
 class SoftmaxBackProp : public Softmax {
 public:
-  SoftmaxBackProp(std::shared_ptr<Tensor> input)
+  SoftmaxBackProp(const TensorDescriptor &input)
     : Softmax(input)
-    , input_grad_(Tensor::make(*input))
+    , input_grad_(input)
   {}
 
 
-  std::shared_ptr<Tensor> backprop(const Network &n,
-                                   const Tensor &dy) override {
+  const Tensor *backprop(const Network &n,
+                         const Tensor &input,
+                         const Tensor &dy) override {
+
     float alpha = -1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnSoftmaxBackward(n.cudnn_, CUDNN_SOFTMAX_ACCURATE,
                                   CUDNN_SOFTMAX_MODE_CHANNEL,
                                   &alpha,
-                                  output_->desc(), output_->deviceMem(),
+                                  output_.desc(), output_.deviceMem(),
                                   dy.desc(), dy.deviceMem(),
                                   &beta,
-                                  input_grad_->desc(),
-                                  input_grad_->deviceMem()));
+                                  input_grad_.desc(),
+                                  input_grad_.deviceMem()));
 
 
-    return input_grad_;
+    return &input_grad_;
   }
 
 protected:
-  const std::shared_ptr<Tensor> input_grad_;
+  Tensor input_grad_;
 };
 
 
 
-std::shared_ptr<Layer> makeSoftmax(std::shared_ptr<Tensor> input,
+std::shared_ptr<Layer> makeSoftmax(const TensorDescriptor &input,
                                    const Network &n)
 {
   if(n.backprop_)

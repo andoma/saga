@@ -11,7 +11,7 @@ class Pooling : public Layer {
 
 public:
   Pooling(PoolingMode mode, int size, int stride,
-          std::shared_ptr<Tensor> input)
+          const TensorDescriptor &input)
     : input_(input)
   {
     assert(mode == PoolingMode::MAX);
@@ -26,37 +26,41 @@ public:
 
     int on, oc, oh, ow;
     chkCUDNN(cudnnGetPooling2dForwardOutputDim(desc_,
-                                               input_->desc(),
+                                               input.desc(),
                                                &on, &oc, &oh, &ow));
 
-    output_ = Tensor::make(input->dataType(), Size(on, oc, oh, ow));
+    output_ = std::make_unique<Tensor>(TensorDescriptor(input.dataType(),
+                                                        Size(on, oc, oh, ow)));
   }
 
-  std::shared_ptr<Tensor> output() const override {
-    return output_;
+  const Tensor *output() const override {
+    return output_.get();
   }
 
   std::string name() const override {
     std::stringstream ss;
-    ss << "Pooling " << input_->name() << " => " << output_->name();
+    ss << "Pooling " << input_.name() << " => " << output_->name();
     return ss.str();
   }
 
 
-  void forward(const Network &n) override {
+  const Tensor *forward(const Network &n,
+                        const Tensor &input,
+                        bool inference) override {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnPoolingForward(n.cudnn_, desc_,
                                  &alpha,
-                                 input_->desc(), input_->deviceMem(),
+                                 input.desc(), input.deviceMem(),
                                  &beta,
                                  output_->desc(), output_->deviceMem()));
+    return output_.get();
   }
 
 
 protected:
-  const std::shared_ptr<Tensor> input_;
-  std::shared_ptr<Tensor> output_;
+  const TensorDescriptor input_;
+  std::unique_ptr<Tensor> output_;
   cudnnPoolingDescriptor_t desc_;
 };
 
@@ -64,35 +68,36 @@ protected:
 class PoolingBackProp : public Pooling {
 public:
   PoolingBackProp(PoolingMode mode, int size, int stride,
-                  std::shared_ptr<Tensor> input)
+                  const TensorDescriptor input)
     : Pooling(mode, size, stride, input)
-    , input_grad_(Tensor::make(*input))
+    , input_grad_(input)
   {}
 
 
-  std::shared_ptr<Tensor> backprop(const Network &n,
-                                   const Tensor &dy) override {
+  const Tensor *backprop(const Network &n,
+                         const Tensor &input,
+                         const Tensor &dy) override {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnPoolingBackward(n.cudnn_, desc_,
                                   &alpha,
                                   output_->desc(), output_->deviceMem(),
                                   dy.desc(), dy.deviceMem(),
-                                  input_->desc(), input_->deviceMem(),
+                                  input.desc(), input.deviceMem(),
                                   &beta,
-                                  input_grad_->desc(),
-                                  input_grad_->deviceMem()));
-    return input_grad_;
+                                  input_grad_.desc(),
+                                  input_grad_.deviceMem()));
+    return &input_grad_;
   }
 
 protected:
-  const std::shared_ptr<Tensor> input_grad_;
+  Tensor input_grad_;
 };
 
 
 
 std::shared_ptr<Layer> makePooling(PoolingMode mode, int size, int stride,
-                                   std::shared_ptr<Tensor> input,
+                                   const TensorDescriptor &input,
                                    const Network &n)
 {
   if(n.backprop_)

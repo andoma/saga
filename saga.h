@@ -25,35 +25,85 @@ enum class PoolingMode {
 };
 
 
-
-
 struct Size {
   const unsigned int n, c, h, w;
 
-  Size(unsigned int n, unsigned int c,
-       unsigned int h, unsigned int w) : n(n), c(c), h(h), w(w) {};
-  size_t elements() const { return n * c * h * w; };
+  Size(unsigned int n,
+       unsigned int c,
+       unsigned int h,
+       unsigned int w)
+    : n(n)
+    , c(c)
+    , h(h)
+    , w(w)
+  {}
+
+  Size(const Size &s)
+    : n(s.n)
+    , c(s.c)
+    , h(s.h)
+    , w(s.w)
+  {}
+
+  size_t elements() const { return n * c * h * w; }
+
+  inline bool operator==(const Size& o) const {
+    return n == o.n && c == o.c && h == o.h && w == o.w;
+  }
 
   std::string name() const;
 
-  inline bool operator==(const Size& o) {
-    return n == o.n && c == o.c && h == o.h && w == o.w;
-  }
 };
 
 
 
-class TensorValues {
-  TensorValues(const Size &s)
-    : size_(s)
-    , data_(s.elements())
+struct TensorDescriptor : public Size {
+
+  TensorDescriptor& operator=(TensorDescriptor const&) = delete;
+
+  TensorDescriptor(cudnnDataType_t data_type,
+                   unsigned int n,
+                   unsigned int c,
+                   unsigned int h,
+                   unsigned int w);
+
+  TensorDescriptor(cudnnDataType_t data_type, const Size &s)
+    : TensorDescriptor(data_type, s.n, s.c, s.h, s.w)
   {}
 
-  const Size size_;
+  TensorDescriptor(TensorDescriptor const& td)
+    : TensorDescriptor(td.data_type, td.n, td.c, td.h, td.w)
+  {}
+
+  ~TensorDescriptor();
+
+  cudnnDataType_t dataType() const { return data_type; }
+
+  cudnnTensorDescriptor_t desc() const { return desc_; }
+
+  std::string name() const;
+
+  cudnnDataType_t data_type; // move down to private:
+
+
+private:
+  cudnnTensorDescriptor_t desc_;
+};
+
+
+
+
+
+class TensorValues : public Size {
+
+  TensorValues(const Size &s)
+    : Size(s)
+    , data_(elements())
+  {}
+
   const std::vector<float> data_;
 
 public:
-  Size size() const { return size_; };
   const float *data() const { return &data_[0]; }
 };
 
@@ -62,19 +112,19 @@ typedef std::unordered_map<std::string, const TensorValues> InitData;
 
 
 
-class Tensor {
+class Tensor : public TensorDescriptor {
+
 
 public:
-  Tensor(cudnnDataType_t data_type, const Size &s);
-  Tensor(const Tensor &t) : Tensor(t.data_type_, t.size_) {}
+
+  Tensor& operator=(Tensor const&) = delete;
+
+  Tensor(const TensorDescriptor &td);
+
+  Tensor(Tensor const &t) : Tensor(TensorDescriptor(t)) {}
+
 
   ~Tensor();
-
-  std::string name() const;
-
-  Size size() const { return size_; };
-
-  cudnnDataType_t dataType() const { return data_type_; }
 
   void loadOrRandomize(InitData id, const std::string &name, float sigma);
 
@@ -82,19 +132,7 @@ public:
 
   void *deviceMem(void) const { return device_mem_; };
 
-  cudnnTensorDescriptor_t desc() const { return desc_; }
-
-  static std::shared_ptr<Tensor> make(cudnnDataType_t data_type,
-                                      const Size &s) {
-    return std::make_shared<Tensor>(data_type, s);
-  }
-
-  static std::shared_ptr<Tensor> make(const Tensor &blueprint) {
-    return std::make_shared<Tensor>(blueprint.data_type_,
-                                    blueprint.size_);
-  }
-
-  void save(float *data);
+  void save(float *data) const;
 
   void load(const std::vector<float> &data);
 
@@ -108,19 +146,15 @@ public:
 
   void randomize(float sigma);
 
-  void dump(const char *prefix, bool intensity) const;
+  void dump(const char *prefix, bool intensity = false) const;
 
   void check() const;
 
   float peak() const;
 
 private:
-
-  const cudnnDataType_t data_type_;
-  const Size size_;
-  size_t bytes_;
-  cudnnTensorDescriptor_t desc_;
   void *device_mem_;
+  size_t bytes_;
 };
 
 
@@ -132,12 +166,15 @@ public:
 
   virtual std::string name() const = 0;
 
-  virtual std::shared_ptr<Tensor> output() const = 0;
+  virtual const Tensor *output() const = 0;
 
-  virtual void forward(const Network &n) = 0;
+  virtual const Tensor *forward(const Network &n,
+                                const Tensor &input,
+                                bool inference) = 0;
 
-  virtual std::shared_ptr<Tensor> backprop(const Network &n,
-                                           const Tensor &dy) {
+  virtual const Tensor *backprop(const Network &n,
+                                 const Tensor &input,
+                                 const Tensor &grad) {
     return nullptr;
   }
 
@@ -170,11 +207,11 @@ class Network {
 public:
   Network(int batch_size, bool backprop);
 
-  std::shared_ptr<Tensor> addLayer(std::shared_ptr<Layer> layer);
+  const Tensor *addLayer(std::shared_ptr<Layer> layer);
 
-  void forward();
+  void forward(const Tensor *input, bool inference);
 
-  void backprop(std::shared_ptr<Tensor> dy);
+  void backprop(const Tensor *input, const Tensor *dy);
 
   void setOptimizer(std::function<std::unique_ptr<Optimizer>(const Size &s,
                                                              const Network &net)> fn) {
@@ -195,7 +232,6 @@ public:
   int iter_;
 
   bool backprop_;
-  bool inference_;
 
   void *workspace_;
   size_t workspace_size_;
@@ -203,7 +239,7 @@ public:
 
 
 std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
-                                          std::shared_ptr<Tensor> input,
+                                          const TensorDescriptor &input,
                                           const InitData &id,
                                           const Network &n);
 
@@ -211,19 +247,19 @@ std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int filter_size,
                                        int stride,
                                        int padding,
-                                       std::shared_ptr<Tensor> input,
+                                       const TensorDescriptor &input,
                                        const InitData &id,
                                        const Network &n);
 
 std::shared_ptr<Layer> makeActivation(ActivationMode mode, float a,
-                                      std::shared_ptr<Tensor> input,
+                                      const TensorDescriptor &input,
                                       const Network &n);
 
 std::shared_ptr<Layer> makePooling(PoolingMode mode, int size, int stride,
-                                   std::shared_ptr<Tensor> input,
+                                   const TensorDescriptor &input,
                                    const Network &n);
 
-std::shared_ptr<Layer> makeSoftmax(std::shared_ptr<Tensor> input,
+std::shared_ptr<Layer> makeSoftmax(const TensorDescriptor &input,
                                    const Network &n);
 
 

@@ -36,46 +36,55 @@ generateGaussianNoise(void)
   return z0;
 }
 
-Tensor::Tensor(cudnnDataType_t data_type, const Size &s)
-  : data_type_(data_type)
-  , size_(s)
-  , device_mem_(NULL)
+
+
+TensorDescriptor::TensorDescriptor(cudnnDataType_t data_type,
+                                   unsigned int n,
+                                   unsigned int c,
+                                   unsigned int h,
+                                   unsigned int w)
+  : Size(n, c, h, w)
+  , data_type(data_type)
 {
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
   chkCUDNN(cudnnSetTensor4dDescriptor(desc_, CUDNN_TENSOR_NCHW,
-                                      data_type, s.n, s.c, s.h, s.w));
+                                      data_type, n, c, h, w));
+}
 
-  chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes_));
+
+TensorDescriptor::~TensorDescriptor()
+{
+  chkCUDNN(cudnnDestroyTensorDescriptor(desc_));
+}
+
+
+
+Tensor::Tensor(const TensorDescriptor &td)
+  : TensorDescriptor(td)
+  , device_mem_(NULL)
+{
+  chkCUDNN(cudnnGetTensorSizeInBytes(desc(), &bytes_));
   chkCuda(cudaMalloc(&device_mem_, bytes_));
   chkCuda(cudaMemset(device_mem_, 0, bytes_));
 };
 
 Tensor::~Tensor()
 {
-  chkCUDNN(cudnnDestroyTensorDescriptor(desc_));
+  chkCuda(cudaFree(device_mem_));
 }
 
 
-void Tensor::save(float *data)
+void Tensor::save(float *data) const
 {
-  const size_t bytes = size().elements() * sizeof(float);
   cudaMemcpy((void *)data, device_mem_,
-             bytes, cudaMemcpyDeviceToHost);
-
-  for(size_t i = 0; i < size().elements(); i++)
-    assert(!isnan(data[i]));
+             bytes_, cudaMemcpyDeviceToHost);
 }
 
 
 void Tensor::load(const float *data)
 {
-  const size_t bytes = size().elements() * sizeof(float);
-
-  for(size_t i = 0; i < size().elements(); i++)
-    assert(!isnan(data[i]));
-
   cudaMemcpy(device_mem_, (const void *)data,
-             bytes, cudaMemcpyHostToDevice);
+             bytes_, cudaMemcpyHostToDevice);
 }
 
 
@@ -86,20 +95,20 @@ void Tensor::load(const std::vector<float> &data)
 
 void Tensor::load(__restrict__ const uint8_t *data)
 {
-  const size_t elements = size().elements();
-  float floats[elements];
-  for(size_t i = 0; i < elements; i++)
+  const size_t num_elements = elements();
+  float floats[num_elements];
+  for(size_t i = 0; i < num_elements; i++)
     floats[i] = data[i] / 255.0f;
   load(floats);
 }
 
 void Tensor::load(__restrict__ const uint8_t **data)
 {
-  const size_t elements = size().elements();
-  float floats[elements];
-  const size_t chw = size().c * size().h * size().w;
+  const size_t num_elements = elements();
+  float floats[num_elements];
+  const size_t chw = c * h * w;
   float *dst = &floats[0];
-  for(size_t i = 0; i < size().n; i++) {
+  for(size_t i = 0; i < n; i++) {
     const uint8_t *src = data[i];
     for(size_t j = 0; j < chw; j++)
       *dst++ = src[j] / 255.0f;
@@ -111,38 +120,35 @@ void Tensor::load(__restrict__ const uint8_t **data)
 
 void Tensor::load(const TensorValues &v)
 {
-  assert(v.size() == size());
-
-  const size_t bytes = v.size().elements() * sizeof(float);
-  cudaMemcpy(device_mem_, v.data(), bytes, cudaMemcpyHostToDevice);
+  assert(v == *this);
+  cudaMemcpy(device_mem_, v.data(), bytes_, cudaMemcpyHostToDevice);
 }
 
 
 void Tensor::fill(float value)
 {
-  assert(data_type_ == CUDNN_DATA_FLOAT);
-
-  const size_t bytes = size_.elements() * sizeof(float);
+  assert(data_type == CUDNN_DATA_FLOAT);
 
   if(value == 0) {
-    cudaMemset(device_mem_, 0, bytes);
+    cudaMemset(device_mem_, 0, bytes_);
     return;
   }
 
-  load(std::vector<float>(size().elements(), value));
+  load(std::vector<float>(elements(), value));
 }
 
 
 void Tensor::randomize(float sigma)
 {
-  assert(data_type_ == CUDNN_DATA_FLOAT);
+  assert(data_type == CUDNN_DATA_FLOAT);
 
   if(sigma == 0) {
     fill(0);
     return;
   }
 
-  std::vector<float> values(size().elements());
+  std::vector<float> values(elements());
+  chkCuda(cudaMalloc(&device_mem_, bytes_));
 
   for(size_t i = 0; i < values.size(); i++) {
     values[i] = generateGaussianNoise() * sigma;
@@ -166,14 +172,11 @@ std::string Size::name() const {
   std::stringstream ss;
   ss << "[" << n << ", " << c << ", " << w << ", " << h << "]";
   return ss.str();
-
 }
 
-
-std::string Tensor::name() const {
-  return size().name();
+std::string TensorDescriptor::name() const {
+  return Size::name();
 }
-
 
 
 static void
@@ -226,7 +229,7 @@ tensor_print_raw(const char *prefix, const float *p,
             }
 
           } else {
-            printf("%s%2.3f ", v < 0 ? "" : " ", v);
+            printf("%s%2.6f ", v < 0 ? "" : " ", v);
           }
         }
         printf("\n");
@@ -237,35 +240,22 @@ tensor_print_raw(const char *prefix, const float *p,
 
 
 void Tensor::dump(const char *prefix, bool intensity) const {
-  const size_t bytes = size().elements() * sizeof(float);
-
-  float *hostmem = (float *)malloc(bytes);
+  float *hostmem = (float *)malloc(bytes_);
 
   cudaMemcpy((void *)hostmem, device_mem_,
-             bytes, cudaMemcpyDeviceToHost);
-
-  for(size_t i = 0; i < size().elements(); i++)
-    assert(!isnan(hostmem[i]));
-
-  tensor_print_raw(prefix, hostmem,
-                   size().n,
-                   size().c,
-                   size().h,
-                   size().w, intensity);
+             bytes_, cudaMemcpyDeviceToHost);
+  tensor_print_raw(prefix, hostmem, n, c, h, w, intensity);
   free(hostmem);
 
 }
 
 void Tensor::check() const {
-
-  const size_t bytes = size().elements() * sizeof(float);
-
-  float *hostmem = (float *)malloc(bytes);
+  float *hostmem = (float *)malloc(bytes_);
 
   cudaMemcpy((void *)hostmem, device_mem_,
-             bytes, cudaMemcpyDeviceToHost);
+             bytes_, cudaMemcpyDeviceToHost);
 
-  for(size_t i = 0; i < size().elements(); i++) {
+  for(size_t i = 0; i < elements(); i++) {
     if(isnan(hostmem[i])) {
       fprintf(stderr, "Tensor %s has NAN at %zd\n",
               name().c_str(), i);
@@ -279,15 +269,13 @@ void Tensor::check() const {
 
 float Tensor::peak() const {
 
-  const size_t bytes = size().elements() * sizeof(float);
-
-  float *hostmem = (float *)malloc(bytes);
+  float *hostmem = (float *)malloc(bytes_);
 
   cudaMemcpy((void *)hostmem, device_mem_,
-             bytes, cudaMemcpyDeviceToHost);
+             bytes_, cudaMemcpyDeviceToHost);
 
   float r = 0;
-  for(size_t i = 0; i < size().elements(); i++) {
+  for(size_t i = 0; i < elements(); i++) {
     r = std::max(r, fabs(hostmem[i]));
   }
   free(hostmem);

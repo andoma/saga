@@ -9,7 +9,6 @@ Network::Network(int batch_size, bool backprop)
   : batch_size_(batch_size)
   , iter_(0)
   , backprop_(backprop)
-  , inference_(false)
   , workspace_(NULL)
   , workspace_size_(0)
 {
@@ -37,7 +36,7 @@ Network::Network(int batch_size, bool backprop)
 
 
 
-std::shared_ptr<Tensor> Network::addLayer(std::shared_ptr<Layer> layer)
+const Tensor *Network::addLayer(std::shared_ptr<Layer> layer)
 {
   workspace_size_ = std::max(workspace_size_, layer->workspaceSize());
   layers_.push_back(layer);
@@ -46,21 +45,21 @@ std::shared_ptr<Tensor> Network::addLayer(std::shared_ptr<Layer> layer)
 }
 
 
-
-void Network::forward()
+void Network::forward(const Tensor *input, bool inference)
 {
   if(workspace_ == NULL)
     chkCuda(cudaMalloc(&workspace_, workspace_size_));
 
   for(size_t i = 0; i < layers_.size(); i++) {
-    layers_[i]->forward(*this);
+    input = layers_[i]->forward(*this, *input, inference);
   }
 }
 
-void Network::backprop(std::shared_ptr<Tensor> dy)
+void Network::backprop(const Tensor *input, const Tensor *dy)
 {
   for(ssize_t i = layers_.size() - 1; i >= 0; i--) {
-    dy = layers_[i]->backprop(*this, *dy);
+    const Tensor *prev = i > 0 ? layers_[i - 1]->output() : input;
+    dy = layers_[i]->backprop(*this, *prev, *dy);
   }
   iter_++;
 }
