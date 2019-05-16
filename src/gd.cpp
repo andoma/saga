@@ -13,14 +13,14 @@ public:
   GradientDescent(const Size &s, const Network &net)
   {}
 
-  void optimize(Tensor &x, const Tensor &grad, const Network &n) override {
+  void optimize(Tensor &x, const Tensor &grad, const Network &n,
+                unsigned int iter) override {
 
     assert(x == grad);
 
-    const float learning_rate = 0.01 * powf(1.0 + 0.0001 * n.iter_, -0.75);
+    const float learning_rate = 0.01 * powf(1.0 + 0.01 * iter, -0.75);
     const float alpha = -learning_rate;
     const float beta = 1.0f;
-
     chkCUDNN(cudnnAddTensor(n.cudnn_,
                             &alpha, grad.desc(), grad.deviceMem(),
                             &beta,   x.desc(),  x.deviceMem()));

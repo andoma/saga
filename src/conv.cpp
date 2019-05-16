@@ -237,7 +237,8 @@ public:
 
   const Tensor *backprop(const Network &n,
                          const Tensor &input,
-                         const Tensor &dy) override {
+                         const Tensor &dy,
+                         unsigned int iteration) override {
 
     float alpha = 1.0f, beta = 0.0f;
 
@@ -269,8 +270,8 @@ public:
                                           input_grad_.desc(),
                                           input_grad_.deviceMem()));
 
-    kernel_optimizer_->optimize(kernel_, kernel_grad_, n);
-    bias_optimizer_->optimize(*bias_, bias_grad_, n);
+    kernel_optimizer_->optimize(kernel_, kernel_grad_, n, iteration);
+    bias_optimizer_->optimize(*bias_, bias_grad_, n, iteration);
 
     return &input_grad_;
   }

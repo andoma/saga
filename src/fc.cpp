@@ -95,7 +95,8 @@ public:
 
   const Tensor *backprop(const Network &n,
                          const Tensor &input,
-                         const Tensor &dy) override {
+                         const Tensor &dy,
+                         unsigned int iteration) override {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
@@ -121,8 +122,8 @@ public:
                         &beta,
                         (float *)input_grad_.deviceMem(), num_inputs_));
 
-    weights_optimizer_->optimize(weights_, weights_grad_, n);
-    bias_optimizer_->optimize(bias_, bias_grad_, n);
+    weights_optimizer_->optimize(weights_, weights_grad_, n, iteration);
+    bias_optimizer_->optimize(bias_, bias_grad_, n, iteration);
 
     return &input_grad_;
   }

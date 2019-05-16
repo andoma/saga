@@ -9,4 +9,4 @@ SAGA_SRCS += \
 	src/pooling.cpp \
 	src/softmax.cpp \
 	src/gd.cpp \
-	src/adam.cpp \
+	src/adam.cu \

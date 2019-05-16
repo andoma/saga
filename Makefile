@@ -8,6 +8,8 @@ LDFLAGS += $(shell pkg-config --libs cuda-10.1 cudart-10.1)
 
 CXXFLAGS += --std=c++14
 
+NVCCFLAGS := --std=c++14 -O2 -g -I.
+
 NVCC := /usr/local/cuda-10.1/bin/nvcc
 
 SRCS += main.cpp \
@@ -29,13 +31,15 @@ ${PROG}: ${OBJS} ${ALLDEPS}
 	@mkdir -p $(dir $@)
 	${CXX} -o $@ ${OBJS} ${LDFLAGS}
 
+${O}/%.o: %.cu ${ALLDEPS}
+	@mkdir -p $(dir $@)
+	${NVCC} ${NVCCFLAGS} -o $@ -c $<
+	${NVCC} -M ${NVCCFLAGS} -o ${@:%.o=%.d} -c $<
+	@sed -itmp "s:^$(notdir $@) :$@ :" ${@:%.o=%.d}
+
 ${O}/%.o: %.cpp ${ALLDEPS}
 	@mkdir -p $(dir $@)
 	${CXX} -MD -MP ${CPPFLAGS} ${CXXFLAGS} -o $@ -c $<
-
-${O}/%.o: %.cu ${ALLDEPS}
-	@mkdir -p $(dir $@)
-	${NVCC} -MD -MP ${CPPFLAGS} ${CXXFLAGS} -o $@ -c $<
 
 clean: rm -rf "${O}" "${PROG}"
 

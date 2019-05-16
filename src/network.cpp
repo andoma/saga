@@ -7,7 +7,6 @@ namespace saga {
 
 Network::Network(int batch_size, bool backprop)
   : batch_size_(batch_size)
-  , iter_(0)
   , backprop_(backprop)
   , workspace_(NULL)
   , workspace_size_(0)
@@ -55,13 +54,13 @@ void Network::forward(const Tensor *input, bool inference)
   }
 }
 
-void Network::backprop(const Tensor *input, const Tensor *dy)
+void Network::backprop(const Tensor *input, const Tensor *dy,
+                       unsigned int iteration)
 {
   for(ssize_t i = layers_.size() - 1; i >= 0; i--) {
     const Tensor *prev = i > 0 ? layers_[i - 1]->output() : input;
-    dy = layers_[i]->backprop(*this, *prev, *dy);
+    dy = layers_[i]->backprop(*this, *prev, *dy, iteration);
   }
-  iter_++;
 }
 
 std::unique_ptr<Optimizer> Network::makeOptimizer(const Size &s) const {

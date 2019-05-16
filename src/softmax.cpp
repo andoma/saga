@@ -58,7 +58,8 @@ public:
 
   const Tensor *backprop(const Network &n,
                          const Tensor &input,
-                         const Tensor &dy) override {
+                         const Tensor &dy,
+                         unsigned int iteration) override {
 
     float alpha = -1.0f, beta = 0.0f;
 

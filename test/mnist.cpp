@@ -162,6 +162,8 @@ mnist_main(int argc, char **argv)
 
   Network net(batch_size, true);
 
+  net.setOptimizer(&makeAdamOptimizer);
+
   Tensor input(TensorDescriptor(CUDNN_DATA_FLOAT,
                                 Size(batch_size, 1, 28, 28)));
 
@@ -187,16 +189,22 @@ mnist_main(int argc, char **argv)
   assert(dy.n == batch_size);
   assert(dy.c == labels);
 
+  unsigned int iteration = 0;
   while(1) {
     std::random_shuffle(train_data.begin(), train_data.end());
 
+    //    const float learning_rate = 0.01 * powf(1.0 + 0.01 * iteration, -0.75);
+
+    // Train
     for(size_t i = 0; i < train_inputs; i += batch_size) {
       loadInputTensor(input, &train_data[i]);
       net.forward(&input, false);
       loadOutputTensor(dy, &train_data[i]);
-      net.backprop(&input, &dy);
+      net.backprop(&input, &dy, iteration);
+      iteration++;
     }
 
+    // Test
     int correct = 0;
     for(size_t i = 0; i < test_inputs; i += batch_size) {
       loadInputTensor(input, &test_data[i]);
@@ -215,8 +223,7 @@ mnist_main(int argc, char **argv)
           correct++;
       }
     }
-    printf("test accuracy: %3.3f%% %d\n", 100.0 * correct / test_inputs,
-           correct);
+    printf("test accuracy: %3.3f%%\n", 100.0 * correct / test_inputs);
   }
 
   return 0;

@@ -174,7 +174,8 @@ public:
 
   virtual const Tensor *backprop(const Network &n,
                                  const Tensor &input,
-                                 const Tensor &grad) {
+                                 const Tensor &grad,
+                                 unsigned int iteration) {
     return nullptr;
   }
 
@@ -195,7 +196,8 @@ public:
 
   virtual ~Optimizer() {};
 
-  virtual void optimize(Tensor &x, const Tensor &grad, const Network &n) = 0;
+  virtual void optimize(Tensor &x, const Tensor &grad, const Network &n,
+                        unsigned int iternation) = 0;
 
 };
 
@@ -211,7 +213,8 @@ public:
 
   void forward(const Tensor *input, bool inference);
 
-  void backprop(const Tensor *input, const Tensor *dy);
+  void backprop(const Tensor *input, const Tensor *dy,
+                unsigned int iteration);
 
   void setOptimizer(std::function<std::unique_ptr<Optimizer>(const Size &s,
                                                              const Network &net)> fn) {
@@ -229,7 +232,6 @@ public:
   cublasHandle_t cublas_;
 
   int batch_size_;
-  int iter_;
 
   bool backprop_;
 
