@@ -5,6 +5,7 @@ SAGA_SRCS += \
 	src/tensor.cpp \
 	src/conv.cpp \
 	src/fc.cpp \
+	src/dropout.cpp \
 	src/activation.cpp \
 	src/pooling.cpp \
 	src/softmax.cpp \

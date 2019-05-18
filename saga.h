@@ -264,6 +264,9 @@ std::shared_ptr<Layer> makePooling(PoolingMode mode, int size, int stride,
 std::shared_ptr<Layer> makeSoftmax(const TensorDescriptor &input,
                                    const Network &n);
 
+std::shared_ptr<Layer> makeDropout(float prob,
+                                   const TensorDescriptor &input,
+                                   const Network &n);
 
 // Optimizers
 
