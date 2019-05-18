@@ -176,7 +176,11 @@ std::string Size::name() const {
 }
 
 std::string TensorDescriptor::name() const {
-  return Size::name();
+  std::stringstream ss;
+  ss << (format_ == CUDNN_TENSOR_NCHW ? "NCHW" :
+         format_ == CUDNN_TENSOR_NHWC ? "NHWC" :
+         "????") << Size::name();
+  return ss.str();
 }
 
 
