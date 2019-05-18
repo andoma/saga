@@ -173,6 +173,7 @@ mnist_main(int argc, char **argv)
   net.setOptimizer(&makeAdamOptimizer);
 
   Tensor input(TensorDescriptor(CUDNN_DATA_FLOAT,
+                                CUDNN_TENSOR_NCHW,
                                 Size(batch_size, 1, 28, 28)));
 
   const Tensor *tail = &input;

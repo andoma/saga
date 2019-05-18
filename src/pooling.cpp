@@ -30,6 +30,7 @@ public:
                                                &on, &oc, &oh, &ow));
 
     output_ = std::make_unique<Tensor>(TensorDescriptor(input.dataType(),
+                                                        input.format(),
                                                         Size(on, oc, oh, ow)));
   }
 

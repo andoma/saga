@@ -39,16 +39,17 @@ generateGaussianNoise(void)
 
 
 TensorDescriptor::TensorDescriptor(cudnnDataType_t data_type,
+                                   cudnnTensorFormat_t format,
                                    unsigned int n,
                                    unsigned int c,
                                    unsigned int h,
                                    unsigned int w)
   : Size(n, c, h, w)
-  , data_type(data_type)
+  , data_type_(data_type)
+  , format_(format)
 {
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, CUDNN_TENSOR_NCHW,
-                                      data_type, n, c, h, w));
+  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, data_type, n, c, h, w));
 }
 
 
@@ -127,7 +128,7 @@ void Tensor::load(const TensorValues &v)
 
 void Tensor::fill(float value)
 {
-  assert(data_type == CUDNN_DATA_FLOAT);
+  assert(dataType() == CUDNN_DATA_FLOAT);
 
   if(value == 0) {
     cudaMemset(device_mem_, 0, bytes_);
@@ -140,7 +141,7 @@ void Tensor::fill(float value)
 
 void Tensor::randomize(float sigma)
 {
-  assert(data_type == CUDNN_DATA_FLOAT);
+  assert(dataType() == CUDNN_DATA_FLOAT);
 
   if(sigma == 0) {
     fill(0);

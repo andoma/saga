@@ -62,31 +62,35 @@ struct TensorDescriptor : public Size {
   TensorDescriptor& operator=(TensorDescriptor const&) = delete;
 
   TensorDescriptor(cudnnDataType_t data_type,
+                   cudnnTensorFormat_t format,
                    unsigned int n,
                    unsigned int c,
                    unsigned int h,
                    unsigned int w);
 
-  TensorDescriptor(cudnnDataType_t data_type, const Size &s)
-    : TensorDescriptor(data_type, s.n, s.c, s.h, s.w)
+  TensorDescriptor(cudnnDataType_t data_type,
+                   cudnnTensorFormat_t format,
+                   const Size &s)
+    : TensorDescriptor(data_type, format, s.n, s.c, s.h, s.w)
   {}
 
   TensorDescriptor(TensorDescriptor const& td)
-    : TensorDescriptor(td.data_type, td.n, td.c, td.h, td.w)
+    : TensorDescriptor(td.data_type_, td.format_, td.n, td.c, td.h, td.w)
   {}
 
   ~TensorDescriptor();
 
-  cudnnDataType_t dataType() const { return data_type; }
+  cudnnDataType_t dataType() const { return data_type_; }
+
+  cudnnTensorFormat_t format() const { return format_; }
 
   cudnnTensorDescriptor_t desc() const { return desc_; }
 
   std::string name() const;
 
-  cudnnDataType_t data_type; // move down to private:
-
-
 private:
+  cudnnDataType_t data_type_;
+  cudnnTensorFormat_t format_;
   cudnnTensorDescriptor_t desc_;
 };
 

@@ -49,19 +49,22 @@ public:
               const Network &n)
     : input_(input)
     , kernel_size_(activation_maps, input.c, filter_size, filter_size)
-    , kernel_(TensorDescriptor(input.data_type, kernel_size_))
+    , kernel_(TensorDescriptor(input.dataType(),
+                               input.format(),
+                               kernel_size_))
   {
 
-    const auto data_type = input.data_type;
+    const auto data_type = input.dataType();
 
     kernel_.loadOrRandomize(id, "weights", sqrt(1.0 / (input.c *
                                                        filter_size *
                                                        filter_size)));
 
     chkCUDNN(cudnnCreateFilterDescriptor(&filter_desc_));
+
     chkCUDNN(cudnnSetFilter4dDescriptor(filter_desc_,
-                                        data_type,
-                                        CUDNN_TENSOR_NCHW,
+                                        kernel_.dataType(),
+                                        kernel_.format(),
                                         kernel_size_.n,
                                         kernel_size_.c,
                                         kernel_size_.h,
@@ -81,7 +84,9 @@ public:
                                                    filter_desc_,
                                                    &on, &oc, &oh, &ow));
 
-    output_ = std::make_unique<Tensor>(TensorDescriptor(data_type, Size(on, oc, oh, ow)));
+    output_ = std::make_unique<Tensor>(TensorDescriptor(input.dataType(),
+                                                        input.format(),
+                                                        Size(on, oc, oh, ow)));
 
     chkCUDNN(cudnnGetConvolutionForwardAlgorithm(n.cudnn_,
                                                  input.desc(),
@@ -104,7 +109,8 @@ public:
     workspace_size_ = std::max(workspace_size_, workspace_bytes);
 
 
-    bias_ = std::make_unique<Tensor>(TensorDescriptor(data_type,
+    bias_ = std::make_unique<Tensor>(TensorDescriptor(input.dataType(),
+                                                      input.format(),
                                                       Size(1, oc, 1, 1)));
     bias_->loadOrRandomize(id, "bias", 0);
   }

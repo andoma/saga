@@ -16,10 +16,13 @@ public:
     , num_outputs_(num_outputs)
     , input_(input)
     , weights_(TensorDescriptor(input.dataType(),
+                                input.format(),
                                 Size(num_inputs_, num_outputs, 1, 1)))
     , bias_(TensorDescriptor(input.dataType(),
+                             input.format(),
                              Size(1, num_outputs, 1, 1)))
     , output_(TensorDescriptor(input.dataType(),
+                               input.format(),
                                Size(input.n, num_outputs, 1, 1)))
   {
     weights_.loadOrRandomize(id, "weights", sqrt(1.0 / num_inputs_));
@@ -84,6 +87,7 @@ public:
     , weights_grad_(TensorDescriptor(weights_))
     , bias_grad_(TensorDescriptor(bias_))
     , batch_of_one_(TensorDescriptor(input.dataType(),
+                                     input.format(),
                                      Size(n.batch_size_, 1, 1, 1)))
     , weights_optimizer_(n.makeOptimizer(weights_))
     , bias_optimizer_(n.makeOptimizer(bias_))
