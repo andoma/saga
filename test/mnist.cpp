@@ -189,6 +189,8 @@ mnist_main(int argc, char **argv)
   tail = net.addLayer(makeFullyConnected(1024, *tail, {}, net));
   tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 
+  tail = net.addLayer(makeDropout(0.25, *tail, net));
+
   tail = net.addLayer(makeFullyConnected(labels, *tail, {}, net));
   tail = net.addLayer(makeSoftmax(*tail, net));
 
