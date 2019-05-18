@@ -5,6 +5,14 @@
 
 namespace saga {
 
+
+static void
+logcb(cudnnSeverity_t sev, void *udata, const cudnnDebug_t *dbg,
+      const char *msg)
+{
+  fprintf(stderr, "%s\n", msg);
+}
+
 Network::Network(int batch_size, bool backprop)
   : batch_size_(batch_size)
   , backprop_(backprop)
@@ -29,6 +37,9 @@ Network::Network(int batch_size, bool backprop)
 
   chkCUDNN(cudnnCreate(&cudnn_));
   chkCuda(cublasCreate(&cublas_));
+
+  if(0)
+    chkCUDNN(cudnnSetCallback(CUDNN_SEV_INFO_EN, this, logcb));
 
   optimizer_factory_ = &makeGradientDescentOptimizer;
 }
