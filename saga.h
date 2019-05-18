@@ -117,7 +117,7 @@ class Tensor : public TensorDescriptor {
 
 public:
 
-  Tensor& operator=(Tensor const&) = delete;
+  Tensor& operator=(Tensor const&);
 
   Tensor(const TensorDescriptor &td);
 

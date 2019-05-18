@@ -282,6 +282,16 @@ float Tensor::peak() const {
   return r;
 }
 
+Tensor& Tensor::operator=(const Tensor& src) {
+  assert(src.bytes_ == bytes_);
+
+  chkCuda(cudaMemcpy(deviceMem(), src.deviceMem(),
+                     bytes_, cudaMemcpyDeviceToDevice));
+
+  return *this;
+
+}
+
 
 
 }
