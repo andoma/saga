@@ -10,6 +10,14 @@
 
 using namespace saga;
 
+static int64_t
+get_ts(void)
+{
+  struct timespec tv;
+  clock_gettime(CLOCK_MONOTONIC, &tv);
+  return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
+}
+
 
 
 static std::vector<uint8_t>
@@ -193,16 +201,19 @@ mnist_main(int argc, char **argv)
   while(1) {
     std::random_shuffle(train_data.begin(), train_data.end());
 
-    //    const float learning_rate = 0.01 * powf(1.0 + 0.01 * iteration, -0.75);
-
     // Train
+
+    const int64_t t0 = get_ts();
+
     for(size_t i = 0; i < train_inputs; i += batch_size) {
       loadInputTensor(input, &train_data[i]);
       net.forward(&input, false);
       loadOutputTensor(dy, &train_data[i]);
       net.backprop(&input, &dy, iteration);
-      iteration++;
     }
+    iteration++;
+
+    const int64_t t1 = get_ts();
 
     // Test
     int correct = 0;
@@ -223,7 +234,11 @@ mnist_main(int argc, char **argv)
           correct++;
       }
     }
-    printf("test accuracy: %3.3f%%\n", 100.0 * correct / test_inputs);
+    const int64_t t2 = get_ts();
+    printf("%3.3f%% Train:%.3fs Test:%.3fs\n",
+           100.0 * correct / test_inputs,
+           (t1 - t0) / 1e6,
+           (t2 - t1) / 1e6);
   }
 
   return 0;
