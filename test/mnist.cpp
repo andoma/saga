@@ -176,7 +176,9 @@ mnist_main(int argc, char **argv)
                                 CUDNN_TENSOR_NCHW,
                                 Size(batch_size, 1, 28, 28)));
 
-  const Tensor *tail = &input;
+  const Layer *tail;
+
+  tail = net.addLayer(makeInput(&input));
 
   tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, {}, net));
   tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
@@ -194,12 +196,6 @@ mnist_main(int argc, char **argv)
   tail = net.addLayer(makeFullyConnected(labels, *tail, {}, net));
   tail = net.addLayer(makeSoftmax(*tail, net));
 
-  Tensor dy{TensorDescriptor(*tail)};
-
-  printf("%d vs %zd\n", dy.n, batch_size);
-  assert(dy.n == batch_size);
-  assert(dy.c == labels);
-
   unsigned int iteration = 0;
   while(1) {
     std::random_shuffle(train_data.begin(), train_data.end());
@@ -210,9 +206,9 @@ mnist_main(int argc, char **argv)
 
     for(size_t i = 0; i < train_inputs; i += batch_size) {
       loadInputTensor(input, &train_data[i]);
-      net.forward(&input, false);
-      loadOutputTensor(dy, &train_data[i]);
-      net.backprop(&input, &dy, iteration);
+      net.forward(false);
+      loadOutputTensor(*tail->gradient(), &train_data[i]);
+      net.backprop(iteration);
     }
     iteration++;
 
@@ -222,10 +218,10 @@ mnist_main(int argc, char **argv)
     int correct = 0;
     for(size_t i = 0; i < test_inputs; i += batch_size) {
       loadInputTensor(input, &test_data[i]);
-      net.forward(&input, true);
+      net.forward(true);
 
       float result[batch_size * labels];
-      tail->save(result);
+      tail->output()->save(result);
       for(size_t n = 0; n < batch_size; n++) {
         unsigned int label = 0;
         for(int c = 1; c < labels; c++) {

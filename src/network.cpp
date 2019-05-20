@@ -46,36 +46,66 @@ Network::Network(int batch_size, bool backprop)
 
 
 
-const Tensor *Network::addLayer(std::shared_ptr<Layer> layer)
+const Layer *Network::addLayer(std::shared_ptr<Layer> layer)
 {
   workspace_size_ = std::max(workspace_size_, layer->workspaceSize());
   layers_.push_back(layer);
-  printf("Added layer: %s\n", layer->name().c_str());
-  return layer->output();
+  printf("Added layer: %s %p\n", layer->name().c_str(), layer->gradient());
+  return layer.get();
 }
 
 
-void Network::forward(const Tensor *input, bool inference)
+void Network::forward(bool inference)
 {
+  inference_ = inference;
+
   if(workspace_ == NULL)
     chkCuda(cudaMalloc(&workspace_, workspace_size_));
 
   for(size_t i = 0; i < layers_.size(); i++) {
-    input = layers_[i]->forward(*this, *input, inference);
+    layers_[i]->forward(*this);
   }
 }
 
-void Network::backprop(const Tensor *input, const Tensor *dy,
-                       unsigned int iteration)
+void Network::backprop(unsigned int iteration)
 {
+  iteration_ = iteration;
   for(ssize_t i = layers_.size() - 1; i >= 0; i--) {
-    const Tensor *prev = i > 0 ? layers_[i - 1]->output() : input;
-    dy = layers_[i]->backprop(*this, *prev, *dy, iteration);
+    layers_[i]->backprop(*this);
   }
 }
 
 std::unique_ptr<Optimizer> Network::makeOptimizer(const Size &s) const {
   return optimizer_factory_(s, *this);
+}
+
+
+class Input : public Layer {
+
+public:
+  Input(const Tensor *input)
+    : output_(input)
+  {}
+
+  const Tensor *output() const override {
+    return output_;
+  }
+
+  std::string name() const override {
+    std::stringstream ss;
+    ss << "Input " << output_->name();
+    return ss.str();
+  }
+
+  void forward(const Network &n) {}
+
+private:
+  const Tensor *output_;
+};
+
+std::shared_ptr<Layer> makeInput(const Tensor *t)
+{
+  return std::make_shared<Input>(t);
 }
 
 

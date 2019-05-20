@@ -127,7 +127,6 @@ public:
 
   Tensor(Tensor const &t) : Tensor(TensorDescriptor(t)) {}
 
-
   ~Tensor();
 
   void loadOrRandomize(InitData id, const std::string &name, float sigma);
@@ -172,16 +171,11 @@ public:
 
   virtual const Tensor *output() const = 0;
 
-  virtual const Tensor *forward(const Network &n,
-                                const Tensor &input,
-                                bool inference) = 0;
+  virtual Tensor *gradient() const { return nullptr; }
 
-  virtual const Tensor *backprop(const Network &n,
-                                 const Tensor &input,
-                                 const Tensor &grad,
-                                 unsigned int iteration) {
-    return nullptr;
-  }
+  virtual void forward(const Network &n) = 0;
+
+  virtual void backprop(const Network &n) {}
 
   size_t workspaceSize() const { return workspace_size_; };
 
@@ -200,8 +194,7 @@ public:
 
   virtual ~Optimizer() {};
 
-  virtual void optimize(Tensor &x, const Tensor &grad, const Network &n,
-                        unsigned int iternation) = 0;
+  virtual void optimize(Tensor &x, const Tensor &grad, const Network &n) = 0;
 
 };
 
@@ -213,12 +206,11 @@ class Network {
 public:
   Network(int batch_size, bool backprop);
 
-  const Tensor *addLayer(std::shared_ptr<Layer> layer);
+  const Layer *addLayer(std::shared_ptr<Layer> layer);
 
-  void forward(const Tensor *input, bool inference);
+  void forward(bool inference);
 
-  void backprop(const Tensor *input, const Tensor *dy,
-                unsigned int iteration);
+  void backprop(unsigned int iteration);
 
   void setOptimizer(std::function<std::unique_ptr<Optimizer>(const Size &s,
                                                              const Network &net)> fn) {
@@ -241,11 +233,15 @@ public:
 
   void *workspace_;
   size_t workspace_size_;
+
+  int iteration_;
+
+  bool inference_;
 };
 
 
 std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
-                                          const TensorDescriptor &input,
+                                          const Layer &prev,
                                           const InitData &id,
                                           const Network &n);
 
@@ -253,24 +249,26 @@ std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int filter_size,
                                        int stride,
                                        int padding,
-                                       const TensorDescriptor &input,
+                                       const Layer &prev,
                                        const InitData &id,
                                        const Network &n);
 
 std::shared_ptr<Layer> makeActivation(ActivationMode mode, float a,
-                                      const TensorDescriptor &input,
+                                      const Layer &prev,
                                       const Network &n);
 
 std::shared_ptr<Layer> makePooling(PoolingMode mode, int size, int stride,
-                                   const TensorDescriptor &input,
+                                   const Layer &prev,
                                    const Network &n);
 
-std::shared_ptr<Layer> makeSoftmax(const TensorDescriptor &input,
+std::shared_ptr<Layer> makeSoftmax(const Layer &prev,
                                    const Network &n);
 
 std::shared_ptr<Layer> makeDropout(float prob,
-                                   const TensorDescriptor &input,
+                                   const Layer &prev,
                                    const Network &n);
+
+std::shared_ptr<Layer> makeInput(const Tensor *input);
 
 // Optimizers
 

@@ -44,19 +44,19 @@ public:
               int filter_size,
               int stride,
               int padding,
-              const TensorDescriptor &input,
+              const Layer &prev,
               const InitData &id,
               const Network &n)
-    : input_(input)
-    , kernel_size_(activation_maps, input.c, filter_size, filter_size)
-    , kernel_(TensorDescriptor(input.dataType(),
-                               input.format(),
+    : input_(prev.output())
+    , kernel_size_(activation_maps, input_->c, filter_size, filter_size)
+    , kernel_(TensorDescriptor(input_->dataType(),
+                               input_->format(),
                                kernel_size_))
   {
 
-    const auto data_type = input.dataType();
+    const auto data_type = input_->dataType();
 
-    kernel_.loadOrRandomize(id, "weights", sqrt(1.0 / (input.c *
+    kernel_.loadOrRandomize(id, "weights", sqrt(1.0 / (input_->c *
                                                        filter_size *
                                                        filter_size)));
 
@@ -80,16 +80,16 @@ public:
 
     int on, oc, oh, ow;
     chkCUDNN(cudnnGetConvolution2dForwardOutputDim(conv_desc_,
-                                                   input.desc(),
+                                                   input_->desc(),
                                                    filter_desc_,
                                                    &on, &oc, &oh, &ow));
 
-    output_ = std::make_unique<Tensor>(TensorDescriptor(input.dataType(),
-                                                        input.format(),
+    output_ = std::make_unique<Tensor>(TensorDescriptor(input_->dataType(),
+                                                        input_->format(),
                                                         Size(on, oc, oh, ow)));
 
     chkCUDNN(cudnnGetConvolutionForwardAlgorithm(n.cudnn_,
-                                                 input.desc(),
+                                                 input_->desc(),
                                                  filter_desc_,
                                                  conv_desc_,
                                                  output_->desc(),
@@ -99,7 +99,7 @@ public:
 
     size_t workspace_bytes;
     chkCUDNN(cudnnGetConvolutionForwardWorkspaceSize(n.cudnn_,
-                                                     input.desc(),
+                                                     input_->desc(),
                                                      filter_desc_,
                                                      conv_desc_,
                                                      output_->desc(),
@@ -109,8 +109,8 @@ public:
     workspace_size_ = std::max(workspace_size_, workspace_bytes);
 
 
-    bias_ = std::make_unique<Tensor>(TensorDescriptor(input.dataType(),
-                                                      input.format(),
+    bias_ = std::make_unique<Tensor>(TensorDescriptor(input_->dataType(),
+                                                      input_->format(),
                                                       Size(1, oc, 1, 1)));
     bias_->loadOrRandomize(id, "bias", 0);
   }
@@ -127,22 +127,20 @@ public:
   std::string name() const override {
     std::stringstream ss;
 
-    ss << "Convolution " << input_.name()
+    ss << "Convolution " << input_->name()
        << " x " << kernel_.name()
        << " (>" << fwdalgostr(conv_fwd_algo_)
        <<  ") => " << output_->name();
     return ss.str();
   }
 
-  const Tensor *forward(const Network &n,
-                        const Tensor &input,
-                        bool inference) override {
+  void forward(const Network &n) override {
 
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnConvolutionForward(n.cudnn_, &alpha,
-                                     input.desc(),
-                                     input.deviceMem(),
+                                     input_->desc(),
+                                     input_->deviceMem(),
                                      filter_desc_,
                                      kernel_.deviceMem(),
                                      conv_desc_,
@@ -155,13 +153,11 @@ public:
     chkCUDNN(cudnnAddTensor(n.cudnn_,
                             &alpha, bias_->desc(), bias_->deviceMem(),
                             &alpha, output_->desc(), output_->deviceMem()));
-
-    return output_.get();
   }
 
 protected:
 
-  const TensorDescriptor input_;
+  const Tensor *input_;
   const Size kernel_size_;
 
   Tensor kernel_;
@@ -186,14 +182,14 @@ public:
                       int filter_size,
                       int stride,
                       int padding,
-                      const TensorDescriptor &input,
+                      const Layer &prev,
                       const InitData &id,
                       const Network &n)
-    : Convolution(activation_maps, filter_size,
-                  stride, padding, input, id, n)
-    , input_grad_(input)
+    : Convolution(activation_maps, filter_size, stride, padding, prev, id, n)
+    , input_grad_(prev.gradient())
     , kernel_grad_(TensorDescriptor(kernel_))
     , bias_grad_(TensorDescriptor(*bias_))
+    , output_grad_(*output_)
     , kernel_optimizer_(n.makeOptimizer(kernel_))
     , bias_optimizer_(n.makeOptimizer(*bias_))
   {
@@ -201,7 +197,7 @@ public:
                                                       filter_desc_,
                                                       output_->desc(),
                                                       conv_desc_,
-                                                      input_grad_.desc(),
+                                                      input_->desc(),
                                                       CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST,
                                                       0,
                                                       &bwd_data_algo_));
@@ -213,14 +209,14 @@ public:
                                                           filter_desc_,
                                                           output_->desc(),
                                                           conv_desc_,
-                                                          input_grad_.desc(),
+                                                          input_->desc(),
                                                           bwd_data_algo_,
                                                           &workspace_bytes));
 
     workspace_size_ = std::max(workspace_size_, workspace_bytes);
 
     chkCUDNN(cudnnGetConvolutionBackwardFilterAlgorithm(n.cudnn_,
-                                                        input_grad_.desc(),
+                                                        input_->desc(),
                                                         output_->desc(),
                                                         conv_desc_,
                                                         filter_desc_,
@@ -229,7 +225,7 @@ public:
                                                         &bwd_filter_algo_));
 
     chkCUDNN(cudnnGetConvolutionBackwardFilterWorkspaceSize(n.cudnn_,
-                                                            input_grad_.desc(),
+                                                            input_->desc(),
                                                             output_->desc(),
                                                             conv_desc_,
                                                             filter_desc_,
@@ -241,23 +237,22 @@ public:
 
 
 
-  const Tensor *backprop(const Network &n,
-                         const Tensor &input,
-                         const Tensor &dy,
-                         unsigned int iteration) override {
+  void backprop(const Network &n) override {
 
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnConvolutionBackwardBias(n.cudnn_, &alpha,
-                                          dy.desc(), dy.deviceMem(),
+                                          output_grad_.desc(),
+                                          output_grad_.deviceMem(),
                                           &beta,
                                           bias_grad_.desc(),
                                           bias_grad_.deviceMem()));
 
     chkCUDNN(cudnnConvolutionBackwardFilter(n.cudnn_, &alpha,
-                                            input.desc(),
-                                            input.deviceMem(),
-                                            dy.desc(), dy.deviceMem(),
+                                            input_->desc(),
+                                            input_->deviceMem(),
+                                            output_grad_.desc(),
+                                            output_grad_.deviceMem(),
                                             conv_desc_,
                                             bwd_filter_algo_,
                                             n.workspace_, n.workspace_size_,
@@ -265,32 +260,37 @@ public:
                                             filter_desc_,
                                             kernel_grad_.deviceMem()));
 
-    chkCUDNN(cudnnConvolutionBackwardData(n.cudnn_, &alpha,
-                                          filter_desc_,
-                                          kernel_.deviceMem(),
-                                          dy.desc(), dy.deviceMem(),
-                                          conv_desc_,
-                                          bwd_data_algo_,
-                                          n.workspace_, n.workspace_size_,
-                                          &beta,
-                                          input_grad_.desc(),
-                                          input_grad_.deviceMem()));
+    if(input_grad_ != NULL) {
+      chkCUDNN(cudnnConvolutionBackwardData(n.cudnn_, &alpha,
+                                            filter_desc_,
+                                            kernel_.deviceMem(),
+                                            output_grad_.desc(),
+                                            output_grad_.deviceMem(),
+                                            conv_desc_,
+                                            bwd_data_algo_,
+                                            n.workspace_, n.workspace_size_,
+                                            &beta,
+                                            input_grad_->desc(),
+                                            input_grad_->deviceMem()));
+    }
 
-    kernel_optimizer_->optimize(kernel_, kernel_grad_, n, iteration);
-    bias_optimizer_->optimize(*bias_, bias_grad_, n, iteration);
-
-    return &input_grad_;
+    kernel_optimizer_->optimize(kernel_, kernel_grad_, n);
+    bias_optimizer_->optimize(*bias_, bias_grad_, n);
   }
 
+
+  Tensor *gradient() const {
+    return (Tensor *)&output_grad_;
+  }
 
 private:
   cudnnConvolutionBwdDataAlgo_t bwd_data_algo_;
   cudnnConvolutionBwdFilterAlgo_t bwd_filter_algo_;
 
-  const Tensor input_grad_;
+  const Tensor *input_grad_;
   const Tensor kernel_grad_;
   const Tensor bias_grad_;
-
+  const Tensor output_grad_;
 
   std::unique_ptr<Optimizer> kernel_optimizer_;
   std::unique_ptr<Optimizer> bias_optimizer_;
@@ -303,18 +303,18 @@ std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int filter_size,
                                        int stride,
                                        int padding,
-                                       const TensorDescriptor &input,
+                                       const Layer &prev,
                                        const InitData &id,
                                        const Network &n)
 
 {
   if(n.backprop_) {
     return std::make_shared<ConvolutionBackProp>(activation_maps, filter_size,
-                                                 stride, padding, input,
+                                                 stride, padding, prev,
                                                  id, n);
   } else {
     return std::make_shared<Convolution>(activation_maps, filter_size,
-                                         stride, padding, input, id, n);
+                                         stride, padding, prev, id, n);
   }
 }
 

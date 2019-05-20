@@ -44,9 +44,9 @@ public:
     chkCuda(cudaFree(temp_));
   }
 
-  void optimize(Tensor &x, const Tensor &grad, const Network &n,
-                unsigned int iter) override {
+  void optimize(Tensor &x, const Tensor &grad, const Network &n) override {
 
+    const unsigned int iter = n.iteration_;
     const float b1t = 1.0 / (1.0 - pow(ADAM_B1, 1 + iter));
     const float b2t = 1.0 / (1.0 - pow(ADAM_B2, 1 + iter));
     float alpha = -0.001 * powf(1.0 + 0.0001 * iter, -0.75);

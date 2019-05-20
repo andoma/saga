@@ -13,10 +13,11 @@ public:
   GradientDescent(const Size &s, const Network &net)
   {}
 
-  void optimize(Tensor &x, const Tensor &grad, const Network &n,
-                unsigned int iter) override {
+  void optimize(Tensor &x, const Tensor &grad, const Network &n) override {
 
     assert(x == grad);
+
+    const int iter = n.iteration_;
 
     const float learning_rate = 0.01 * powf(1.0 + 0.01 * iter, -0.75);
     const float alpha = -learning_rate;

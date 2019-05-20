@@ -10,13 +10,14 @@ class DropoutBackProp : public Layer {
 
 public:
   DropoutBackProp(float prob,
-                  const TensorDescriptor &input,
+                  const Layer &prev,
                   const Network &n)
-    : input_(input)
-    , input_grad_(input)
-    , output_(input)
+    : input_(prev.output())
+    , input_grad_(prev.gradient())
+    , output_(*input_)
+    , output_grad_(*input_)
   {
-    chkCUDNN(cudnnDropoutGetReserveSpaceSize(input.desc(), &reserve_size_));
+    chkCUDNN(cudnnDropoutGetReserveSpaceSize(input_->desc(), &reserve_size_));
 
     chkCuda(cudaMalloc(&reserve_, reserve_size_));
 
@@ -28,45 +29,46 @@ public:
                                        states_, states_size_, 0)); //rand()));
   }
 
-  const Tensor *forward(const Network &n,
-                        const Tensor &input,
-                        bool inference) override {
-    if(inference) {
-      return &input;
+  void forward(const Network &n) override {
+
+    if(n.inference_) {
+      output_ = *input_;
+      return;
     }
+
     chkCUDNN(cudnnDropoutForward(n.cudnn_, desc_,
-                                 input.desc(), input.deviceMem(),
+                                 input_->desc(), input_->deviceMem(),
                                  output_.desc(), output_.deviceMem(),
                                  reserve_, reserve_size_));
-    return &output_;
   }
 
-  const Tensor *backprop(const Network &n,
-                         const Tensor &input,
-                         const Tensor &dy,
-                         unsigned int iteration) override {
+  void backprop(const Network &n) override {
 
     chkCUDNN(cudnnDropoutBackward(n.cudnn_, desc_,
-                                  dy.desc(), dy.deviceMem(),
-                                  input_grad_.desc(), input_grad_.deviceMem(),
+                                  output_grad_.desc(), output_grad_.deviceMem(),
+                                  input_grad_->desc(), input_grad_->deviceMem(),
                                   reserve_, reserve_size_));
-    return &input_grad_;
   }
 
   const Tensor *output() const override {
     return &output_;
   }
 
+  Tensor *gradient() const {
+    return (Tensor *)&output_grad_;
+  }
+
   std::string name() const override {
     std::stringstream ss;
-    ss << "Dropout " << input_.name() << " => " << output_.name();
+    ss << "Dropout " << input_->name() << " => " << output_.name();
     return ss.str();
   }
 
-  const TensorDescriptor input_;
-  Tensor input_grad_;
+  const Tensor *input_;
+  const Tensor *input_grad_;
 
   Tensor output_;
+  Tensor output_grad_;
 
   cudnnDropoutDescriptor_t desc_;
   size_t reserve_size_;
@@ -79,11 +81,11 @@ public:
 
 
 std::shared_ptr<Layer> makeDropout(float prob,
-                                   const TensorDescriptor &input,
+                                   const Layer &prev,
                                    const Network &n)
 {
   if(n.backprop_)
-    return std::make_shared<DropoutBackProp>(prob, input, n);
+    return std::make_shared<DropoutBackProp>(prob, prev, n);
   else
     abort(); // Dropout in inference mode make no sense
 }
