@@ -25,7 +25,7 @@ public:
                                CUDNN_TENSOR_NCHW,
                                Size(input_->n, num_outputs, 1, 1)))
   {
-    weights_.loadOrRandomize(id, "weights", sqrt(1.0 / num_inputs_));
+    weights_.loadOrRandomize(id, "weights", sqrt(2.0 / num_inputs_));
     bias_.loadOrRandomize(id, "bias", 0);
   }
 

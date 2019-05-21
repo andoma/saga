@@ -56,7 +56,7 @@ public:
 
     const auto data_type = input_->dataType();
 
-    kernel_.loadOrRandomize(id, "weights", sqrt(1.0 / (input_->c *
+    kernel_.loadOrRandomize(id, "weights", sqrt(2.0 / (input_->c *
                                                        filter_size *
                                                        filter_size)));
 
