@@ -14,6 +14,7 @@ NVCC := /usr/local/cuda-10.1/bin/nvcc
 
 SRCS += main.cpp \
 	test/mnist.cpp \
+	test/test_concat.cpp \
 
 SRCS += ${SAGA_SRCS}
 

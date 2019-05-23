@@ -83,12 +83,17 @@ std::unique_ptr<Optimizer> Network::makeOptimizer(const Size &s) const {
 class Input : public Layer {
 
 public:
-  Input(const Tensor *input)
+  Input(const Tensor *input, bool with_grad)
     : output_(input)
+    , output_grad_(with_grad ? std::make_unique<Tensor>(*input) : nullptr)
   {}
 
   const Tensor *output() const override {
     return output_;
+  }
+
+  Tensor *gradient() const override {
+    return output_grad_.get();
   }
 
   std::string name() const override {
@@ -97,15 +102,17 @@ public:
     return ss.str();
   }
 
-  void forward(const Network &n) {}
+  void forward(const Network &n) {
+  }
 
 private:
   const Tensor *output_;
+  std::unique_ptr<Tensor> output_grad_;
 };
 
-std::shared_ptr<Layer> makeInput(const Tensor *t)
+std::shared_ptr<Layer> makeInput(const Tensor *t, bool with_grad)
 {
-  return std::make_shared<Input>(t);
+  return std::make_shared<Input>(t, with_grad);
 }
 
 

@@ -268,7 +268,11 @@ std::shared_ptr<Layer> makeDropout(float prob,
                                    const Layer &prev,
                                    const Network &n);
 
-std::shared_ptr<Layer> makeInput(const Tensor *input);
+std::shared_ptr<Layer> makeInput(const Tensor *input,
+                                 bool withGradient = false);
+
+std::shared_ptr<Layer> makeConcat(const std::vector<const Layer *> &prevs,
+                                  const Network &n);
 
 // Optimizers
 
