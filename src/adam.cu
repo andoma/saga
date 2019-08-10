@@ -37,6 +37,7 @@ public:
   {
     const size_t bytes = s.elements() * 2 * sizeof(float);
     chkCuda(cudaMalloc(&temp_, bytes));
+    chkCuda(cudaMemset(temp_, 0, bytes));
   }
 
   ~Adam()
