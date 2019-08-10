@@ -1,8 +1,8 @@
 
-
 SAGA_SRCS += \
 	src/network.cpp \
 	src/tensor.cpp \
+	src/image.cpp \
 	src/conv.cpp \
 	src/fc.cpp \
 	src/dropout.cpp \

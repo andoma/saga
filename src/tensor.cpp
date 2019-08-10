@@ -82,6 +82,43 @@ void Tensor::save(float *data) const
 }
 
 
+std::vector<unsigned int> Tensor::prediction() const
+{
+  float values[n * c];
+
+  std::vector<unsigned int> r;
+  r.reserve(n);
+
+  cudaMemcpy((void *)values, device_mem_, bytes_, cudaMemcpyDeviceToHost);
+
+  for(unsigned int i = 0; i < n; i++) {
+    const float *v = values + i * c;
+    unsigned int label = 0;
+    for(unsigned int j = 1; j < c; j++) {
+      if(v[j] > v[label]) {
+        label = j;
+      }
+    }
+    r.push_back(label);
+  }
+  return r;
+}
+
+
+float Tensor::loss(const unsigned int *labels) const
+{
+  float values[n * c];
+  cudaMemcpy((void *)values, device_mem_, bytes_, cudaMemcpyDeviceToHost);
+
+  float loss_sum = 0;
+  for(unsigned int i = 0; i < n; i++) {
+    const float *v = values + i * c;
+    loss_sum += -log(v[labels[i]]);
+  }
+  return loss_sum / n;
+}
+
+
 void Tensor::load(const float *data)
 {
   cudaMemcpy(device_mem_, (const void *)data,

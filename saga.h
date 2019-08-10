@@ -137,6 +137,12 @@ public:
 
   void save(float *data) const;
 
+  void savePng(const char *filename, int num = -1, int channel = -1) const;
+
+  std::vector<unsigned int> prediction() const;
+
+  float loss(const unsigned int *labels) const;
+
   void load(const std::vector<float> &data);
 
   void load(const uint8_t **data);
