@@ -216,28 +216,30 @@ mnist_main(int argc, char **argv)
 
     // Test
     int correct = 0;
+    float loss_sum = 0;
     for(size_t i = 0; i < test_inputs; i += batch_size) {
       loadInputTensor(input, &test_data[i]);
       net.forward(true);
 
-      float result[batch_size * labels];
-      tail->output()->save(result);
-      for(size_t n = 0; n < batch_size; n++) {
-        unsigned int label = 0;
-        for(int c = 1; c < labels; c++) {
-          if(result[n * labels + c] > result[n * labels + label]) {
-            label = c;
-          }
-        }
-        if(label == test_data[i + n].label)
+      unsigned int labels[batch_size];
+      for(size_t j = 0; j < batch_size; j++) {
+        labels[j] = test_data[i + j].label;
+      }
+
+      loss_sum += tail->output()->loss(labels);
+
+      const auto prediction = tail->output()->prediction();
+      for(size_t j = 0; j < batch_size; j++) {
+        if(prediction[j] == test_data[i + j].label)
           correct++;
       }
     }
     const int64_t t2 = get_ts();
-    printf("%3.3f%% Train:%.3fs Test:%.3fs\n",
+    printf("%3.3f%% Train:%.3fs Test:%.3fs Loss:%f\n",
            100.0 * correct / test_inputs,
            (t1 - t0) / 1e6,
-           (t2 - t1) / 1e6);
+           (t2 - t1) / 1e6,
+           loss_sum / (test_inputs / batch_size));
   }
 
   return 0;
