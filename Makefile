@@ -15,10 +15,11 @@ NVCC := /usr/local/cuda-10.1/bin/nvcc
 SRCS += main.cpp \
 	test/mnist.cpp \
 	test/test_concat.cpp \
+	test/test_onnx.cpp \
 
 SRCS += ${SAGA_SRCS}
 
-LDFLAGS += -lnvidia-ml -lcublas -lcudnn -lpthread
+LDFLAGS += -lnvidia-ml -lcublas -lcudnn -lprotobuf -lpthread
 
 
 O=build

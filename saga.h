@@ -180,6 +180,8 @@ public:
 
   float peak() const;
 
+  static std::shared_ptr<Tensor> loadFromPB(const char *path, bool h);
+
 private:
   void *device_mem_;
   size_t bytes_;

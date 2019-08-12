@@ -12,3 +12,5 @@ SAGA_SRCS += \
 	src/concat.cpp \
 	src/gd.cpp \
 	src/adam.cu \
+	src/onnx.cpp \
+	src/onnx.proto3.pb.cpp \
