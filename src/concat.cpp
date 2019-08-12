@@ -48,6 +48,8 @@ public:
 
     for(size_t i = 1; i < prevs.size(); i++) {
       channels += prevs[i]->output()->c;
+      assert(prevs[i]->output()->w == t0->w);
+      assert(prevs[i]->output()->h == t0->h);
     }
 
     Size s(t0->n, channels, t0->h, t0->w);
