@@ -22,8 +22,6 @@ test_concat_main(int argc, char **argv)
 
   net.setOptimizer(&makeAdamOptimizer);
 
-  const Layer *tail;
-
   float test[24+16];
   for(int i = 0; i < 24; i++)
     test[i] = i;
@@ -31,7 +29,7 @@ test_concat_main(int argc, char **argv)
   Tensor i1(TensorDescriptor(CUDNN_DATA_FLOAT,
                              CUDNN_TENSOR_NCHW,
                              Size(batch_size, 3, 2, 2)));
-  const Layer *c1 = net.addLayer(makeInput(&i1, true));
+  auto c1 = net.addLayer(makeInput(&i1, true));
   i1.load(test);
   c1->output()->dump("c1");
 
@@ -44,10 +42,10 @@ test_concat_main(int argc, char **argv)
     test[i] = 100 + i;
 
   i2.load(test);
-  const Layer *c2 = net.addLayer(makeInput(&i2, true));
+  auto c2 = net.addLayer(makeInput(&i2, true));
   c2->output()->dump("c2");
 
-  tail = net.addLayer(makeConcat({c1, c2}, net));
+  auto tail = net.addLayer(makeConcat({c1.get(), c2.get()}, net));
 
   net.forward(true);
 

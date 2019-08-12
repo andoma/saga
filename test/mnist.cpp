@@ -176,9 +176,7 @@ mnist_main(int argc, char **argv)
                                 CUDNN_TENSOR_NCHW,
                                 Size(batch_size, 1, 28, 28)));
 
-  const Layer *tail;
-
-  tail = net.addLayer(makeInput(&input));
+  auto tail = net.addLayer(makeInput(&input));
 
   tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, {}, net));
   tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
@@ -191,7 +189,7 @@ mnist_main(int argc, char **argv)
   tail = net.addLayer(makeFullyConnected(1024, *tail, {}, net));
   tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 
-  tail = net.addLayer(makeDropout(0.25, *tail, net));
+  tail = net.addLayer(makeDropout(0.25, tail, net));
 
   tail = net.addLayer(makeFullyConnected(labels, *tail, {}, net));
   tail = net.addLayer(makeSoftmax(*tail, net));

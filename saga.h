@@ -231,7 +231,14 @@ class Network {
 public:
   Network(int batch_size, bool backprop);
 
-  const Layer *addLayer(std::shared_ptr<Layer> layer);
+  bool load(const char *path);
+
+  std::shared_ptr<Layer> addLayer(std::shared_ptr<Layer> layer);
+
+  std::shared_ptr<Layer> nameLayer(std::shared_ptr<Layer> layer,
+                                   const std::string &name);
+
+  std::shared_ptr<Layer> findLayer(const std::string &name) const;
 
   void forward(bool inference);
 
@@ -245,6 +252,8 @@ public:
   std::unique_ptr<Optimizer> makeOptimizer(const Size &s) const;
 
   std::vector<std::shared_ptr<Layer>> layers_;
+
+  std::unordered_map<std::string, std::shared_ptr<Layer>> named_layers_;
 
   std::function<std::unique_ptr<Optimizer>(const Size &s,
                                            const Network &net)> optimizer_factory_;
@@ -291,7 +300,7 @@ std::shared_ptr<Layer> makeSoftmax(const Layer &prev,
                                    const Network &n);
 
 std::shared_ptr<Layer> makeDropout(float prob,
-                                   const Layer &prev,
+                                   std::shared_ptr<Layer> prev,
                                    const Network &n);
 
 std::shared_ptr<Layer> makeInput(const Tensor *input,

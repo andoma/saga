@@ -46,14 +46,30 @@ Network::Network(int batch_size, bool backprop)
 
 
 
-const Layer *Network::addLayer(std::shared_ptr<Layer> layer)
+std::shared_ptr<Layer> Network::addLayer(std::shared_ptr<Layer> layer)
 {
   workspace_size_ = std::max(workspace_size_, layer->workspaceSize());
   layers_.push_back(layer);
-  printf("Added layer: %s %p\n", layer->name().c_str(), layer->gradient());
-  return layer.get();
+  printf("Added layer: %s\n", layer->name().c_str());
+  return layer;
 }
 
+
+std::shared_ptr<Layer> Network::nameLayer(std::shared_ptr<Layer> layer,
+                                          const std::string &name)
+{
+  named_layers_[name] = layer;
+  return layer;
+}
+
+
+std::shared_ptr<Layer> Network::findLayer(const std::string &name) const
+{
+  auto r = named_layers_.find(name);
+  if(r == named_layers_.end())
+    return nullptr;
+  return r->second;
+}
 
 void Network::forward(bool inference)
 {

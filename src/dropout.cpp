@@ -81,13 +81,14 @@ public:
 
 
 std::shared_ptr<Layer> makeDropout(float prob,
-                                   const Layer &prev,
+                                   std::shared_ptr<Layer> prev,
                                    const Network &n)
 {
-  if(n.backprop_)
-    return std::make_shared<DropoutBackProp>(prob, prev, n);
-  else
-    abort(); // Dropout in inference mode make no sense
+  if(n.backprop_) {
+    return std::make_shared<DropoutBackProp>(prob, *prev, n);
+  } else {
+    return nullptr;
+  }
 }
 
 
