@@ -39,6 +39,13 @@ struct Size {
     , w(w)
   {}
 
+  Size(const std::vector<int64_t> &v)
+    : n(v.size() > 0 ? v[0] : 1)
+    , c(v.size() > 1 ? v[1] : 1)
+    , h(v.size() > 2 ? v[2] : 1)
+    , w(v.size() > 3 ? v[3] : 1)
+  {}
+
   Size(const Size &s)
     : n(s.n)
     , c(s.c)
