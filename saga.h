@@ -21,7 +21,8 @@ enum class ActivationMode {
 };
 
 enum class PoolingMode {
-  MAX
+  MAX,
+  AVERAGE
 };
 
 

@@ -14,11 +14,21 @@ public:
           const Layer &prev)
     : input_(prev.output())
   {
-    assert(mode == PoolingMode::MAX);
+    cudnnPoolingMode_t cudnn_mode;
+    switch(mode) {
+    case PoolingMode::MAX:
+      cudnn_mode = CUDNN_POOLING_MAX;
+      break;
+    case PoolingMode::AVERAGE:
+      cudnn_mode = CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING;
+      break;
+    default:
+      abort();
+    }
 
     chkCUDNN(cudnnCreatePoolingDescriptor(&desc_));
     chkCUDNN(cudnnSetPooling2dDescriptor(desc_,
-                                         CUDNN_POOLING_MAX,
+                                         cudnn_mode,
                                          CUDNN_PROPAGATE_NAN,
                                          size, size,
                                          0, 0,
