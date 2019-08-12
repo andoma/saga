@@ -162,6 +162,12 @@ void Tensor::load(const TensorValues &v)
   cudaMemcpy(device_mem_, v.data(), bytes_, cudaMemcpyHostToDevice);
 }
 
+void Tensor::load(const void *data, size_t size)
+{
+  assert(size == bytes_);
+  cudaMemcpy(device_mem_, data, bytes_, cudaMemcpyHostToDevice);
+}
+
 
 void Tensor::fill(float value)
 {
