@@ -96,22 +96,31 @@ private:
 
 
 
-
-
-class TensorValues : public Size {
-
-  TensorValues(const Size &s)
-    : Size(s)
-    , data_(elements())
+class TensorValues {
+public:
+  TensorValues(const void *data, size_t size)
+    : data_(data)
+    , size_(size)
   {}
 
-  const std::vector<float> data_;
+  TensorValues(std::vector<float> floats)
+    : floats_(floats)
+    , data_((const void *)&floats_[0])
+    , size_(floats.size() * sizeof(float))
+  {
+  }
 
-public:
-  const float *data() const { return &data_[0]; }
+  const void *data() const { return data_; }
+  size_t size() const { return size_; }
+
+private:
+  std::vector<float> floats_;
+  const void *data_;
+  size_t size_;
+
 };
 
-typedef std::unordered_map<std::string, const TensorValues> InitData;
+typedef std::unordered_map<std::string, std::shared_ptr<TensorValues>> InitData;
 
 
 
@@ -150,6 +159,8 @@ public:
   void load(const float *data);
 
   void load(const uint8_t *data);
+
+  void load(const void *data, size_t size);
 
   void load(const TensorValues &v);
 

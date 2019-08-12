@@ -158,7 +158,7 @@ void Tensor::load(__restrict__ const uint8_t **data)
 
 void Tensor::load(const TensorValues &v)
 {
-  assert(v == *this);
+  assert(v.size() == bytes_);
   cudaMemcpy(device_mem_, v.data(), bytes_, cudaMemcpyHostToDevice);
 }
 
@@ -199,7 +199,7 @@ void Tensor::loadOrRandomize(InitData id, const std::string &name, float sigma)
 {
   auto it = id.find(name);
   if(it != id.end()) {
-    load(it->second);
+    load(*it->second.get());
   } else {
     randomize(sigma);
   }
