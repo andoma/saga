@@ -4,6 +4,7 @@ SAGA_SRCS += \
 	src/tensor.cpp \
 	src/image.cpp \
 	src/conv.cpp \
+	src/batchnorm.cpp \
 	src/fc.cpp \
 	src/dropout.cpp \
 	src/activation.cpp \

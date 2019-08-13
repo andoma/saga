@@ -241,6 +241,37 @@ make_initializer(const TensorMap &initializers, const string &initializername,
 
 
 static shared_ptr<Layer>
+onnx_add_batchnorm(Network &n,
+                   const onnx::NodeProto &np,
+                   const AttributeMap &attribs,
+                   const TensorMap &initializers)
+{
+  assert(np.input_size() == 5);
+
+  auto x = n.findLayer(np.input(0));
+  if(!x) {
+    fprintf(stderr, "Can't find input layer %s\n", np.input(0).c_str());
+    return NULL;
+  }
+
+  auto scale    = make_initializer(initializers, np.input(1), 1);
+  auto bias     = make_initializer(initializers, np.input(2), 1);
+  auto mean     = make_initializer(initializers, np.input(3), 1);
+  auto variance = make_initializer(initializers, np.input(4), 1);
+
+  float epsilon = attribs.getFloat("epsilon", 1e-05);
+
+  printf("scale:    %s\n", scale->name().c_str());
+  printf(" bias:    %s\n", bias->name().c_str());
+  printf(" mean:    %s\n", mean->name().c_str());
+  printf("variance: %s\n", variance->name().c_str());
+
+  return n.addLayer(makeBatchNorm(epsilon, *x.get(), n,
+                                  scale, bias, mean, variance));
+}
+
+
+static shared_ptr<Layer>
 onnx_add_conv(Network &n,
               const onnx::NodeProto &np,
               const AttributeMap &attribs,
@@ -448,6 +479,8 @@ loadgraph(Network &n, const onnx::GraphProto &gp)
     const auto& node_type = np.op_type();
     if(node_type == "Conv") {
       l = onnx_add_conv(n, np, attribs, initializers);
+    } else if(node_type == "BatchNormalization") {
+      l = onnx_add_batchnorm(n, np, attribs, initializers);
     } else if(node_type == "Relu") {
       l = onnx_add_relu(n, np, attribs, initializers);
     } else if(node_type == "MaxPool") {

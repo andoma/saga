@@ -304,6 +304,14 @@ std::shared_ptr<Layer> makeInput(const Tensor *input,
 std::shared_ptr<Layer> makeConcat(const std::vector<const Layer *> &prevs,
                                   const Network &n);
 
+std::shared_ptr<Layer> makeBatchNorm(double epsilon,
+                                     const Layer &prev,
+                                     const Network &n,
+                                     std::shared_ptr<Tensor> scale,
+                                     std::shared_ptr<Tensor> bias,
+                                     std::shared_ptr<Tensor> mean,
+                                     std::shared_ptr<Tensor> variance);
+
 // Optimizers
 
 std::unique_ptr<Optimizer> makeAdamOptimizer(const Size &s,
