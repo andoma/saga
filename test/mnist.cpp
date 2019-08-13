@@ -178,20 +178,20 @@ mnist_main(int argc, char **argv)
 
   auto tail = net.addLayer(makeInput(&input));
 
-  tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, {}, net));
+  tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, net));
   tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
   tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 2, *tail, net));
 
-  tail = net.addLayer(makeConvolution(64, 5, 1, 0, *tail, {}, net));
+  tail = net.addLayer(makeConvolution(64, 5, 1, 0, *tail, net));
   tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
   tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 2, *tail, net));
 
-  tail = net.addLayer(makeFullyConnected(1024, *tail, {}, net));
+  tail = net.addLayer(makeFullyConnected(1024, *tail, net));
   tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 
   tail = net.addLayer(makeDropout(0.25, tail, net));
 
-  tail = net.addLayer(makeFullyConnected(labels, *tail, {}, net));
+  tail = net.addLayer(makeFullyConnected(labels, *tail, net));
   tail = net.addLayer(makeSoftmax(*tail, net));
 
   unsigned int iteration = 0;

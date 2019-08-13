@@ -192,35 +192,51 @@ public:
 };
 
 
+static shared_ptr<Tensor>
+tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
+{
+  if(tp.dims_size() > 4) {
+    fprintf(stderr, "Unable to load %s: Tensor of dimension %d not supported\n",
+            tp.name().c_str(), tp.dims_size());
+    return nullptr;
+  }
 
-static vector<int>
-make_initializer(InitData &id, const string &idname,
-                 const TensorMap &initializers, const string &initializername)
+  auto dims = std::vector<unsigned int>(tp.dims().begin(), tp.dims().end());
+
+  for(int i = 0; i < first_axis; i++)
+    dims.insert(dims.begin(), 1);
+
+  assert(tp.data_type() == onnx::TensorProto_DataType_FLOAT);
+
+  auto t = make_shared<Tensor>(TensorDescriptor(CUDNN_DATA_FLOAT,
+                                                CUDNN_TENSOR_NCHW,
+                                                Size(dims)));
+
+  if(tp.raw_data().size()) {
+    t->load((const void *)&tp.raw_data()[0], tp.raw_data().size());
+  } else if(tp.float_data_size()) {
+    t->load(std::vector<float>(tp.float_data().begin(), tp.float_data().end()));
+  } else {
+    fprintf(stderr, "Unable to load %s: Can't load data format (please fix)\n",
+            tp.name().c_str());
+    return nullptr;
+  }
+  return t;
+}
+
+
+
+
+static shared_ptr<Tensor>
+make_initializer(const TensorMap &initializers, const string &initializername,
+                 int first_axis = 0)
 {
   auto x = initializers.find(initializername);
   if(x == initializers.end()) {
     fprintf(stderr, "Unable to find %s", initializername.c_str());
     exit(1);
   }
-
-  const auto &ini = *x->second;
-  assert(ini.data_type() == onnx::TensorProto_DataType_FLOAT);
-
-  shared_ptr<TensorValues> tv;
-
-  if(ini.float_data_size()) {
-    tv = make_shared<TensorValues>(vector<float>(ini.float_data().begin(),
-                                                 ini.float_data().end()));
-  } else if(ini.raw_data().size()) {
-    tv = make_shared<TensorValues>((const void *)&ini.raw_data()[0],
-                                   ini.raw_data().size());
-  } else {
-    fprintf(stderr, "%s have no data we can parse\n",
-            initializername.c_str());
-    exit(1);
-  }
-  id[idname] = tv;
-  return vector<int>(ini.dims().begin(), ini.dims().end());
+  return tensor_from_TensorProto(*x->second, first_axis);
 }
 
 
@@ -244,14 +260,12 @@ onnx_add_conv(Network &n,
     assert(d == 1);
   }
 
-  InitData id;
-  auto ws = make_initializer(id, "weights", initializers, np.input(1));
-  const int feature_maps = ws[0];
-  assert(ws[2] == ws[3]); // Only square filters are supported
-  const int kernel_size = ws[2];
+  auto weights = make_initializer(initializers, np.input(1));
+  const int feature_maps = weights->n;
+  const int kernel_size = weights->w;
+  assert(weights->w == weights->h); // Only square kernels for now
 
-  if(with_bias)
-    make_initializer(id, "bias", initializers, np.input(2));
+  auto bias = with_bias ? make_initializer(initializers, np.input(2), 1) : NULL;
 
   int pad = 0;
   auto pads = attribs.getInts("pads");
@@ -275,7 +289,7 @@ onnx_add_conv(Network &n,
   }
 
   return n.addLayer(makeConvolution(feature_maps, kernel_size, stride, pad,
-                                    *x.get(), id, n, with_bias));
+                                    *x.get(), n, weights, bias, with_bias));
 }
 
 
@@ -510,7 +524,7 @@ mapPBfile(const char *path)
 
 
 shared_ptr<Tensor>
-Tensor::loadFromPB(const char *path, bool hackit)
+Tensor::createFromPB(const char *path)
 {
   auto pb = mapPBfile(path);
   if(pb == NULL)
@@ -520,56 +534,7 @@ Tensor::loadFromPB(const char *path, bool hackit)
   if(!tp.ParseFromCodedStream(pb.get()))
     return nullptr;
 
-  if(tp.dims_size() > 4) {
-    fprintf(stderr, "Unable to load %s: Tensor of dimension %d not supported\n",
-            path, tp.dims_size());
-    return nullptr;
-  }
-
-  Size s = std::vector<int64_t>(tp.dims().begin(), tp.dims().end());
-  assert(tp.data_type() == onnx::TensorProto_DataType_FLOAT);
-
-  auto t = make_shared<Tensor>(TensorDescriptor(CUDNN_DATA_FLOAT,
-                                                CUDNN_TENSOR_NCHW,
-                                                s));
-
-  if(tp.raw_data().size()) {
-
-    if(hackit) {
-      float *copy = (float *)malloc(tp.raw_data().size());
-      size_t values = tp.raw_data().size() / sizeof(float);
-      memcpy((void *)copy,
-             (const void *)&tp.raw_data()[0], tp.raw_data().size());
-
-      size_t c = values / 3;
-      assert(c * 3 == values);
-      size_t o = 0;
-      for(size_t i = 0; i < c; i++) {
-        copy[i + o] = ((copy[i + o] / 255.0f) - 0.485f) / 0.229f;
-      }
-      o += c;
-      for(size_t i = 0; i < c; i++) {
-        copy[i + o] = ((copy[i + o] / 255.0f) - 0.456f) / 0.224f;
-      }
-      o += c;
-      for(size_t i = 0; i < c; i++) {
-        copy[i + o] = ((copy[i + o] / 255.0f) - 0.406f) / 0.225f;
-      }
-
-      t->load((const void *)copy, tp.raw_data().size());
-
-    } else {
-      t->load((const void *)&tp.raw_data()[0], tp.raw_data().size());
-    }
-
-  } else {
-    fprintf(stderr, "Unable to load %s: Protobuf contains data we cant parse\n",
-            path);
-    return nullptr;
-
-  }
-  fprintf(stderr, "Loaded tensor %s from %s\n", s.name().c_str(), path);
-  return t;
+  return tensor_from_TensorProto(tp);
 }
 
 

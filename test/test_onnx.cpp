@@ -14,7 +14,7 @@ test_onnx_main(int argc, char **argv)
     exit(1);
   }
 
-  auto input = Tensor::loadFromPB(argv[0], false);
+  auto input = Tensor::createFromPB(argv[0]);
   if(!input)
     exit(1);
 
@@ -26,7 +26,10 @@ test_onnx_main(int argc, char **argv)
 
   n.forward(false);
 
-  auto ref = Tensor::loadFromPB(argv[3], false);
+  auto out = n.layers_[n.layers_.size() - 1];
+  out->output()->dump("OUTPUT");
+
+  auto ref = Tensor::createFromPB(argv[3]);
   ref->dump("REFERENCE");
 
   return 0;

@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <functional>
 
+#include <assert.h>
 #include <cudnn.h>
 #include <cublas_v2.h>
 
@@ -39,7 +40,7 @@ struct Size {
     , w(w)
   {}
 
-  Size(const std::vector<int64_t> &v)
+  Size(const std::vector<unsigned int> &v)
     : n(v.size() > 0 ? v[0] : 1)
     , c(v.size() > 1 ? v[1] : 1)
     , h(v.size() > 2 ? v[2] : 1)
@@ -96,6 +97,8 @@ struct TensorDescriptor : public Size {
 
   std::string name() const;
 
+  Size strides() const;
+
 private:
   cudnnDataType_t data_type_;
   cudnnTensorFormat_t format_;
@@ -104,39 +107,13 @@ private:
 
 
 
-class TensorValues {
-public:
-  TensorValues(const void *data, size_t size)
-    : data_(data)
-    , size_(size)
-  {}
-
-  TensorValues(std::vector<float> floats)
-    : floats_(floats)
-    , data_((const void *)&floats_[0])
-    , size_(floats.size() * sizeof(float))
-  {
-  }
-
-  const void *data() const { return data_; }
-  size_t size() const { return size_; }
-
-private:
-  std::vector<float> floats_;
-  const void *data_;
-  size_t size_;
-
-};
-
-typedef std::unordered_map<std::string, std::shared_ptr<TensorValues>> InitData;
-
-
-
-
 class Tensor : public TensorDescriptor {
 
-
 public:
+
+  // Constructors
+
+  static std::shared_ptr<Tensor> createFromPB(const char *path);
 
   Tensor& operator=(Tensor const&);
 
@@ -146,19 +123,22 @@ public:
 
   ~Tensor();
 
-  void loadOrRandomize(InitData id, const std::string &name, float sigma);
+  void *deviceMem(void) {
+    if(device_mem_ == NULL)
+      upload();
+    return device_mem_;
+  };
 
-  void fill(float value);
-
-  void *deviceMem(void) const { return device_mem_; };
+  void *deviceMem(void) const {
+    assert(device_mem_ != NULL);
+    return device_mem_;
+  };
 
   void save(float *data) const;
 
   void savePng(const char *filename, int num = -1, int channel = -1) const;
 
-  std::vector<unsigned int> prediction() const;
-
-  float loss(const unsigned int *labels) const;
+  // Loaders
 
   void load(const std::vector<float> &data);
 
@@ -170,9 +150,13 @@ public:
 
   void load(const void *data, size_t size);
 
-  void load(const TensorValues &v);
+  //  void load(const TensorValues &v);
 
   void randomize(float sigma);
+
+  void fill(float value);
+
+  // Helpers
 
   void dump(const char *prefix, bool intensity = false) const;
 
@@ -180,11 +164,18 @@ public:
 
   float peak() const;
 
-  static std::shared_ptr<Tensor> loadFromPB(const char *path, bool h);
+  std::vector<unsigned int> prediction() const;
+
+  float loss(const unsigned int *labels) const;
+
 
 private:
   void *device_mem_;
+  //  void *host_mem_;
+
   size_t bytes_;
+
+  void upload(void);
 };
 
 
@@ -278,17 +269,19 @@ public:
 
 std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
                                           const Layer &prev,
-                                          const InitData &id,
-                                          const Network &n);
+                                          const Network &n,
+                                          std::shared_ptr<Tensor> weights = NULL,
+                                          std::shared_ptr<Tensor> bias = NULL);
 
 std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int filter_size,
                                        int stride,
                                        int padding,
                                        const Layer &prev,
-                                       const InitData &id,
                                        const Network &n,
-                                       bool bias = true);
+                                       std::shared_ptr<Tensor> weights = NULL,
+                                       std::shared_ptr<Tensor> bias = NULL,
+                                       bool have_bias = true);
 
 std::shared_ptr<Layer> makeActivation(ActivationMode mode, float a,
                                       const Layer &prev,

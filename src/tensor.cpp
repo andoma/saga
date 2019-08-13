@@ -155,13 +155,6 @@ void Tensor::load(__restrict__ const uint8_t **data)
 }
 
 
-
-void Tensor::load(const TensorValues &v)
-{
-  assert(v.size() == bytes_);
-  cudaMemcpy(device_mem_, v.data(), bytes_, cudaMemcpyHostToDevice);
-}
-
 void Tensor::load(const void *data, size_t size)
 {
   assert(size == bytes_);
@@ -198,17 +191,6 @@ void Tensor::randomize(float sigma)
     values[i] = generateGaussianNoise() * sigma;
   }
   load(values);
-}
-
-
-void Tensor::loadOrRandomize(InitData id, const std::string &name, float sigma)
-{
-  auto it = id.find(name);
-  if(it != id.end()) {
-    load(*it->second.get());
-  } else {
-    randomize(sigma);
-  }
 }
 
 
@@ -331,10 +313,12 @@ float Tensor::peak() const {
 }
 
 Tensor& Tensor::operator=(const Tensor& src) {
+  abort();
   assert(src.bytes_ == bytes_);
-
+#if 0
   chkCuda(cudaMemcpy(deviceMem(), src.deviceMem(),
                      bytes_, cudaMemcpyDeviceToDevice));
+#endif
 
   return *this;
 
@@ -342,4 +326,12 @@ Tensor& Tensor::operator=(const Tensor& src) {
 
 
 
+void Tensor::upload(void){
+  fprintf(stderr, "Please implement %s\n", __FUNCTION__);
+  abort();
+
 }
+
+
+}
+

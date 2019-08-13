@@ -3,6 +3,8 @@
 
 #include "common.h"
 
+using namespace std;
+
 namespace saga {
 
 
@@ -11,22 +13,33 @@ class FullyConnected : public Layer {
 public:
   FullyConnected(int num_outputs,
                  const Layer &prev,
-                 const InitData &id)
+                 shared_ptr<Tensor> weights,
+                 shared_ptr<Tensor> bias)
     : input_(prev.output())
     , num_inputs_(input_->c * input_->h * input_->w)
     , num_outputs_(num_outputs)
-    , weights_(TensorDescriptor(input_->dataType(),
-                                CUDNN_TENSOR_NCHW,
-                                Size(num_inputs_, num_outputs, 1, 1)))
-    , bias_(TensorDescriptor(input_->dataType(),
-                             CUDNN_TENSOR_NCHW,
-                             Size(1, num_outputs, 1, 1)))
     , output_(TensorDescriptor(input_->dataType(),
                                CUDNN_TENSOR_NCHW,
                                Size(input_->n, num_outputs, 1, 1)))
   {
-    weights_.loadOrRandomize(id, "weights", sqrt(2.0 / num_inputs_));
-    bias_.loadOrRandomize(id, "bias", 0);
+    if(weights != NULL) {
+      weights_ = weights;
+    } else {
+      weights_ = make_shared<Tensor>(TensorDescriptor(input_->dataType(),
+                                                      CUDNN_TENSOR_NCHW,
+                                                      Size(num_inputs_,
+                                                           num_outputs, 1, 1)));
+      weights_->randomize(sqrt(2.0 / num_inputs_));
+    }
+
+    if(bias != NULL) {
+      bias_ = bias;
+    } else {
+
+      bias_ = make_shared<Tensor>(TensorDescriptor(input_->dataType(),
+                                                   CUDNN_TENSOR_NCHW,
+                                                   Size(1, num_outputs, 1, 1)));
+    }
   }
 
 
@@ -50,13 +63,13 @@ public:
     chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_T, CUBLAS_OP_N,
                         num_outputs_, n.batch_size_, num_inputs_,
                         &alpha,
-                        (const float *)weights_.deviceMem(), num_inputs_,
+                        (const float *)weights_->deviceMem(), num_inputs_,
                         (const float *)input_->deviceMem(), num_inputs_,
                         &beta,
                         (float *)output_.deviceMem(), num_outputs_));
 
     chkCUDNN(cudnnAddTensor(n.cudnn_,
-                            &alpha, bias_.desc(), bias_.deviceMem(),
+                            &alpha, bias_->desc(), bias_->deviceMem(),
                             &alpha, output_.desc(), output_.deviceMem()));
   }
 
@@ -68,8 +81,9 @@ protected:
   const int num_inputs_;
   const int num_outputs_;
 
-  Tensor weights_;
-  Tensor bias_;
+  std::shared_ptr<Tensor> weights_;
+  std::shared_ptr<Tensor> bias_;
+
   Tensor output_;
 };
 
@@ -79,18 +93,19 @@ class FullyConnectedBackProp : public FullyConnected {
 public:
   FullyConnectedBackProp(int num_outputs,
                          const Layer &prev,
-                         const InitData &id,
-                         const Network &n)
-    : FullyConnected(num_outputs, prev, id)
+                         const Network &n,
+                         shared_ptr<Tensor> weights,
+                         shared_ptr<Tensor> bias)
+    : FullyConnected(num_outputs, prev, weights, bias)
     , input_grad_(prev.gradient())
-    , weights_grad_(TensorDescriptor(weights_))
-    , bias_grad_(TensorDescriptor(bias_))
+    , weights_grad_(TensorDescriptor(*weights_.get()))
+    , bias_grad_(TensorDescriptor(*bias_.get()))
     , batch_of_one_(TensorDescriptor(input_->dataType(),
                                      CUDNN_TENSOR_NCHW,
                                      Size(n.batch_size_, 1, 1, 1)))
     , output_grad_(output_)
-    , weights_optimizer_(n.makeOptimizer(weights_))
-    , bias_optimizer_(n.makeOptimizer(bias_))
+    , weights_optimizer_(n.makeOptimizer(*weights_.get()))
+    , bias_optimizer_(n.makeOptimizer(*bias_.get()))
   {
     batch_of_one_.fill(1.0f);
   }
@@ -119,14 +134,14 @@ public:
       chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
                           num_inputs_, n.batch_size_, num_outputs_,
                           &alpha,
-                          (const float *)weights_.deviceMem(), num_inputs_,
+                          (const float *)weights_->deviceMem(), num_inputs_,
                           (const float *)output_grad_.deviceMem(), num_outputs_,
                           &beta,
                           (float *)input_grad_->deviceMem(), num_inputs_));
     }
 
-    weights_optimizer_->optimize(weights_, weights_grad_, n);
-    bias_optimizer_->optimize(bias_, bias_grad_, n);
+    weights_optimizer_->optimize(*weights_.get(), weights_grad_, n);
+    bias_optimizer_->optimize(*bias_.get(), bias_grad_, n);
   }
 
   Tensor *gradient() const {
@@ -149,13 +164,15 @@ protected:
 
 std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
                                           const Layer &prev,
-                                          const InitData &id,
-                                          const Network &n)
+                                          const Network &n,
+                                          shared_ptr<Tensor> weights,
+                                          shared_ptr<Tensor> bias)
 {
   if(n.backprop_)
-    return std::make_shared<FullyConnectedBackProp>(num_outputs, prev, id, n);
+    return std::make_shared<FullyConnectedBackProp>(num_outputs, prev, n,
+                                                    weights, bias);
   else
-    return std::make_shared<FullyConnected>(num_outputs, prev, id);
+    return std::make_shared<FullyConnected>(num_outputs, prev, weights, bias);
 }
 
 

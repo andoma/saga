@@ -45,31 +45,36 @@ public:
               int stride,
               int padding,
               const Layer &prev,
-              const InitData &id,
               const Network &n,
-              bool bias)
+              std::shared_ptr<Tensor> kernel,
+              std::shared_ptr<Tensor> bias,
+              bool use_bias)
     : input_(prev.output())
-    , kernel_size_(activation_maps, input_->c, filter_size, filter_size)
-    , kernel_(TensorDescriptor(input_->dataType(),
-                               input_->format(),
-                               kernel_size_))
   {
-
     const auto data_type = input_->dataType();
 
-    kernel_.loadOrRandomize(id, "weights", sqrt(2.0 / (input_->c *
-                                                       filter_size *
-                                                       filter_size)));
+    if(kernel != NULL) {
+      kernel_ = kernel;
+    } else {
+      kernel_ = std::make_unique<Tensor>(TensorDescriptor(input_->dataType(),
+                                                          input_->format(),
+                                                          Size(activation_maps,
+                                                               input_->c,
+                                                               filter_size,
+                                                               filter_size)));
+
+      kernel_->randomize(sqrt(2.0 / (input_->c * filter_size * filter_size)));
+    }
 
     chkCUDNN(cudnnCreateFilterDescriptor(&filter_desc_));
 
     chkCUDNN(cudnnSetFilter4dDescriptor(filter_desc_,
-                                        kernel_.dataType(),
-                                        kernel_.format(),
-                                        kernel_size_.n,
-                                        kernel_size_.c,
-                                        kernel_size_.h,
-                                        kernel_size_.w));
+                                        kernel_->dataType(),
+                                        kernel_->format(),
+                                        kernel_->n,
+                                        kernel_->c,
+                                        kernel_->h,
+                                        kernel_->w));
 
     chkCUDNN(cudnnCreateConvolutionDescriptor(&conv_desc_));
     chkCUDNN(cudnnSetConvolution2dDescriptor(conv_desc_,
@@ -109,11 +114,15 @@ public:
 
     workspace_size_ = std::max(workspace_size_, workspace_bytes);
 
-    if(bias) {
-      bias_ = std::make_unique<Tensor>(TensorDescriptor(input_->dataType(),
-                                                        input_->format(),
-                                                        Size(1, oc, 1, 1)));
-      bias_->loadOrRandomize(id, "bias", 0);
+    if(use_bias) {
+
+      if(bias) {
+        bias_ = bias;
+      } else {
+        bias_ = std::make_shared<Tensor>(TensorDescriptor(input_->dataType(),
+                                                          input_->format(),
+                                                          Size(1, oc, 1, 1)));
+      }
     }
   }
 
@@ -130,7 +139,7 @@ public:
     std::stringstream ss;
 
     ss << "Convolution " << input_->name()
-       << " x " << kernel_.name()
+       << " x " << kernel_->name()
        << " (>" << fwdalgostr(conv_fwd_algo_)
        <<  ") => " << output_->name();
     return ss.str();
@@ -144,7 +153,7 @@ public:
                                      input_->desc(),
                                      input_->deviceMem(),
                                      filter_desc_,
-                                     kernel_.deviceMem(),
+                                     kernel_->deviceMem(),
                                      conv_desc_,
                                      conv_fwd_algo_,
                                      n.workspace_, n.workspace_size_,
@@ -162,11 +171,9 @@ public:
 protected:
 
   const Tensor *input_;
-  const Size kernel_size_;
 
-  Tensor kernel_;
-
-  std::unique_ptr<Tensor> bias_;
+  std::shared_ptr<Tensor> kernel_;
+  std::shared_ptr<Tensor> bias_;
 
   std::unique_ptr<Tensor> output_;
 
@@ -187,18 +194,25 @@ public:
                       int stride,
                       int padding,
                       const Layer &prev,
-                      const InitData &id,
                       const Network &n,
-                      bool bias)
-    : Convolution(activation_maps, filter_size, stride, padding, prev, id, n,
-                  bias)
+                      std::shared_ptr<Tensor> kernel,
+                      std::shared_ptr<Tensor> bias,
+                      bool use_bias)
+    : Convolution(activation_maps, filter_size, stride, padding, prev, n,
+                  kernel, bias, use_bias)
     , input_grad_(prev.gradient())
-    , kernel_grad_(TensorDescriptor(kernel_))
-    , bias_grad_(TensorDescriptor(*bias_))
     , output_grad_(*output_)
-    , kernel_optimizer_(n.makeOptimizer(kernel_))
-    , bias_optimizer_(n.makeOptimizer(*bias_))
+
+    , kernel_grad_(TensorDescriptor(*kernel_.get()))
+    , kernel_optimizer_(n.makeOptimizer(*kernel_))
   {
+
+    if(bias_) {
+      bias_grad_ = std::make_unique<Tensor>(TensorDescriptor(*bias_));
+      bias_optimizer_ = n.makeOptimizer(*bias_);
+    }
+
+
     chkCUDNN(cudnnGetConvolutionBackwardDataAlgorithm(n.cudnn_,
                                                       filter_desc_,
                                                       output_->desc(),
@@ -247,12 +261,14 @@ public:
 
     float alpha = 1.0f, beta = 0.0f;
 
-    chkCUDNN(cudnnConvolutionBackwardBias(n.cudnn_, &alpha,
-                                          output_grad_.desc(),
-                                          output_grad_.deviceMem(),
-                                          &beta,
-                                          bias_grad_.desc(),
-                                          bias_grad_.deviceMem()));
+    if(bias_grad_) {
+      chkCUDNN(cudnnConvolutionBackwardBias(n.cudnn_, &alpha,
+                                            output_grad_.desc(),
+                                            output_grad_.deviceMem(),
+                                            &beta,
+                                            bias_grad_->desc(),
+                                            bias_grad_->deviceMem()));
+    }
 
     chkCUDNN(cudnnConvolutionBackwardFilter(n.cudnn_, &alpha,
                                             input_->desc(),
@@ -269,7 +285,7 @@ public:
     if(input_grad_ != NULL) {
       chkCUDNN(cudnnConvolutionBackwardData(n.cudnn_, &alpha,
                                             filter_desc_,
-                                            kernel_.deviceMem(),
+                                            kernel_->deviceMem(),
                                             output_grad_.desc(),
                                             output_grad_.deviceMem(),
                                             conv_desc_,
@@ -280,8 +296,8 @@ public:
                                             input_grad_->deviceMem()));
     }
 
-    kernel_optimizer_->optimize(kernel_, kernel_grad_, n);
-    bias_optimizer_->optimize(*bias_, bias_grad_, n);
+    kernel_optimizer_->optimize(*kernel_, kernel_grad_, n);
+    bias_optimizer_->optimize(*bias_, *bias_grad_, n);
   }
 
 
@@ -294,9 +310,11 @@ private:
   cudnnConvolutionBwdFilterAlgo_t bwd_filter_algo_;
 
   const Tensor *input_grad_;
-  const Tensor kernel_grad_;
-  const Tensor bias_grad_;
   const Tensor output_grad_;
+
+  const Tensor kernel_grad_;
+
+  std::unique_ptr<Tensor> bias_grad_;
 
   std::unique_ptr<Optimizer> kernel_optimizer_;
   std::unique_ptr<Optimizer> bias_optimizer_;
@@ -310,18 +328,19 @@ std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int stride,
                                        int padding,
                                        const Layer &prev,
-                                       const InitData &id,
                                        const Network &n,
-                                       bool bias)
-
+                                       std::shared_ptr<Tensor> kernel,
+                                       std::shared_ptr<Tensor> bias,
+                                       bool use_bias)
 {
   if(n.backprop_) {
     return std::make_shared<ConvolutionBackProp>(activation_maps, filter_size,
                                                  stride, padding, prev,
-                                                 id, n, bias);
+                                                 n, kernel, bias, use_bias);
   } else {
     return std::make_shared<Convolution>(activation_maps, filter_size,
-                                         stride, padding, prev, id, n, bias);
+                                         stride, padding, prev, n,
+                                         kernel, bias, use_bias);
   }
 }
 
