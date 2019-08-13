@@ -368,8 +368,13 @@ onnx_add_pool(Network &n,
     }
   }
 
-  for(auto d : attribs.getInts("pads")) {
-    assert(d == 0);
+  int pad = 0;
+  auto pads = attribs.getInts("pads");
+  if(pads.size()) {
+    pad = pads[0];
+    for(auto d : pads) {
+      assert(d == pad);
+    }
   }
 
   assert(attribs.getInt("storage_order", 0) == 0);
@@ -384,7 +389,7 @@ onnx_add_pool(Network &n,
     }
   }
 
-  return n.addLayer(makePooling(mode, size, stride, *x.get(), n));
+  return n.addLayer(makePooling(mode, size, pad, stride, *x.get(), n));
 }
 
 

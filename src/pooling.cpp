@@ -10,7 +10,7 @@ namespace saga {
 class Pooling : public Layer {
 
 public:
-  Pooling(PoolingMode mode, int size, int stride,
+  Pooling(PoolingMode mode, int size, int pad, int stride,
           const Layer &prev)
     : input_(prev.output())
   {
@@ -31,7 +31,7 @@ public:
                                          cudnn_mode,
                                          CUDNN_PROPAGATE_NAN,
                                          size, size,
-                                         0, 0,
+                                         pad, pad,
                                          stride, stride));
 
     int on, oc, oh, ow;
@@ -76,9 +76,9 @@ protected:
 
 class PoolingBackProp : public Pooling {
 public:
-  PoolingBackProp(PoolingMode mode, int size, int stride,
+  PoolingBackProp(PoolingMode mode, int size, int pad, int stride,
                   const Layer &prev)
-    : Pooling(mode, size, stride, prev)
+    : Pooling(mode, size, pad, stride, prev)
     , input_grad_(prev.gradient())
     , output_grad_(*output_)
   {}
@@ -109,13 +109,14 @@ protected:
 
 
 
-std::shared_ptr<Layer> makePooling(PoolingMode mode, int size, int stride,
+std::shared_ptr<Layer> makePooling(PoolingMode mode, int size, int pad,
+                                   int stride,
                                    const Layer &prev, const Network &n)
 {
   if(n.backprop_)
-    return std::make_shared<PoolingBackProp>(mode, size, stride, prev);
+    return std::make_shared<PoolingBackProp>(mode, size, pad, stride, prev);
   else
-    return std::make_shared<Pooling>(mode, size, stride, prev);
+    return std::make_shared<Pooling>(mode, size, pad, stride, prev);
 }
 
 

@@ -287,7 +287,8 @@ std::shared_ptr<Layer> makeActivation(ActivationMode mode, float a,
                                       const Layer &prev,
                                       const Network &n);
 
-std::shared_ptr<Layer> makePooling(PoolingMode mode, int size, int stride,
+std::shared_ptr<Layer> makePooling(PoolingMode mode,
+                                   int size, int pad, int stride,
                                    const Layer &prev,
                                    const Network &n);
 
