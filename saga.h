@@ -279,9 +279,9 @@ std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int padding,
                                        const Layer &prev,
                                        const Network &n,
+                                       bool with_bias = true,
                                        std::shared_ptr<Tensor> weights = NULL,
-                                       std::shared_ptr<Tensor> bias = NULL,
-                                       bool have_bias = true);
+                                       std::shared_ptr<Tensor> bias = NULL);
 
 std::shared_ptr<Layer> makeActivation(ActivationMode mode, float a,
                                       const Layer &prev,

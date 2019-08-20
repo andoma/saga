@@ -46,9 +46,9 @@ public:
               int padding,
               const Layer &prev,
               const Network &n,
+              bool use_bias,
               std::shared_ptr<Tensor> kernel,
-              std::shared_ptr<Tensor> bias,
-              bool use_bias)
+              std::shared_ptr<Tensor> bias)
     : input_(prev.output())
   {
     const auto data_type = input_->dataType();
@@ -195,11 +195,11 @@ public:
                       int padding,
                       const Layer &prev,
                       const Network &n,
+                      bool use_bias,
                       std::shared_ptr<Tensor> kernel,
-                      std::shared_ptr<Tensor> bias,
-                      bool use_bias)
+                      std::shared_ptr<Tensor> bias)
     : Convolution(activation_maps, filter_size, stride, padding, prev, n,
-                  kernel, bias, use_bias)
+                  use_bias, kernel, bias)
     , input_grad_(prev.gradient())
     , output_grad_(*output_)
 
@@ -329,18 +329,18 @@ std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int padding,
                                        const Layer &prev,
                                        const Network &n,
+                                       bool use_bias,
                                        std::shared_ptr<Tensor> kernel,
-                                       std::shared_ptr<Tensor> bias,
-                                       bool use_bias)
+                                       std::shared_ptr<Tensor> bias)
 {
   if(n.backprop_) {
     return std::make_shared<ConvolutionBackProp>(activation_maps, filter_size,
                                                  stride, padding, prev,
-                                                 n, kernel, bias, use_bias);
+                                                 n, use_bias, kernel, bias);
   } else {
     return std::make_shared<Convolution>(activation_maps, filter_size,
                                          stride, padding, prev, n,
-                                         kernel, bias, use_bias);
+                                         use_bias, kernel, bias);
   }
 }
 

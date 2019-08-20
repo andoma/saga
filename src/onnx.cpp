@@ -320,7 +320,7 @@ onnx_add_conv(Network &n,
   }
 
   return n.addLayer(makeConvolution(feature_maps, kernel_size, stride, pad,
-                                    *x.get(), n, weights, bias, with_bias));
+                                    *x.get(), n, with_bias, weights, bias));
 }
 
 
