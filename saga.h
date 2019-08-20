@@ -308,10 +308,10 @@ std::shared_ptr<Layer> makeConcat(const std::vector<const Layer *> &prevs,
 std::shared_ptr<Layer> makeBatchNorm(double epsilon,
                                      const Layer &prev,
                                      const Network &n,
-                                     std::shared_ptr<Tensor> scale,
-                                     std::shared_ptr<Tensor> bias,
-                                     std::shared_ptr<Tensor> mean,
-                                     std::shared_ptr<Tensor> variance);
+                                     std::shared_ptr<Tensor> scale = NULL,
+                                     std::shared_ptr<Tensor> bias = NULL,
+                                     std::shared_ptr<Tensor> mean = NULL,
+                                     std::shared_ptr<Tensor> var = NULL);
 
 // Optimizers
 
