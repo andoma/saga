@@ -60,23 +60,37 @@ TensorDescriptor::~TensorDescriptor()
 
 
 
-Tensor::Tensor(const TensorDescriptor &td)
+Tensor::Tensor(const TensorDescriptor &td, bool host)
   : TensorDescriptor(td)
   , device_mem_(NULL)
+  , host_mem_(NULL)
 {
+  int dump;
+  cudnnDataType_t datatype;
+  cudnnGetTensor4dDescriptor(desc(), &datatype,
+                             &dump, &dump, &dump, &dump,
+                             &ns_, &cs_, &hs_, &ws_);
+
   chkCUDNN(cudnnGetTensorSizeInBytes(desc(), &bytes_));
-  chkCuda(cudaMalloc(&device_mem_, bytes_));
-  chkCuda(cudaMemset(device_mem_, 0, bytes_));
+  if(host) {
+    host_mem_ = malloc(bytes_);
+  } else {
+    chkCuda(cudaMalloc(&device_mem_, bytes_));
+    chkCuda(cudaMemset(device_mem_, 0, bytes_));
+  }
 };
 
 Tensor::~Tensor()
 {
-  chkCuda(cudaFree(device_mem_));
+  if(device_mem_)
+    chkCuda(cudaFree(device_mem_));
+  free(host_mem_);
 }
 
 
 void Tensor::save(float *data) const
 {
+  assert(device_mem_ != NULL);
   cudaMemcpy((void *)data, device_mem_,
              bytes_, cudaMemcpyDeviceToHost);
 }
@@ -89,6 +103,7 @@ std::vector<unsigned int> Tensor::prediction() const
   std::vector<unsigned int> r;
   r.reserve(n);
 
+  assert(device_mem_ != NULL);
   cudaMemcpy((void *)values, device_mem_, bytes_, cudaMemcpyDeviceToHost);
 
   for(unsigned int i = 0; i < n; i++) {
@@ -108,6 +123,7 @@ std::vector<unsigned int> Tensor::prediction() const
 float Tensor::loss(const unsigned int *labels) const
 {
   float values[n * c];
+  assert(device_mem_ != NULL);
   cudaMemcpy((void *)values, device_mem_, bytes_, cudaMemcpyDeviceToHost);
 
   float loss_sum = 0;
@@ -121,6 +137,7 @@ float Tensor::loss(const unsigned int *labels) const
 
 void Tensor::load(const float *data)
 {
+  assert(device_mem_ != NULL);
   cudaMemcpy(device_mem_, (const void *)data,
              bytes_, cudaMemcpyHostToDevice);
 }
@@ -158,6 +175,7 @@ void Tensor::load(__restrict__ const uint8_t **data)
 void Tensor::load(const void *data, size_t size)
 {
   assert(size == bytes_);
+  assert(device_mem_ != NULL);
   cudaMemcpy(device_mem_, data, bytes_, cudaMemcpyHostToDevice);
 }
 
@@ -167,6 +185,7 @@ void Tensor::fill(float value)
   assert(dataType() == CUDNN_DATA_FLOAT);
 
   if(value == 0) {
+    assert(device_mem_ != NULL);
     cudaMemset(device_mem_, 0, bytes_);
     return;
   }
@@ -185,7 +204,6 @@ void Tensor::randomize(float sigma)
   }
 
   std::vector<float> values(elements());
-  chkCuda(cudaMalloc(&device_mem_, bytes_));
 
   for(size_t i = 0; i < values.size(); i++) {
     values[i] = generateGaussianNoise() * sigma;
@@ -221,7 +239,7 @@ tensor_print_raw(const char *prefix, const float *p,
     for(int c = 0; c < ic; c++) {
       if(ic > dim_size * 2 && c == dim_size) c = ic - dim_size;
 
-      printf("%10s: N%-2dC%-2d", prefix, n, c);
+      printf("%10s: N%-2dC%-3d", prefix, n, c);
 
       for(int y = 0; y < ih; y++) {
         if(ih > dim_size * 2 && y == dim_size) {
@@ -272,6 +290,7 @@ tensor_print_raw(const char *prefix, const float *p,
 void Tensor::dump(const char *prefix, bool intensity) const {
   float *hostmem = (float *)malloc(bytes_);
 
+  assert(device_mem_ != NULL);
   cudaMemcpy((void *)hostmem, device_mem_,
              bytes_, cudaMemcpyDeviceToHost);
   tensor_print_raw(prefix, hostmem, n, c, h, w, intensity);
@@ -282,6 +301,7 @@ void Tensor::dump(const char *prefix, bool intensity) const {
 void Tensor::check() const {
   float *hostmem = (float *)malloc(bytes_);
 
+  assert(device_mem_ != NULL);
   cudaMemcpy((void *)hostmem, device_mem_,
              bytes_, cudaMemcpyDeviceToHost);
 
@@ -301,6 +321,7 @@ float Tensor::peak() const {
 
   float *hostmem = (float *)malloc(bytes_);
 
+  assert(device_mem_ != NULL);
   cudaMemcpy((void *)hostmem, device_mem_,
              bytes_, cudaMemcpyDeviceToHost);
 
@@ -313,22 +334,16 @@ float Tensor::peak() const {
 }
 
 Tensor& Tensor::operator=(const Tensor& src) {
-  abort();
   assert(src.bytes_ == bytes_);
-#if 0
-  chkCuda(cudaMemcpy(deviceMem(), src.deviceMem(),
-                     bytes_, cudaMemcpyDeviceToDevice));
-#endif
+
+  if(src.device_mem_ != NULL && host_mem_ != NULL) {
+    chkCuda(cudaMemcpy(host_mem_, src.device_mem_,
+                       bytes_, cudaMemcpyDeviceToHost));
+  } else {
+    abort();
+  }
 
   return *this;
-
-}
-
-
-
-void Tensor::upload(void){
-  fprintf(stderr, "Please implement %s\n", __FUNCTION__);
-  abort();
 
 }
 

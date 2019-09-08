@@ -107,6 +107,8 @@ private:
 
 
 
+
+
 class Tensor : public TensorDescriptor {
 
 public:
@@ -117,17 +119,11 @@ public:
 
   Tensor& operator=(Tensor const&);
 
-  Tensor(const TensorDescriptor &td);
+  Tensor(const TensorDescriptor &td, bool host = false);
 
-  Tensor(Tensor const &t) : Tensor(TensorDescriptor(t)) {}
+  Tensor(Tensor const &t, bool host = false) : Tensor(TensorDescriptor(t), host) {}
 
   ~Tensor();
-
-  void *deviceMem(void) {
-    if(device_mem_ == NULL)
-      upload();
-    return device_mem_;
-  };
 
   void *deviceMem(void) const {
     assert(device_mem_ != NULL);
@@ -135,6 +131,10 @@ public:
   };
 
   void save(float *data) const;
+
+  void toRGBBitmap(uint8_t *output, int stride,
+                   int num, int channel = -1,
+                   float min = 0, float max = 1.0f) const;
 
   void savePng(const char *filename, int num = -1, int channel = -1) const;
 
@@ -168,14 +168,19 @@ public:
 
   float loss(const unsigned int *labels) const;
 
+  float get(int n, int c, int x, int y) const {
+    const float *p = (const float *)host_mem_;
+    return p[n * ns_ + c * cs_ + y * hs_ + x * ws_];
+  }
 
 private:
   void *device_mem_;
-  //  void *host_mem_;
-
+  void *host_mem_;
   size_t bytes_;
-
-  void upload(void);
+  int ns_;
+  int cs_;
+  int hs_;
+  int ws_;
 };
 
 
