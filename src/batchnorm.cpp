@@ -164,6 +164,10 @@ public:
     bias_optimizer_->optimize(*bias_, scale_grad_, n);
   }
 
+  Tensor *gradient() const {
+    return (Tensor *)&output_grad_;
+  }
+
 private:
   const Tensor *input_grad_;
   const Tensor output_grad_;
