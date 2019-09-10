@@ -266,7 +266,7 @@ onnx_add_batchnorm(Network &n,
   printf(" mean:    %s\n", mean->name().c_str());
   printf("variance: %s\n", variance->name().c_str());
 
-  return n.addLayer(makeBatchNorm(epsilon, *x.get(), n,
+  return n.addLayer(makeBatchNorm(epsilon, *x.get(), n, 0.5,
                                   scale, bias, mean, variance));
 }
 

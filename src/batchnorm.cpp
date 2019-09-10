@@ -88,6 +88,7 @@ public:
   BatchNormBackProp(double epsilon,
                     const Layer &prev,
                     const Network &n,
+                    float expavgf,
                     shared_ptr<Tensor> scale,
                     shared_ptr<Tensor> bias,
                     shared_ptr<Tensor> mean,
@@ -101,13 +102,13 @@ public:
     , bias_grad_(TensorDescriptor(*scale_.get()))
     , scale_optimizer_(n.makeOptimizer(*scale_))
     , bias_optimizer_(n.makeOptimizer(*bias_))
+    , expavgf_(expavgf)
   {}
 
 
   void forward(const Network &n) override {
 
     float alpha = 1.0f, beta = 0.0f;
-    double expavgf = 0.01;
 #if 0
     scale_->dump("SCALE");
     bias_->dump("BIAS");
@@ -124,7 +125,7 @@ public:
                                                     scale_->desc(),
                                                     scale_->deviceMem(),
                                                     bias_->deviceMem(),
-                                                    expavgf,
+                                                    expavgf_,
                                                     mean_->deviceMem(),
                                                     var_->deviceMem(),
                                                     epsilon_,
@@ -181,18 +182,21 @@ private:
   std::unique_ptr<Optimizer> scale_optimizer_;
   std::unique_ptr<Optimizer> bias_optimizer_;
 
+  float expavgf_;
+
 };
 
 shared_ptr<Layer> makeBatchNorm(double epsilon,
                                 const Layer &prev,
                                 const Network &n,
+                                float expavgf,
                                 shared_ptr<Tensor> scale,
                                 shared_ptr<Tensor> bias,
                                 shared_ptr<Tensor> mean,
                                 shared_ptr<Tensor> variance)
 {
   if(n.backprop_) {
-    return make_shared<BatchNormBackProp>(epsilon, prev, n,
+    return make_shared<BatchNormBackProp>(epsilon, prev, n, expavgf,
                                           scale, bias, mean, variance);
   } else {
     return make_shared<BatchNorm>(epsilon, prev, n,
