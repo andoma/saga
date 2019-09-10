@@ -321,7 +321,8 @@ std::shared_ptr<Layer> makeBatchNorm(double epsilon,
 // Optimizers
 
 std::unique_ptr<Optimizer> makeAdamOptimizer(const Size &s,
-                                             const Network &net);
+                                             const Network &net,
+                                             float learning_rate);
 
 std::unique_ptr<Optimizer> makeGradientDescentOptimizer(const Size &s,
                                                         const Network &net);
