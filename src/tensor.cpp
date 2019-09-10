@@ -4,38 +4,11 @@
 #include <limits>
 #include <sstream>
 #include <algorithm>
+#include <random>
 
 #include "common.h"
 
 namespace saga {
-
-
-
-// https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
-static double
-generateGaussianNoise(void)
-{
-  static __thread double z1;
-  static __thread bool generate;
-  static const double epsilon = std::numeric_limits<double>::min();
-
-  generate = !generate;
-
-  if (!generate)
-    return z1;
-
-  double u1, u2;
-  do {
-    u1 = drand48();
-    u2 = drand48();
-  } while(u1 <= epsilon);
-
-  double z0;
-  z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
-  z1 = sqrt(-2.0 * log(u1)) * sin(2.0 * M_PI * u2);
-  return z0;
-}
-
 
 
 TensorDescriptor::TensorDescriptor(cudnnDataType_t data_type,
@@ -203,13 +176,17 @@ void Tensor::randomize(float sigma)
     return;
   }
 
+  std::default_random_engine generator;
+  std::normal_distribution<float> distribution(0,sigma);
+
   std::vector<float> values(elements());
 
   for(size_t i = 0; i < values.size(); i++) {
-    values[i] = generateGaussianNoise() * sigma;
+    values[i] = distribution(generator);
   }
   load(values);
 }
+
 
 
 std::string Size::name() const {
