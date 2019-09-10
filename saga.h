@@ -107,9 +107,14 @@ private:
 
 
 
-
-
 class Tensor : public TensorDescriptor {
+
+  struct Stats {
+    float min;
+    float max;
+    float mean;
+    float stddev;
+  };
 
 public:
 
@@ -162,7 +167,7 @@ public:
 
   void check() const;
 
-  float peak() const;
+  struct Stats stats() const;
 
   std::vector<unsigned int> prediction() const;
 

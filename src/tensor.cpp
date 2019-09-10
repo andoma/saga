@@ -316,21 +316,38 @@ void Tensor::check() const {
 }
 
 
+Tensor::Stats Tensor::stats() const {
 
-float Tensor::peak() const {
+  Tensor host(*this, true);
+  host = *this;
 
-  float *hostmem = (float *)malloc(bytes_);
+  const float *x = (const float *)host.hostMem();
 
-  assert(device_mem_ != NULL);
-  cudaMemcpy((void *)hostmem, device_mem_,
-             bytes_, cudaMemcpyDeviceToHost);
+  float max = -INFINITY;
+  float min = INFINITY;
 
-  float r = 0;
+  double sum = 0;
   for(size_t i = 0; i < elements(); i++) {
-    r = std::max(r, fabs(hostmem[i]));
+    float v = x[i];
+    max = std::max(max, v);
+    min = std::min(min, v);
+    sum += v;
   }
-  free(hostmem);
-  return r;
+
+  const double mean = sum / elements();
+
+  double sum2 = 0;
+  for(size_t i = 0; i < elements(); i++) {
+    double v = x[i] - mean;
+    sum2 += v * v;
+  }
+
+  Stats s;
+  s.min = min;
+  s.max = max;
+  s.mean = mean;
+  s.stddev = sqrt(sum2 / elements());
+  return s;
 }
 
 Tensor& Tensor::operator=(const Tensor& src) {
