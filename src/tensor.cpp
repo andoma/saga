@@ -327,12 +327,16 @@ Tensor::Stats Tensor::stats() const {
   return s;
 }
 
+
 Tensor& Tensor::operator=(const Tensor& src) {
   assert(src.bytes_ == bytes_);
 
   if(src.device_mem_ != NULL && host_mem_ != NULL) {
     chkCuda(cudaMemcpy(host_mem_, src.device_mem_,
                        bytes_, cudaMemcpyDeviceToHost));
+  } else if(src.host_mem_ != NULL && device_mem_ != NULL) {
+    chkCuda(cudaMemcpy(device_mem_, src.host_mem_,
+                       bytes_, cudaMemcpyHostToDevice));
   } else {
     abort();
   }

@@ -135,6 +135,11 @@ public:
     return device_mem_;
   };
 
+  void *hostMem(void) const {
+    assert(host_mem_ != NULL);
+    return host_mem_;
+  };
+
   void save(float *data) const;
 
   void toRGBBitmap(uint8_t *output, int stride,
