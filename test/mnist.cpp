@@ -170,8 +170,6 @@ mnist_main(int argc, char **argv)
 
   Network net(batch_size, true);
 
-  net.setOptimizer(&makeAdamOptimizer);
-
   Tensor input(TensorDescriptor(CUDNN_DATA_FLOAT,
                                 CUDNN_TENSOR_NCHW,
                                 Size(batch_size, 1, 28, 28)));

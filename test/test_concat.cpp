@@ -20,8 +20,6 @@ test_concat_main(int argc, char **argv)
 
   Network net(batch_size, true);
 
-  net.setOptimizer(&makeAdamOptimizer);
-
   float test[24+16];
   for(int i = 0; i < 24; i++)
     test[i] = i;

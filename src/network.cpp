@@ -41,7 +41,11 @@ Network::Network(int batch_size, bool backprop)
   if(0)
     chkCUDNN(cudnnSetCallback(CUDNN_SEV_INFO_EN, this, logcb));
 
-  optimizer_factory_ = &makeGradientDescentOptimizer;
+  const float learning_rate = 3e-4;
+  setOptimizer(std::bind(makeAdamOptimizer,
+                         std::placeholders::_1,
+                         std::placeholders::_2,
+                         learning_rate));
 }
 
 
