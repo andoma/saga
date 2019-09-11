@@ -123,8 +123,8 @@ build_fire_module(Network &net, const Layer &input,
   auto s = net.addLayer(makeConvolution(s1x1, 1, 1, 0, input, net));
   s = net.addLayer(makeActivation(ActivationMode::RELU, 0, *s, net));
 
-  auto e1 = net.addLayer(makeConvolution(e1x1, 1, 1, 0, *s, net));
-  auto e3 = net.addLayer(makeConvolution(e3x3, 3, 1, 1, *s, net));
+  auto e1 = net.addLayer(makeConvolution(e1x1, 1, 1, 0, *s, net, false));
+  auto e3 = net.addLayer(makeConvolution(e3x3, 3, 1, 1, *s, net, false));
 
   auto c = net.addLayer(makeConcat({e1.get(), e3.get()}, net));
 
