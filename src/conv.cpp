@@ -297,7 +297,8 @@ public:
     }
 
     kernel_optimizer_->optimize(*kernel_, kernel_grad_, n);
-    bias_optimizer_->optimize(*bias_, *bias_grad_, n);
+    if(bias_optimizer_ != NULL)
+      bias_optimizer_->optimize(*bias_, *bias_grad_, n);
   }
 
 

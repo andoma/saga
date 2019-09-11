@@ -114,6 +114,25 @@ loadOutputTensor(Tensor &t, const LabeledImage *lis)
 }
 
 
+// SqueezeNet's fire module: https://arxiv.org/pdf/1602.07360.pdf
+// + batchnorm
+static std::shared_ptr<Layer>
+build_fire_module(Network &net, const Layer &input,
+                  int s1x1, int e1x1, int e3x3)
+{
+  auto s = net.addLayer(makeConvolution(s1x1, 1, 1, 0, input, net));
+  s = net.addLayer(makeActivation(ActivationMode::RELU, 0, *s, net));
+
+  auto e1 = net.addLayer(makeConvolution(e1x1, 1, 1, 0, *s, net));
+  auto e3 = net.addLayer(makeConvolution(e3x3, 3, 1, 1, *s, net));
+
+  auto c = net.addLayer(makeConcat({e1.get(), e3.get()}, net));
+
+  c = net.addLayer(makeBatchNorm(1e-5, *c, net, 0.25));
+
+  return net.addLayer(makeActivation(ActivationMode::RELU, 0, *c, net));
+
+}
 
 
 
@@ -176,20 +195,45 @@ mnist_main(int argc, char **argv)
 
   auto tail = net.addLayer(makeInput(&input));
 
-  tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, net));
-  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-  tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 0, 2, *tail, net));
+  if(0) {
+    tail = net.addLayer(makeConvolution(64, 3, 1, 0, *tail, net));
+    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 
-  tail = net.addLayer(makeConvolution(64, 5, 1, 0, *tail, net));
-  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-  tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 0, 2, *tail, net));
+    tail = net.addLayer(makePooling(PoolingMode::MAX, 3, 0, 2, *tail, net));
+    tail = build_fire_module(net, *tail, 16, 64, 64);
+    tail = build_fire_module(net, *tail, 16, 64, 64);
 
-  tail = net.addLayer(makeFullyConnected(1024, *tail, net));
-  tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
+    tail = net.addLayer(makePooling(PoolingMode::MAX, 3, 0, 2, *tail, net));
+    tail = build_fire_module(net, *tail, 32, 128, 128);
+    tail = build_fire_module(net, *tail, 32, 128, 128);
 
-  tail = net.addLayer(makeDropout(0.25, tail, net));
+    tail = net.addLayer(makePooling(PoolingMode::MAX, 3, 0, 2, *tail, net));
+    tail = build_fire_module(net, *tail, 48, 192, 192);
+    tail = build_fire_module(net, *tail, 48, 192, 192);
 
-  tail = net.addLayer(makeFullyConnected(labels, *tail, net));
+    tail = net.addLayer(makeDropout(0.25, tail, net));
+    tail = net.addLayer(makeConvolution(labels, 1, 1, 0, *tail, net));
+    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
+    tail = net.addLayer(makePooling(PoolingMode::AVERAGE, 2, 0, 2, *tail, net));
+
+  } else {
+
+    tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, net));
+    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
+    tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 0, 2, *tail, net));
+
+    tail = net.addLayer(makeConvolution(64, 5, 1, 0, *tail, net));
+    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
+    tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 0, 2, *tail, net));
+
+    tail = net.addLayer(makeFullyConnected(1024, *tail, net));
+    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
+
+    tail = net.addLayer(makeDropout(0.25, tail, net));
+    tail = net.addLayer(makeFullyConnected(labels, *tail, net));
+
+  }
+
   tail = net.addLayer(makeSoftmax(*tail, net));
 
   unsigned int iteration = 0;
