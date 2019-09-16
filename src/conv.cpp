@@ -56,12 +56,11 @@ public:
     if(kernel != NULL) {
       kernel_ = kernel;
     } else {
-      kernel_ = std::make_unique<Tensor>(TensorDescriptor(input_->dataType(),
-                                                          input_->format(),
-                                                          Size(activation_maps,
-                                                               input_->c,
-                                                               filter_size,
-                                                               filter_size)));
+      kernel_ = std::make_unique<Tensor>(Size(activation_maps,
+                                              input_->c,
+                                              filter_size,
+                                              filter_size),
+                                         input_->dataType());
 
       kernel_->randomize(sqrt(2.0 / (input_->c * filter_size * filter_size)));
     }
@@ -70,7 +69,7 @@ public:
 
     chkCUDNN(cudnnSetFilter4dDescriptor(filter_desc_,
                                         kernel_->dataType(),
-                                        kernel_->format(),
+                                        CUDNN_TENSOR_NCHW,
                                         kernel_->n,
                                         kernel_->c,
                                         kernel_->h,
@@ -90,9 +89,8 @@ public:
                                                    filter_desc_,
                                                    &on, &oc, &oh, &ow));
 
-    output_ = std::make_unique<Tensor>(TensorDescriptor(input_->dataType(),
-                                                        input_->format(),
-                                                        Size(on, oc, oh, ow)));
+    output_ = std::make_unique<Tensor>(Size(on, oc, oh, ow),
+                                       input_->dataType());
 
     chkCUDNN(cudnnGetConvolutionForwardAlgorithm(n.cudnn_,
                                                  input_->desc(),
@@ -119,9 +117,8 @@ public:
       if(bias) {
         bias_ = bias;
       } else {
-        bias_ = std::make_shared<Tensor>(TensorDescriptor(input_->dataType(),
-                                                          input_->format(),
-                                                          Size(1, oc, 1, 1)));
+        bias_ = std::make_shared<Tensor>(Size(1, oc, 1, 1),
+                                         input_->dataType());
       }
     }
   }
@@ -203,12 +200,12 @@ public:
     , input_grad_(prev.gradient())
     , output_grad_(*output_)
 
-    , kernel_grad_(TensorDescriptor(*kernel_.get()))
+    , kernel_grad_(*kernel_.get())
     , kernel_optimizer_(n.makeOptimizer(*kernel_))
   {
 
     if(bias_) {
-      bias_grad_ = std::make_unique<Tensor>(TensorDescriptor(*bias_));
+      bias_grad_ = std::make_unique<Tensor>(*bias_);
       bias_optimizer_ = n.makeOptimizer(*bias_);
     }
 

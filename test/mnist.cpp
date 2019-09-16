@@ -189,13 +189,11 @@ mnist_main(int argc, char **argv)
 
   Network net(batch_size, true);
 
-  Tensor input(TensorDescriptor(CUDNN_DATA_FLOAT,
-                                CUDNN_TENSOR_NCHW,
-                                Size(batch_size, 1, 28, 28)));
+  Tensor input(Size(batch_size, 1, 28, 28), CUDNN_DATA_FLOAT);
 
   auto tail = net.addLayer(makeInput(&input));
 
-  if(0) {
+  if(1) {
     tail = net.addLayer(makeConvolution(64, 3, 1, 0, *tail, net));
     tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 

@@ -32,7 +32,13 @@ public:
   void forward(const Network &n) override {
 
     if(n.inference_) {
-      output_ = *input_;
+      float alpha = 1.0f, beta = 0.0f;
+
+      chkCUDNN(cudnnTransformTensor(n.cudnn_,
+                                    &alpha,
+                                    input_->desc(), input_->deviceMem(),
+                                    &beta,
+                                    output_.desc(), output_.deviceMem()));
       return;
     }
 

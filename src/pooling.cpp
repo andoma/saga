@@ -39,9 +39,8 @@ public:
                                                input_->desc(),
                                                &on, &oc, &oh, &ow));
 
-    output_ = std::make_unique<Tensor>(TensorDescriptor(input_->dataType(),
-                                                        input_->format(),
-                                                        Size(on, oc, oh, ow)));
+    output_ = std::make_unique<Tensor>(Size(on, oc, oh, ow),
+                                       input_->dataType());
   }
 
   const Tensor *output() const override {

@@ -66,48 +66,7 @@ struct Size {
 
 
 
-struct TensorDescriptor : public Size {
-
-  TensorDescriptor& operator=(TensorDescriptor const&) = delete;
-
-  TensorDescriptor(cudnnDataType_t data_type,
-                   cudnnTensorFormat_t format,
-                   unsigned int n,
-                   unsigned int c,
-                   unsigned int h,
-                   unsigned int w);
-
-  TensorDescriptor(cudnnDataType_t data_type,
-                   cudnnTensorFormat_t format,
-                   const Size &s)
-    : TensorDescriptor(data_type, format, s.n, s.c, s.h, s.w)
-  {}
-
-  TensorDescriptor(TensorDescriptor const& td)
-    : TensorDescriptor(td.data_type_, td.format_, td.n, td.c, td.h, td.w)
-  {}
-
-  ~TensorDescriptor();
-
-  cudnnDataType_t dataType() const { return data_type_; }
-
-  cudnnTensorFormat_t format() const { return format_; }
-
-  cudnnTensorDescriptor_t desc() const { return desc_; }
-
-  std::string name() const;
-
-  Size strides() const;
-
-private:
-  cudnnDataType_t data_type_;
-  cudnnTensorFormat_t format_;
-  cudnnTensorDescriptor_t desc_;
-};
-
-
-
-class Tensor : public TensorDescriptor {
+class Tensor : public Size {
 
   struct Stats {
     float min;
@@ -122,22 +81,19 @@ public:
 
   static std::shared_ptr<Tensor> createFromPB(const char *path);
 
-  Tensor& operator=(Tensor const&);
+  Tensor(const Size &s, cudnnDataType_t dt);
 
-  Tensor(const TensorDescriptor &td, bool host = false);
-
-  Tensor(Tensor const &t, bool host = false) : Tensor(TensorDescriptor(t), host) {}
+  Tensor(const Tensor &t);
 
   ~Tensor();
+
+  cudnnDataType_t dataType() const { return data_type_; }
+
+  cudnnTensorDescriptor_t desc() const { return desc_; }
 
   void *deviceMem(void) const {
     assert(device_mem_ != NULL);
     return device_mem_;
-  };
-
-  void *hostMem(void) const {
-    assert(host_mem_ != NULL);
-    return host_mem_;
   };
 
   void save(float *data) const;
@@ -176,19 +132,25 @@ public:
 
   float loss(const unsigned int *labels) const;
 
+  void synchronize() const;
+
   float get(int n, int c, int x, int y) const {
-    const float *p = (const float *)host_mem_;
+    const float *p = (const float *)device_mem_;
     return p[n * ns_ + c * cs_ + y * hs_ + x * ws_];
   }
 
 private:
   void *device_mem_;
-  void *host_mem_;
+  //  void *host_mem_;
   size_t bytes_;
   int ns_;
   int cs_;
   int hs_;
   int ws_;
+
+  cudnnDataType_t data_type_;
+  cudnnTensorDescriptor_t desc_;
+
 };
 
 

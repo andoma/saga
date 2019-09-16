@@ -24,17 +24,14 @@ test_concat_main(int argc, char **argv)
   for(int i = 0; i < 24; i++)
     test[i] = i;
 
-  Tensor i1(TensorDescriptor(CUDNN_DATA_FLOAT,
-                             CUDNN_TENSOR_NCHW,
-                             Size(batch_size, 3, 2, 2)));
+  Tensor i1(Size(batch_size, 3, 2, 2), CUDNN_DATA_FLOAT);
+
   auto c1 = net.addLayer(makeInput(&i1, true));
   i1.load(test);
   c1->output()->dump("c1");
 
 
-  Tensor i2(TensorDescriptor(CUDNN_DATA_FLOAT,
-                             CUDNN_TENSOR_NCHW,
-                             Size(batch_size, 2, 2, 2)));
+  Tensor i2(Size(batch_size, 2, 2, 2), CUDNN_DATA_FLOAT);
 
   for(int i = 0; i < 24; i++)
     test[i] = 100 + i;

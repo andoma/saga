@@ -208,9 +208,7 @@ tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
 
   assert(tp.data_type() == onnx::TensorProto_DataType_FLOAT);
 
-  auto t = make_shared<Tensor>(TensorDescriptor(CUDNN_DATA_FLOAT,
-                                                CUDNN_TENSOR_NCHW,
-                                                Size(dims)));
+  auto t = make_shared<Tensor>(Size(dims), CUDNN_DATA_FLOAT);
 
   if(tp.raw_data().size()) {
     t->load((const void *)&tp.raw_data()[0], tp.raw_data().size());

@@ -21,19 +21,19 @@ public:
     , input_(prev.output())
     , output_(*input_)
   {
-    TensorDescriptor td(input_->dataType(), input_->format(),
-                        Size(1,input_->c,1,1));
+    const Size s(1, input_->c, 1, 1);
+    const cudnnDataType_t dt = input_->dataType();
 
     if(scale) {
       scale_ = scale;
     } else {
-      scale_ = make_shared<Tensor>(td);
+      scale_ = make_shared<Tensor>(s, dt);
       scale_->fill(1.0f);
     }
 
-    bias_  = bias  ?: make_shared<Tensor>(td);
-    mean_  = mean  ?: make_shared<Tensor>(td);
-    var_   = var   ?: make_shared<Tensor>(td);
+    bias_  = bias  ?: make_shared<Tensor>(s, dt);
+    mean_  = mean  ?: make_shared<Tensor>(s, dt);
+    var_   = var   ?: make_shared<Tensor>(s, dt);
   }
 
   const Tensor *output() const override {
@@ -96,10 +96,10 @@ public:
     : BatchNorm(epsilon, prev, n, scale, bias, mean, var)
     , input_grad_(prev.gradient())
     , output_grad_(output_)
-    , saved_mean_(TensorDescriptor(*scale_.get()))
-    , saved_ivar_(TensorDescriptor(*scale_.get()))
-    , scale_grad_(TensorDescriptor(*scale_.get()))
-    , bias_grad_(TensorDescriptor(*scale_.get()))
+    , saved_mean_(*scale_.get())
+    , saved_ivar_(*scale_.get())
+    , scale_grad_(*scale_.get())
+    , bias_grad_(*scale_.get())
     , scale_optimizer_(n.makeOptimizer(*scale_))
     , bias_optimizer_(n.makeOptimizer(*bias_))
     , expavgf_(expavgf)

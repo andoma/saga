@@ -18,17 +18,13 @@ public:
     : input_(prev.output())
     , num_inputs_(input_->c * input_->h * input_->w)
     , num_outputs_(num_outputs)
-    , output_(TensorDescriptor(input_->dataType(),
-                               CUDNN_TENSOR_NCHW,
-                               Size(input_->n, num_outputs, 1, 1)))
+    , output_(Size(input_->n, num_outputs, 1, 1), input_->dataType())
   {
     if(weights != NULL) {
       weights_ = weights;
     } else {
-      weights_ = make_shared<Tensor>(TensorDescriptor(input_->dataType(),
-                                                      CUDNN_TENSOR_NCHW,
-                                                      Size(num_inputs_,
-                                                           num_outputs, 1, 1)));
+      weights_ = make_shared<Tensor>(Size(num_inputs_, num_outputs, 1, 1),
+                                     input_->dataType());
       weights_->randomize(sqrt(2.0 / num_inputs_));
     }
 
@@ -36,9 +32,8 @@ public:
       bias_ = bias;
     } else {
 
-      bias_ = make_shared<Tensor>(TensorDescriptor(input_->dataType(),
-                                                   CUDNN_TENSOR_NCHW,
-                                                   Size(1, num_outputs, 1, 1)));
+      bias_ = make_shared<Tensor>(Size(1, num_outputs, 1, 1),
+                                  input_->dataType());
     }
   }
 
@@ -98,11 +93,9 @@ public:
                          shared_ptr<Tensor> bias)
     : FullyConnected(num_outputs, prev, weights, bias)
     , input_grad_(prev.gradient())
-    , weights_grad_(TensorDescriptor(*weights_.get()))
-    , bias_grad_(TensorDescriptor(*bias_.get()))
-    , batch_of_one_(TensorDescriptor(input_->dataType(),
-                                     CUDNN_TENSOR_NCHW,
-                                     Size(n.batch_size_, 1, 1, 1)))
+    , weights_grad_(*weights_.get())
+    , bias_grad_(*bias_.get())
+    , batch_of_one_(Size(n.batch_size_, 1, 1, 1), input_->dataType())
     , output_grad_(output_)
     , weights_optimizer_(n.makeOptimizer(*weights_.get()))
     , bias_optimizer_(n.makeOptimizer(*bias_.get()))

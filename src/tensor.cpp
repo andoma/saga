@@ -11,80 +11,60 @@
 namespace saga {
 
 
-TensorDescriptor::TensorDescriptor(cudnnDataType_t data_type,
-                                   cudnnTensorFormat_t format,
-                                   unsigned int n,
-                                   unsigned int c,
-                                   unsigned int h,
-                                   unsigned int w)
-  : Size(n, c, h, w)
-  , data_type_(data_type)
-  , format_(format)
-{
-  chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, data_type, n, c, h, w));
-}
-
-
-TensorDescriptor::~TensorDescriptor()
-{
-  chkCUDNN(cudnnDestroyTensorDescriptor(desc_));
-}
-
-
-
-Tensor::Tensor(const TensorDescriptor &td, bool host)
-  : TensorDescriptor(td)
+Tensor::Tensor(const Size &s, cudnnDataType_t data_type)
+  : Size(s)
   , device_mem_(NULL)
-  , host_mem_(NULL)
+  , data_type_(data_type)
 {
-  int dump;
-  cudnnDataType_t datatype;
-  cudnnGetTensor4dDescriptor(desc(), &datatype,
-                             &dump, &dump, &dump, &dump,
+  int wastedump;
+  cudnnDataType_t wastedump2;
+  chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
+  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, CUDNN_TENSOR_NCHW, data_type,
+                                      s.n, s.c, s.h, s.w));
+
+  cudnnGetTensor4dDescriptor(desc(), &wastedump2,
+                             &wastedump, &wastedump, &wastedump, &wastedump,
                              &ns_, &cs_, &hs_, &ws_);
 
   chkCUDNN(cudnnGetTensorSizeInBytes(desc(), &bytes_));
-  if(host) {
-    host_mem_ = malloc(bytes_);
-  } else {
-    chkCuda(cudaMalloc(&device_mem_, bytes_));
-    chkCuda(cudaMemset(device_mem_, 0, bytes_));
-  }
+
+  chkCuda(cudaMallocManaged(&device_mem_, bytes_, cudaMemAttachGlobal));
+  chkCuda(cudaMemset(device_mem_, 0, bytes_));
 };
+
+Tensor::Tensor(const Tensor &t)
+  : Tensor(t, t.dataType())
+{}
+
 
 Tensor::~Tensor()
 {
-  if(device_mem_)
-    chkCuda(cudaFree(device_mem_));
-  free(host_mem_);
+  chkCuda(cudaFree(device_mem_));
 }
 
-
-void Tensor::save(float *data) const
+void Tensor::synchronize() const
 {
-  assert(device_mem_ != NULL);
-  cudaMemcpy((void *)data, device_mem_,
-             bytes_, cudaMemcpyDeviceToHost);
+  cudaDeviceSynchronize();
 }
+
+
 
 
 std::vector<unsigned int> Tensor::prediction() const
 {
-  float values[n * c];
+  synchronize();
 
   std::vector<unsigned int> r;
   r.reserve(n);
 
-  assert(device_mem_ != NULL);
-  cudaMemcpy((void *)values, device_mem_, bytes_, cudaMemcpyDeviceToHost);
-
   for(unsigned int i = 0; i < n; i++) {
-    const float *v = values + i * c;
     unsigned int label = 0;
+    float best = get(i, 0, 0, 0);
     for(unsigned int j = 1; j < c; j++) {
-      if(v[j] > v[label]) {
+      float v = get(i, j, 0, 0);
+      if(v > best) {
         label = j;
+        best = v;
       }
     }
     r.push_back(label);
@@ -95,14 +75,12 @@ std::vector<unsigned int> Tensor::prediction() const
 
 float Tensor::loss(const unsigned int *labels) const
 {
-  float values[n * c];
-  assert(device_mem_ != NULL);
-  cudaMemcpy((void *)values, device_mem_, bytes_, cudaMemcpyDeviceToHost);
+  synchronize();
 
   float loss_sum = 0;
   for(unsigned int i = 0; i < n; i++) {
-    const float *v = values + i * c;
-    loss_sum += -log(v[labels[i]]);
+    float v = get(i, labels[i], 0, 0);
+    loss_sum += -log(v);
   }
   return loss_sum / n;
 }
@@ -195,21 +173,16 @@ std::string Size::name() const {
   return ss.str();
 }
 
-std::string TensorDescriptor::name() const {
-  std::stringstream ss;
-  ss << (format_ == CUDNN_TENSOR_NCHW ? "NCHW" :
-         format_ == CUDNN_TENSOR_NHWC ? "NHWC" :
-         "????") << Size::name();
-  return ss.str();
-}
+void Tensor::dump(const char *prefix, bool intensity) const {
 
-
-static void
-tensor_print_raw(const char *prefix, const float *p,
-                 int in, int ic, int ih, int iw,
-                 bool intensity)
-{
   const int dim_size = 4;
+  const int in = n;
+  const int ic = c;
+  const int ih = h;
+  const int iw = w;
+
+  synchronize();
+
   for(int n = 0; n < in; n++) {
     if(in > dim_size * 2 && n == dim_size) n = in - dim_size;
 
@@ -234,7 +207,7 @@ tensor_print_raw(const char *prefix, const float *p,
             printf(" ... ");
           }
 
-          float v = p[x + y * iw + c * ih * iw + n * ic * ih * iw];
+          float v = get(n, c, y, x);
           if(intensity) {
             v = fabs(v);
             if(v < 0.25) {
@@ -263,60 +236,41 @@ tensor_print_raw(const char *prefix, const float *p,
   }
 }
 
-
-void Tensor::dump(const char *prefix, bool intensity) const {
-  float *hostmem = (float *)malloc(bytes_);
-
-  assert(device_mem_ != NULL);
-  cudaMemcpy((void *)hostmem, device_mem_,
-             bytes_, cudaMemcpyDeviceToHost);
-  tensor_print_raw(prefix, hostmem, n, c, h, w, intensity);
-  free(hostmem);
-
-}
-
-void Tensor::check() const {
-  float *hostmem = (float *)malloc(bytes_);
-
-  assert(device_mem_ != NULL);
-  cudaMemcpy((void *)hostmem, device_mem_,
-             bytes_, cudaMemcpyDeviceToHost);
-
-  for(size_t i = 0; i < elements(); i++) {
-    if(isnan(hostmem[i])) {
-      fprintf(stderr, "Tensor %s has NAN at %zd\n",
-              name().c_str(), i);
-      abort();
-    }
-  }
-  free(hostmem);
-}
-
-
 Tensor::Stats Tensor::stats() const {
 
-  Tensor host(*this, true);
-  host = *this;
-
-  const float *x = (const float *)host.hostMem();
+  synchronize();
 
   float max = -INFINITY;
   float min = INFINITY;
 
   double sum = 0;
-  for(size_t i = 0; i < elements(); i++) {
-    float v = x[i];
-    max = std::max(max, v);
-    min = std::min(min, v);
-    sum += v;
+
+  for(unsigned int i = 0; i < n; i++) {
+    for(unsigned int j = 0; j < c; j++) {
+      for(unsigned int y = 0; y < h; y++) {
+        for(unsigned int x = 0; x < w; x++) {
+          float v = get(i, j, y, x);
+          max = std::max(max, v);
+          min = std::min(min, v);
+          sum += v;
+        }
+      }
+    }
   }
 
   const double mean = sum / elements();
 
   double sum2 = 0;
-  for(size_t i = 0; i < elements(); i++) {
-    double v = x[i] - mean;
-    sum2 += v * v;
+
+  for(unsigned int i = 0; i < n; i++) {
+    for(unsigned int j = 0; j < c; j++) {
+      for(unsigned int y = 0; y < h; y++) {
+        for(unsigned int x = 0; x < w; x++) {
+          float v = get(i, j, y, x) - mean;
+          sum2 += v * v;
+        }
+      }
+    }
   }
 
   Stats s;
@@ -325,27 +279,6 @@ Tensor::Stats Tensor::stats() const {
   s.mean = mean;
   s.stddev = sqrt(sum2 / elements());
   return s;
-}
-
-
-Tensor& Tensor::operator=(const Tensor& src) {
-  assert(src.bytes_ == bytes_);
-
-  if(src.device_mem_ != NULL && device_mem_ != NULL) {
-    chkCuda(cudaMemcpy(device_mem_, src.device_mem_,
-                       bytes_, cudaMemcpyDeviceToDevice));
-  } else if(src.device_mem_ != NULL && host_mem_ != NULL) {
-    chkCuda(cudaMemcpy(host_mem_, src.device_mem_,
-                       bytes_, cudaMemcpyDeviceToHost));
-  } else if(src.host_mem_ != NULL && device_mem_ != NULL) {
-    chkCuda(cudaMemcpy(device_mem_, src.host_mem_,
-                       bytes_, cudaMemcpyHostToDevice));
-  } else {
-    abort();
-  }
-
-  return *this;
-
 }
 
 

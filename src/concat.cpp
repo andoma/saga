@@ -43,7 +43,6 @@ public:
 
     unsigned int channels = t0->c;
     auto dt = t0->dataType();
-    auto format = t0->format();
     assert(dt == CUDNN_DATA_FLOAT);
 
     for(size_t i = 1; i < prevs.size(); i++) {
@@ -54,7 +53,7 @@ public:
 
     Size s(t0->n, channels, t0->h, t0->w);
 
-    output_ = std::make_unique<Tensor>(TensorDescriptor(dt, format, s));
+    output_ = std::make_unique<Tensor>(s, dt);
 
     cudnnDataType_t odt;
     int on, oc, oh, ow, osn, osc, osh, osw;
@@ -64,7 +63,7 @@ public:
                                         &osn, &osc, &osh, &osw));
 
     if(backprop)
-      output_grad_ = std::make_unique<Tensor>(TensorDescriptor(dt, format, s));
+      output_grad_ = std::make_unique<Tensor>(s, dt);
 
     char *odm = (char *)output_->deviceMem();
     char *ogdm = backprop ? (char *)output_grad_->deviceMem() : NULL;
