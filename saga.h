@@ -114,8 +114,6 @@ public:
 
   void load(const void *data, size_t size);
 
-  //  void load(const TensorValues &v);
-
   void randomize(float sigma);
 
   void fill(float value);
@@ -141,7 +139,6 @@ public:
 
 private:
   void *device_mem_;
-  //  void *host_mem_;
   size_t bytes_;
   int ns_;
   int cs_;
