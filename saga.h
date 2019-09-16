@@ -146,8 +146,6 @@ public:
                    int num, int channel = -1,
                    float min = 0, float max = 1.0f) const;
 
-  void savePng(const char *filename, int num = -1, int channel = -1) const;
-
   // Loaders
 
   void load(const std::vector<float> &data);
