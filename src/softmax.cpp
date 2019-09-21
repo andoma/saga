@@ -4,24 +4,27 @@
 
 #include "common.h"
 
-namespace saga {
+using namespace std;
 
+namespace saga {
 
 class Softmax : public Layer {
 
 public:
   Softmax(const Layer &prev)
     : input_(prev.output())
-    , output_(*input_)
-  {}
+    , output_(make_unique<Tensor>(*input_))
+  {
+    prev.output()->allocate();
+  }
 
-  const Tensor *output() const override {
-    return &output_;
+  Tensor *output() const override {
+    return output_.get();
   }
 
   std::string name() const override {
     std::stringstream ss;
-    ss << "Softmax " << input_->name() << " => " << output_.name();
+    ss << "Softmax " << input_->name() << " => " << output_->name();
     return ss.str();
   }
 
@@ -35,13 +38,13 @@ public:
                                  &alpha,
                                  input_->desc(), input_->deviceMem(),
                                  &beta,
-                                 output_.desc(), output_.deviceMem()));
+                                 output_->desc(), output_->deviceMem()));
 
   }
 
 protected:
   const Tensor *input_;
-  Tensor output_;
+  unique_ptr<Tensor> output_;
 };
 
 
@@ -50,8 +53,10 @@ public:
   SoftmaxBackProp(const Layer &prev)
     : Softmax(prev)
     , input_grad_(prev.gradient())
-    , output_grad_(output_)
-  {}
+    , output_grad_(make_unique<Tensor>(*output_))
+  {
+    prev.gradient()->allocate();
+  }
 
   void backprop(const Network &n) override {
 
@@ -60,20 +65,20 @@ public:
     chkCUDNN(cudnnSoftmaxBackward(n.cudnn_, CUDNN_SOFTMAX_ACCURATE,
                                   CUDNN_SOFTMAX_MODE_CHANNEL,
                                   &alpha,
-                                  output_.desc(), output_.deviceMem(),
-                                  output_grad_.desc(), output_grad_.deviceMem(),
+                                  output_->desc(), output_->deviceMem(),
+                                  output_grad_->desc(), output_grad_->deviceMem(),
                                   &beta,
                                   input_grad_->desc(),
                                   input_grad_->deviceMem()));
   }
 
   Tensor *gradient() const {
-    return (Tensor *)&output_grad_;
+    return output_grad_.get();
   }
 
 protected:
   const Tensor *input_grad_;
-  Tensor output_grad_;
+  unique_ptr<Tensor> output_grad_;
 };
 
 

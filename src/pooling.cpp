@@ -14,6 +14,8 @@ public:
           const Layer &prev)
     : input_(prev.output())
   {
+    prev.output()->allocate();
+
     cudnnPoolingMode_t cudnn_mode;
     switch(mode) {
     case PoolingMode::MAX:
@@ -43,7 +45,7 @@ public:
                                        input_->dataType());
   }
 
-  const Tensor *output() const override {
+  Tensor *output() const override {
     return output_.get();
   }
 
@@ -80,7 +82,9 @@ public:
     : Pooling(mode, size, pad, stride, prev)
     , input_grad_(prev.gradient())
     , output_grad_(*output_)
-  {}
+  {
+    prev.gradient()->allocate();
+  }
 
 
   void backprop(const Network &n) override {

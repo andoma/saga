@@ -52,7 +52,6 @@ Network::Network(int batch_size, bool backprop)
 
 std::shared_ptr<Layer> Network::addLayer(std::shared_ptr<Layer> layer)
 {
-  workspace_size_ = std::max(workspace_size_, layer->workspaceSize());
   layers_.push_back(layer);
   printf("Added layer: %s\n", layer->name().c_str());
   return layer;
@@ -79,8 +78,21 @@ void Network::forward(bool inference)
 {
   inference_ = inference;
 
-  if(workspace_ == NULL)
+  if(workspace_ == NULL) {
+    auto last = layers_[layers_.size() - 1];
+
+    last->output()->allocate();
+    if(backprop_)
+      last->gradient()->allocate();
+
+    for(size_t i = 0; i < layers_.size(); i++) {
+      printf("Setup layer: %s\n", layers_[i]->name().c_str());
+      layers_[i]->setup(*this);
+      workspace_size_ = std::max(workspace_size_, layers_[i]->workspaceSize());
+    }
     chkCuda(cudaMalloc(&workspace_, workspace_size_));
+    printf("workspace: %zd\n", workspace_size_);
+  }
 
   for(size_t i = 0; i < layers_.size(); i++) {
     layers_[i]->forward(*this);
@@ -103,12 +115,12 @@ std::unique_ptr<Optimizer> Network::makeOptimizer(const Size &s) const {
 class Input : public Layer {
 
 public:
-  Input(const Tensor *input, bool with_grad)
+  Input(Tensor *input, bool with_grad)
     : output_(input)
     , output_grad_(with_grad ? std::make_unique<Tensor>(*input) : nullptr)
   {}
 
-  const Tensor *output() const override {
+  Tensor *output() const override {
     return output_;
   }
 
@@ -126,11 +138,11 @@ public:
   }
 
 private:
-  const Tensor *output_;
+  Tensor *output_;
   std::unique_ptr<Tensor> output_grad_;
 };
 
-std::shared_ptr<Layer> makeInput(const Tensor *t, bool with_grad)
+std::shared_ptr<Layer> makeInput(Tensor *t, bool with_grad)
 {
   return std::make_shared<Input>(t, with_grad);
 }

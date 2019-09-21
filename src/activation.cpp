@@ -3,8 +3,9 @@
 
 #include "common.h"
 
-namespace saga {
+using namespace std;
 
+namespace saga {
 
 class Activation : public Layer {
 
@@ -12,8 +13,10 @@ public:
   Activation(ActivationMode mode, float a,
              const Layer &prev)
     : input_(prev.output())
-    , output_(*input_)
+    , output_(make_unique<Tensor>(*input_))
   {
+    prev.output()->allocate();
+
     cudnnActivationMode_t cudnn_mode;
     switch(mode) {
     case ActivationMode::RELU:
@@ -31,13 +34,13 @@ public:
                                           CUDNN_PROPAGATE_NAN, a));
   }
 
-  const Tensor *output() const override {
-    return &output_;
+  Tensor *output() const override {
+    return output_.get();
   }
 
   std::string name() const override {
     std::stringstream ss;
-    ss << "Activation " << input_->name() << " => " << output_.name();
+    ss << "Activation " << input_->name() << " => " << output_->name();
     return ss.str();
   }
 
@@ -49,13 +52,13 @@ public:
                                     &alpha,
                                     input_->desc(), input_->deviceMem(),
                                     &beta,
-                                    output_.desc(), output_.deviceMem()));
+                                    output_->desc(), output_->deviceMem()));
   }
 
 
 protected:
   const Tensor *input_;
-  Tensor output_;
+  unique_ptr<Tensor> output_;
 
   cudnnActivationDescriptor_t desc_;
 };
@@ -66,8 +69,10 @@ public:
   ActivationBackProp(ActivationMode mode, float a, const Layer &prev)
     : Activation(mode, a, prev)
     , input_grad_(prev.gradient())
-    , output_grad_(output_)
-  {}
+    , output_grad_(make_unique<Tensor>(*output_))
+  {
+    prev.gradient()->allocate();
+  }
 
 
   void backprop(const Network &n) override {
@@ -76,8 +81,8 @@ public:
 
     chkCUDNN(cudnnActivationBackward(n.cudnn_, desc_,
                                      &alpha,
-                                     output_.desc(), output_.deviceMem(),
-                                     output_grad_.desc(), output_grad_.deviceMem(),
+                                     output_->desc(), output_->deviceMem(),
+                                     output_grad_->desc(), output_grad_->deviceMem(),
                                      input_->desc(), input_->deviceMem(),
                                      &beta,
                                      input_grad_->desc(),
@@ -85,12 +90,12 @@ public:
   }
 
   Tensor *gradient() const {
-    return (Tensor *)&output_grad_;
+    return output_grad_.get();
   }
 
 protected:
   const Tensor *input_grad_;
-  Tensor output_grad_;
+  unique_ptr<Tensor> output_grad_;
 };
 
 

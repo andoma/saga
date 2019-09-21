@@ -10,37 +10,60 @@
 
 namespace saga {
 
+TensorStorage::~TensorStorage()
+{
+  chkCuda(cudaFree(device_mem_));
+}
+
+
+
+
 
 Tensor::Tensor(const Size &s, cudnnDataType_t data_type)
   : Size(s)
-  , device_mem_(NULL)
+  , ns_(0)
+  , cs_(0)
+  , hs_(0)
+  , ws_(0)
   , data_type_(data_type)
+  , desc_(nullptr)
+{}
+
+Tensor::Tensor(const Size &s, cudnnDataType_t data_type, float v)
+  : Tensor(s, data_type)
+{
+  fill(v);
+}
+
+Tensor::Tensor(const Tensor &t)
+  : Tensor(t, t.dataType())
+{
+}
+
+void Tensor::allocate()
 {
   int wastedump;
   cudnnDataType_t wastedump2;
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, CUDNN_TENSOR_NCHW, data_type,
-                                      s.n, s.c, s.h, s.w));
+  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, CUDNN_TENSOR_NCHW, data_type_,
+                                      n, c, h, w));
 
   cudnnGetTensor4dDescriptor(desc(), &wastedump2,
                              &wastedump, &wastedump, &wastedump, &wastedump,
                              &ns_, &cs_, &hs_, &ws_);
 
-  chkCUDNN(cudnnGetTensorSizeInBytes(desc(), &bytes_));
-
-  chkCuda(cudaMallocManaged(&device_mem_, bytes_, cudaMemAttachGlobal));
-  chkCuda(cudaMemset(device_mem_, 0, bytes_));
-};
-
-Tensor::Tensor(const Tensor &t)
-  : Tensor(t, t.dataType())
-{}
+  size_t bytes;
+  chkCUDNN(cudnnGetTensorSizeInBytes(desc(), &bytes));
 
 
-Tensor::~Tensor()
-{
-  chkCuda(cudaFree(device_mem_));
+  auto ts = std::make_shared<TensorStorage>();
+
+  ts->bytes_ = bytes;
+  chkCuda(cudaMallocManaged(&ts->device_mem_, bytes, cudaMemAttachGlobal));
+  chkCuda(cudaMemset(ts->device_mem_, 0, bytes));
+  storage_ = ts;
 }
+
 
 void Tensor::synchronize() const
 {
@@ -88,9 +111,10 @@ float Tensor::loss(const unsigned int *labels) const
 
 void Tensor::load(const float *data)
 {
-  assert(device_mem_ != NULL);
-  cudaMemcpy(device_mem_, (const void *)data,
-             bytes_, cudaMemcpyHostToDevice);
+  if(storage_ == NULL)
+    allocate();
+  cudaMemcpy(deviceMem(), (const void *)data,
+             storage_->bytes_, cudaMemcpyHostToDevice);
 }
 
 
@@ -125,9 +149,9 @@ void Tensor::load(__restrict__ const uint8_t **data)
 
 void Tensor::load(const void *data, size_t size)
 {
-  assert(size == bytes_);
-  assert(device_mem_ != NULL);
-  cudaMemcpy(device_mem_, data, bytes_, cudaMemcpyHostToDevice);
+  assert(storage_ != NULL);
+  assert(size == storage_->bytes_);
+  cudaMemcpy(deviceMem(), data, storage_->bytes_, cudaMemcpyHostToDevice);
 }
 
 
@@ -136,8 +160,9 @@ void Tensor::fill(float value)
   assert(dataType() == CUDNN_DATA_FLOAT);
 
   if(value == 0) {
-    assert(device_mem_ != NULL);
-    cudaMemset(device_mem_, 0, bytes_);
+    if(storage_ == NULL)
+      allocate();
+    cudaMemset(deviceMem(), 0, storage_->bytes_);
     return;
   }
 

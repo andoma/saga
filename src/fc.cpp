@@ -18,8 +18,11 @@ public:
     : input_(prev.output())
     , num_inputs_(input_->c * input_->h * input_->w)
     , num_outputs_(num_outputs)
-    , output_(Size(input_->n, num_outputs, 1, 1), input_->dataType())
+    , output_(make_unique<Tensor>(Size(input_->n, num_outputs, 1, 1),
+                                  input_->dataType()))
   {
+    prev.output()->allocate();
+
     if(weights != NULL) {
       weights_ = weights;
     } else {
@@ -33,19 +36,19 @@ public:
     } else {
 
       bias_ = make_shared<Tensor>(Size(1, num_outputs, 1, 1),
-                                  input_->dataType());
+                                  input_->dataType(), 0.0f);
     }
   }
 
 
 
-  const Tensor *output() const override {
-    return &output_;
+  Tensor *output() const override {
+    return output_.get();
   }
 
-  std::string name() const override {
-    std::stringstream ss;
-    ss << "FC " << input_->name() << " => " << output_.name();
+  string name() const override {
+    stringstream ss;
+    ss << "FC " << input_->name() << " => " << output_->name();
     return ss.str();
   }
 
@@ -61,25 +64,25 @@ public:
                         (const float *)weights_->deviceMem(), num_inputs_,
                         (const float *)input_->deviceMem(), num_inputs_,
                         &beta,
-                        (float *)output_.deviceMem(), num_outputs_));
+                        (float *)output_->deviceMem(), num_outputs_));
 
     chkCUDNN(cudnnAddTensor(n.cudnn_,
                             &alpha, bias_->desc(), bias_->deviceMem(),
-                            &alpha, output_.desc(), output_.deviceMem()));
+                            &alpha, output_->desc(), output_->deviceMem()));
   }
 
 
 protected:
 
-  const Tensor *input_;
+  Tensor *input_;
 
   const int num_inputs_;
   const int num_outputs_;
 
-  std::shared_ptr<Tensor> weights_;
-  std::shared_ptr<Tensor> bias_;
+  shared_ptr<Tensor> weights_;
+  shared_ptr<Tensor> bias_;
 
-  Tensor output_;
+  unique_ptr<Tensor> output_;
 };
 
 
@@ -93,14 +96,16 @@ public:
                          shared_ptr<Tensor> bias)
     : FullyConnected(num_outputs, prev, weights, bias)
     , input_grad_(prev.gradient())
-    , weights_grad_(*weights_.get())
-    , bias_grad_(*bias_.get())
-    , batch_of_one_(Size(n.batch_size_, 1, 1, 1), input_->dataType())
-    , output_grad_(output_)
+    , weights_grad_(make_unique<Tensor>(*weights_))
+    , bias_grad_(make_unique<Tensor>(*bias_))
+    , batch_of_one_(Size(n.batch_size_, 1, 1, 1), input_->dataType(), 1.0f)
+    , output_grad_(make_unique<Tensor>(*output_))
     , weights_optimizer_(n.makeOptimizer(*weights_.get()))
     , bias_optimizer_(n.makeOptimizer(*bias_.get()))
   {
-    batch_of_one_.fill(1.0f);
+    prev.gradient()->allocate();
+    weights_grad_->allocate();
+    bias_grad_->allocate();
   }
 
 
@@ -112,45 +117,45 @@ public:
                         num_inputs_, num_outputs_, n.batch_size_,
                         &alpha,
                         (const float *)input_->deviceMem(), num_inputs_,
-                        (const float *)output_grad_.deviceMem(), num_outputs_,
+                        (const float *)output_grad_->deviceMem(), num_outputs_,
                         &beta,
-                        (float *)weights_grad_.deviceMem(), num_inputs_));
+                        (float *)weights_grad_->deviceMem(), num_inputs_));
 
     chkCuda(cublasSgemv(n.cublas_, CUBLAS_OP_N, num_outputs_, n.batch_size_,
                         &alpha,
-                        (const float *)output_grad_.deviceMem(), num_outputs_,
+                        (const float *)output_grad_->deviceMem(), num_outputs_,
                         (const float *)batch_of_one_.deviceMem(), 1,
                         &beta,
-                        (float *)bias_grad_.deviceMem(), 1));
+                        (float *)bias_grad_->deviceMem(), 1));
 
     if(input_grad_ != NULL) {
       chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
                           num_inputs_, n.batch_size_, num_outputs_,
                           &alpha,
                           (const float *)weights_->deviceMem(), num_inputs_,
-                          (const float *)output_grad_.deviceMem(), num_outputs_,
+                          (const float *)output_grad_->deviceMem(), num_outputs_,
                           &beta,
                           (float *)input_grad_->deviceMem(), num_inputs_));
     }
 
-    weights_optimizer_->optimize(*weights_.get(), weights_grad_, n);
-    bias_optimizer_->optimize(*bias_.get(), bias_grad_, n);
+    weights_optimizer_->optimize(*weights_.get(), *weights_grad_, n);
+    bias_optimizer_->optimize(*bias_.get(), *bias_grad_, n);
   }
 
   Tensor *gradient() const {
-    return (Tensor *)&output_grad_;
+    return output_grad_.get();
   }
 
 protected:
   const Tensor *input_grad_;
-  const Tensor weights_grad_;
-  const Tensor bias_grad_;
+  unique_ptr<Tensor> weights_grad_;
+  unique_ptr<Tensor> bias_grad_;
   Tensor batch_of_one_;
 
-  const Tensor output_grad_;
+  unique_ptr<Tensor> output_grad_;
 
-  std::unique_ptr<Optimizer> weights_optimizer_;
-  std::unique_ptr<Optimizer> bias_optimizer_;
+  unique_ptr<Optimizer> weights_optimizer_;
+  unique_ptr<Optimizer> bias_optimizer_;
 
 };
 

@@ -3,6 +3,8 @@
 
 #include "common.h"
 
+using namespace std;
+
 namespace saga {
 
 static const char *
@@ -50,7 +52,9 @@ public:
               std::shared_ptr<Tensor> kernel,
               std::shared_ptr<Tensor> bias)
     : input_(prev.output())
+    , conv_fwd_algo_(CUDNN_CONVOLUTION_FWD_ALGO_COUNT)
   {
+    prev.output()->allocate();
     const auto data_type = input_->dataType();
 
     if(kernel != NULL) {
@@ -89,8 +93,17 @@ public:
                                                    filter_desc_,
                                                    &on, &oc, &oh, &ow));
 
+    if(use_bias) {
+      bias_ = bias ?: make_shared<Tensor>(Size(1, oc, 1, 1), input_->dataType(),
+                                          0.0f);
+    }
+
     output_ = std::make_unique<Tensor>(Size(on, oc, oh, ow),
                                        input_->dataType());
+  }
+
+
+  void setup(const Network &n) override {
 
     chkCUDNN(cudnnGetConvolutionForwardAlgorithm(n.cudnn_,
                                                  input_->desc(),
@@ -111,16 +124,6 @@ public:
                                                      &workspace_bytes));
 
     workspace_size_ = std::max(workspace_size_, workspace_bytes);
-
-    if(use_bias) {
-
-      if(bias) {
-        bias_ = bias;
-      } else {
-        bias_ = std::make_shared<Tensor>(Size(1, oc, 1, 1),
-                                         input_->dataType());
-      }
-    }
   }
 
 
@@ -128,7 +131,7 @@ public:
 
   }
 
-  const Tensor *output() const override {
+  Tensor *output() const override {
     return output_.get();
   }
 
@@ -200,15 +203,25 @@ public:
     , input_grad_(prev.gradient())
     , output_grad_(*output_)
 
-    , kernel_grad_(*kernel_.get())
+    , kernel_grad_(make_unique<Tensor>(*kernel_.get()))
     , kernel_optimizer_(n.makeOptimizer(*kernel_))
   {
+    if(prev.gradient())
+      prev.gradient()->allocate();
+
+    kernel_grad_->allocate();
 
     if(bias_) {
       bias_grad_ = std::make_unique<Tensor>(*bias_);
+      bias_grad_->allocate();
       bias_optimizer_ = n.makeOptimizer(*bias_);
     }
+  }
 
+
+  void setup(const Network &n) override {
+
+    Convolution::setup(n);
 
     chkCUDNN(cudnnGetConvolutionBackwardDataAlgorithm(n.cudnn_,
                                                       filter_desc_,
@@ -218,7 +231,6 @@ public:
                                                       CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST,
                                                       0,
                                                       &bwd_data_algo_));
-
 
     size_t workspace_bytes = 0;
 
@@ -277,7 +289,7 @@ public:
                                             n.workspace_, n.workspace_size_,
                                             &beta,
                                             filter_desc_,
-                                            kernel_grad_.deviceMem()));
+                                            kernel_grad_->deviceMem()));
 
     if(input_grad_ != NULL) {
       chkCUDNN(cudnnConvolutionBackwardData(n.cudnn_, &alpha,
@@ -293,7 +305,7 @@ public:
                                             input_grad_->deviceMem()));
     }
 
-    kernel_optimizer_->optimize(*kernel_, kernel_grad_, n);
+    kernel_optimizer_->optimize(*kernel_, *kernel_grad_, n);
     if(bias_optimizer_ != NULL)
       bias_optimizer_->optimize(*bias_, *bias_grad_, n);
   }
@@ -310,7 +322,7 @@ private:
   const Tensor *input_grad_;
   const Tensor output_grad_;
 
-  const Tensor kernel_grad_;
+  unique_ptr<Tensor> kernel_grad_;
 
   std::unique_ptr<Tensor> bias_grad_;
 

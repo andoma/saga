@@ -19,25 +19,21 @@ public:
             shared_ptr<Tensor> var)
     : epsilon_(epsilon)
     , input_(prev.output())
-    , output_(*input_)
+    , output_(std::make_unique<Tensor>(*input_))
   {
+    prev.output()->allocate();
+
     const Size s(1, input_->c, 1, 1);
     const cudnnDataType_t dt = input_->dataType();
 
-    if(scale) {
-      scale_ = scale;
-    } else {
-      scale_ = make_shared<Tensor>(s, dt);
-      scale_->fill(1.0f);
-    }
-
-    bias_  = bias  ?: make_shared<Tensor>(s, dt);
-    mean_  = mean  ?: make_shared<Tensor>(s, dt);
-    var_   = var   ?: make_shared<Tensor>(s, dt);
+    scale_ = scale ?: make_shared<Tensor>(s, dt, 1.0f);
+    bias_  = bias  ?: make_shared<Tensor>(s, dt, 0.0f);
+    mean_  = mean  ?: make_shared<Tensor>(s, dt, 0.0f);
+    var_   = var   ?: make_shared<Tensor>(s, dt, 0.0f);
   }
 
-  const Tensor *output() const override {
-    return &output_;
+  Tensor *output() const override {
+    return output_.get();
   }
 
   string name() const override {
@@ -45,7 +41,7 @@ public:
 
     ss <<  "Batchnorm " << input_->name()
        << " scale " << scale_->name()
-       << " => " << output_.name();
+       << " => " << output_->name();
     return ss.str();
   }
 
@@ -58,8 +54,8 @@ public:
                                                      &alpha, &beta,
                                                      input_->desc(),
                                                      input_->deviceMem(),
-                                                     output_.desc(),
-                                                     output_.deviceMem(),
+                                                     output_->desc(),
+                                                     output_->deviceMem(),
                                                      scale_->desc(),
                                                      scale_->deviceMem(),
                                                      bias_->deviceMem(),
@@ -72,7 +68,7 @@ protected:
 
   const double epsilon_;
   const Tensor *input_;
-  Tensor output_;
+  unique_ptr<Tensor> output_;
   shared_ptr<Tensor> scale_;
   shared_ptr<Tensor> bias_;
   shared_ptr<Tensor> mean_;
@@ -95,7 +91,7 @@ public:
                     shared_ptr<Tensor> var)
     : BatchNorm(epsilon, prev, n, scale, bias, mean, var)
     , input_grad_(prev.gradient())
-    , output_grad_(output_)
+    , output_grad_(make_unique<Tensor>(*output_))
     , saved_mean_(*scale_.get())
     , saved_ivar_(*scale_.get())
     , scale_grad_(*scale_.get())
@@ -103,7 +99,15 @@ public:
     , scale_optimizer_(n.makeOptimizer(*scale_))
     , bias_optimizer_(n.makeOptimizer(*bias_))
     , expavgf_(expavgf)
-  {}
+  {
+    if(prev.gradient())
+      prev.gradient()->allocate();
+
+    saved_mean_.allocate();
+    saved_ivar_.allocate();
+    scale_grad_.allocate();
+    bias_grad_.allocate();
+  }
 
 
   void forward(const Network &n) override {
@@ -120,8 +124,8 @@ public:
                                                     &alpha, &beta,
                                                     input_->desc(),
                                                     input_->deviceMem(),
-                                                    output_.desc(),
-                                                    output_.deviceMem(),
+                                                    output_->desc(),
+                                                    output_->deviceMem(),
                                                     scale_->desc(),
                                                     scale_->deviceMem(),
                                                     bias_->deviceMem(),
@@ -148,8 +152,8 @@ public:
                                              &alpha, &beta,
                                              input_->desc(),
                                              input_->deviceMem(),
-                                             output_grad_.desc(),
-                                             output_grad_.deviceMem(),
+                                             output_grad_->desc(),
+                                             output_grad_->deviceMem(),
                                              input_grad_->desc(),
                                              input_grad_->deviceMem(),
                                              scale_->desc(),
@@ -166,12 +170,12 @@ public:
   }
 
   Tensor *gradient() const {
-    return (Tensor *)&output_grad_;
+    return output_grad_.get();
   }
 
 private:
   const Tensor *input_grad_;
-  const Tensor output_grad_;
+  unique_ptr<Tensor> output_grad_;
 
   Tensor saved_mean_;
   Tensor saved_ivar_;

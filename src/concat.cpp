@@ -35,6 +35,8 @@ struct Input {
 
 class Concat : public Layer {
 
+  std::vector<const Layer *> prevs_;
+
 public:
   Concat(const std::vector<const Layer *> &prevs, bool backprop)
   {
@@ -44,8 +46,16 @@ public:
     unsigned int channels = t0->c;
     auto dt = t0->dataType();
     assert(dt == CUDNN_DATA_FLOAT);
+    prevs[0]->output()->allocate();
+
+    if(backprop)
+      prevs[0]->gradient()->allocate();
 
     for(size_t i = 1; i < prevs.size(); i++) {
+      prevs[i]->output()->allocate();
+      if(backprop)
+        prevs[i]->gradient()->allocate();
+
       channels += prevs[i]->output()->c;
       assert(prevs[i]->output()->w == t0->w);
       assert(prevs[i]->output()->h == t0->h);
@@ -55,6 +65,14 @@ public:
 
     output_ = std::make_unique<Tensor>(s, dt);
 
+    if(backprop)
+      output_grad_ = std::make_unique<Tensor>(s, dt);
+
+    prevs_ = prevs;
+  }
+
+  void setup(const Network &n) override {
+    const bool backprop = !!output_grad_.get();
     cudnnDataType_t odt;
     int on, oc, oh, ow, osn, osc, osh, osw;
     chkCUDNN(cudnnGetTensor4dDescriptor(output_->desc(),
@@ -62,17 +80,15 @@ public:
                                         &on, &oc, &oh, &ow,
                                         &osn, &osc, &osh, &osw));
 
-    if(backprop)
-      output_grad_ = std::make_unique<Tensor>(s, dt);
 
     char *odm = (char *)output_->deviceMem();
     char *ogdm = backprop ? (char *)output_grad_->deviceMem() : NULL;
     size_t dtsize = sizeof(float);
 
-    for(size_t i = 0; i < prevs.size(); i++) {
+    for(size_t i = 0; i < prevs_.size(); i++) {
 
       cudnnTensorDescriptor_t desc;
-      const Tensor *input = prevs[i]->output();
+      const Tensor *input = prevs_[i]->output();
       cudnnDataType_t dt;
       int n, c, h, w, sn, sc, sh, sw;
 
@@ -86,8 +102,8 @@ public:
                                             n, c, h, w,
                                             osn, osc, sh, sw));
 
-      inputs_.push_back(std::make_unique<Input>(prevs[i]->output(),
-                                                prevs[i]->gradient(),
+      inputs_.push_back(std::make_unique<Input>(prevs_[i]->output(),
+                                                prevs_[i]->gradient(),
                                                 desc,
                                                 (float *)odm,
                                                 (float *)ogdm));
@@ -98,7 +114,7 @@ public:
     }
   }
 
-  const Tensor *output() const override {
+  Tensor *output() const override {
     return output_.get();
   }
 

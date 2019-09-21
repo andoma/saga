@@ -24,7 +24,7 @@ void Tensor::toRGBBitmap(uint8_t *output, int stride,
   assert(datatype == CUDNN_DATA_FLOAT);
 
 
-  const float *src0 = (const float *)device_mem_;
+  const float *src0 = (const float *)deviceMem();
 
   for(int y = 0; y < hh; y++) {
     for(int x = 0; x < ww; x++) {

@@ -65,6 +65,15 @@ struct Size {
 };
 
 
+class TensorStorage {
+public:
+
+  ~TensorStorage();
+
+  void *device_mem_;
+  size_t bytes_;
+};
+
 
 class Tensor : public Size {
 
@@ -81,19 +90,25 @@ public:
 
   static std::shared_ptr<Tensor> createFromPB(const char *path);
 
-  Tensor(const Size &s, cudnnDataType_t dt);
+  explicit Tensor(const Tensor &t);
 
-  Tensor(const Tensor &t);
+  explicit Tensor(const Size &s, cudnnDataType_t dt);
 
-  ~Tensor();
+  explicit Tensor(const Size &s, cudnnDataType_t data_type, float fill_value);
+
+  void allocate();
 
   cudnnDataType_t dataType() const { return data_type_; }
 
-  cudnnTensorDescriptor_t desc() const { return desc_; }
+  cudnnTensorDescriptor_t desc() const {
+    assert(desc_ != NULL);
+    return desc_;
+  }
 
   void *deviceMem(void) const {
-    assert(device_mem_ != NULL);
-    return device_mem_;
+    assert(storage_ != NULL);
+    assert(storage_->device_mem_ != NULL);
+    return storage_->device_mem_;
   };
 
   void save(float *data) const;
@@ -133,13 +148,16 @@ public:
   void synchronize() const;
 
   float get(int n, int c, int x, int y) const {
-    const float *p = (const float *)device_mem_;
+    const float *p = (const float *)deviceMem();
     return p[n * ns_ + c * cs_ + y * hs_ + x * ws_];
   }
 
+  void set(int n, int c, int x, int y, float v) {
+    float *p = (float *)deviceMem();
+    p[n * ns_ + c * cs_ + y * hs_ + x * ws_] = v;
+  }
+
 private:
-  void *device_mem_;
-  size_t bytes_;
   int ns_;
   int cs_;
   int hs_;
@@ -148,6 +166,7 @@ private:
   cudnnDataType_t data_type_;
   cudnnTensorDescriptor_t desc_;
 
+  std::shared_ptr<TensorStorage> storage_;
 };
 
 
@@ -159,9 +178,11 @@ public:
 
   virtual std::string name() const = 0;
 
-  virtual const Tensor *output() const = 0;
+  virtual Tensor *output() const = 0;
 
   virtual Tensor *gradient() const { return nullptr; }
+
+  virtual void setup(const Network &n) {};
 
   virtual void forward(const Network &n) = 0;
 
@@ -271,7 +292,7 @@ std::shared_ptr<Layer> makeDropout(float prob,
                                    std::shared_ptr<Layer> prev,
                                    const Network &n);
 
-std::shared_ptr<Layer> makeInput(const Tensor *input,
+std::shared_ptr<Layer> makeInput(Tensor *input,
                                  bool withGradient = false);
 
 std::shared_ptr<Layer> makeConcat(const std::vector<const Layer *> &prevs,
