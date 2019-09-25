@@ -43,6 +43,9 @@ Tensor::Tensor(const Tensor &t)
 
 void Tensor::allocate()
 {
+  if(storage_)
+    return; // Already allocated
+
   int wastedump;
   cudnnDataType_t wastedump2;
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
