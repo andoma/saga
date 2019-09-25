@@ -151,8 +151,8 @@ void Tensor::load(__restrict__ const uint8_t **data)
 
 void Tensor::load(const void *data, size_t size)
 {
-  assert(storage_ != NULL);
-  assert(size == storage_->bytes_);
+  if(storage_ == NULL)
+    allocate();
   cudaMemcpy(deviceMem(), data, storage_->bytes_, cudaMemcpyHostToDevice);
 }
 
