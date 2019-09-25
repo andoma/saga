@@ -22,7 +22,7 @@ public:
   ~ConcatTensor()
   {}
 
-  void allocate() override;
+  void allocate(cudnnTensorFormat_t format) override;
 
 private:
 
@@ -30,9 +30,9 @@ private:
 
 };
 
-void ConcatTensor::allocate()
+void ConcatTensor::allocate(cudnnTensorFormat_t format)
 {
-  Tensor::allocate();
+  Tensor::allocate(format);
 
   int channels = 0;
   size_t datasize = sizeof(float);
@@ -41,7 +41,6 @@ void ConcatTensor::allocate()
     auto part = parts_[i];
     const size_t offset = datasize * channels * cs_;
     part->allocate(this, offset);
-
     channels += part->c;
   }
 }

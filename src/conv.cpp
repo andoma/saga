@@ -66,6 +66,7 @@ public:
                                               filter_size),
                                          input_->dataType());
 
+      kernel_->allocate(CUDNN_TENSOR_NHWC);
       kernel_->randomize(sqrt(2.0 / (input_->c * filter_size * filter_size)));
     }
 
@@ -73,7 +74,7 @@ public:
 
     chkCUDNN(cudnnSetFilter4dDescriptor(filter_desc_,
                                         kernel_->dataType(),
-                                        CUDNN_TENSOR_NCHW,
+                                        CUDNN_TENSOR_NHWC,
                                         kernel_->n,
                                         kernel_->c,
                                         kernel_->h,
@@ -104,6 +105,9 @@ public:
 
 
   void setup(const Network &n) override {
+
+    printf("Input: "); printDesc(input_->desc());
+    printf("Output: "); printDesc(output_->desc());
 
     chkCUDNN(cudnnGetConvolutionForwardAlgorithm(n.cudnn_,
                                                  input_->desc(),

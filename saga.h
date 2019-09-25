@@ -102,7 +102,7 @@ public:
 
   virtual ~Tensor();
 
-  virtual void allocate();
+  virtual void allocate(cudnnTensorFormat_t format = CUDNN_TENSOR_NHWC);
 
   void allocate(Tensor *container, size_t offset);
 

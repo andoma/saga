@@ -210,6 +210,8 @@ tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
 
   auto t = make_shared<Tensor>(Size(dims), CUDNN_DATA_FLOAT);
 
+  t->allocate(CUDNN_TENSOR_NCHW);
+
   if(tp.raw_data().size()) {
     t->load((const void *)&tp.raw_data()[0], tp.raw_data().size());
   } else if(tp.float_data_size()) {

@@ -53,15 +53,14 @@ Tensor::Tensor(const Tensor &t)
 {
 }
 
-void Tensor::allocate()
+void Tensor::allocate(cudnnTensorFormat_t format)
 {
   if(storage_)
     return; // Already allocated
 
   int wastedump;
   cudnnDataType_t wastedump2;
-  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, CUDNN_TENSOR_NCHW, data_type_,
-                                      n, c, h, w));
+  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, data_type_, n, c, h, w));
 
   cudnnGetTensor4dDescriptor(desc_, &wastedump2,
                              &wastedump, &wastedump, &wastedump, &wastedump,
@@ -137,8 +136,7 @@ float Tensor::loss(const unsigned int *labels) const
 
 void Tensor::load(const float *data)
 {
-  if(storage_ == NULL)
-    allocate();
+  assert(storage_ != NULL);
   memcpy(deviceMem(), (const void *)data, storage_->bytes_);
 }
 
@@ -174,8 +172,7 @@ void Tensor::load(__restrict__ const uint8_t **data)
 
 void Tensor::load(const void *data, size_t size)
 {
-  if(storage_ == NULL)
-    allocate();
+  assert(storage_ != NULL);
   assert(storage_->bytes_ == size);
   memcpy(deviceMem(), (const void *)data, storage_->bytes_);
 }
@@ -185,9 +182,9 @@ void Tensor::fill(float value)
 {
   assert(dataType() == CUDNN_DATA_FLOAT);
 
+  allocate();
+
   if(value == 0) {
-    if(storage_ == NULL)
-      allocate();
     cudaMemset(deviceMem(), 0, storage_->bytes_);
     return;
   }
