@@ -121,17 +121,16 @@ build_fire_module(Network &net, const Layer &input,
                   int s1x1, int e1x1, int e3x3)
 {
   auto s = net.addLayer(makeConvolution(s1x1, 1, 1, 0, input, net));
+  s = net.addLayer(makeBatchNorm(1e-5, *s, net, 0.25));
   s = net.addLayer(makeActivation(ActivationMode::RELU, 0, *s, net));
 
   auto e1 = net.addLayer(makeConvolution(e1x1, 1, 1, 0, *s, net, false));
   auto e3 = net.addLayer(makeConvolution(e3x3, 3, 1, 1, *s, net, false));
 
-  auto c = net.addLayer(makeConcat({e1.get(), e3.get()}, net));
+  e1 = net.addLayer(makeActivation(ActivationMode::RELU, 0, *e1, net));
+  e3 = net.addLayer(makeActivation(ActivationMode::RELU, 0, *e3, net));
 
-  c = net.addLayer(makeBatchNorm(1e-5, *c, net, 0.25));
-
-  return net.addLayer(makeActivation(ActivationMode::RELU, 0, *c, net));
-
+  return net.addLayer(makeConcat({e1.get(), e3.get()}, net));
 }
 
 
