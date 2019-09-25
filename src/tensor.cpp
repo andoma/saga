@@ -118,8 +118,7 @@ void Tensor::load(const float *data)
 {
   if(storage_ == NULL)
     allocate();
-  cudaMemcpy(deviceMem(), (const void *)data,
-             storage_->bytes_, cudaMemcpyHostToDevice);
+  memcpy(deviceMem(), (const void *)data, storage_->bytes_);
 }
 
 
@@ -156,7 +155,8 @@ void Tensor::load(const void *data, size_t size)
 {
   if(storage_ == NULL)
     allocate();
-  cudaMemcpy(deviceMem(), data, storage_->bytes_, cudaMemcpyHostToDevice);
+  assert(storage_->bytes_ == size);
+  memcpy(deviceMem(), (const void *)data, storage_->bytes_);
 }
 
 
