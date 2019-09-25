@@ -330,4 +330,8 @@ std::unique_ptr<Optimizer> makeGradientDescentOptimizer(const Size &s,
                                                         const Network &net);
 
 
+// Misc helpers
+
+void printDesc(cudnnTensorDescriptor_t desc);
+
 }

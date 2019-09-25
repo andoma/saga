@@ -333,8 +333,7 @@ Tensor::Stats Tensor::stats() const {
 }
 
 
-#if 0
-static void
+void
 printDesc(cudnnTensorDescriptor_t desc)
 {
   cudnnDataType_t dt;
@@ -348,7 +347,6 @@ printDesc(cudnnTensorDescriptor_t desc)
          n, c, h, w,
          ns, cs, hs, ws);
 }
-#endif
 
 
 
