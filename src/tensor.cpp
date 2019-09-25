@@ -27,6 +27,7 @@ Tensor::Tensor(const Size &s, cudnnDataType_t data_type)
   , ws_(0)
   , data_type_(data_type)
   , desc_(nullptr)
+  , device_mem_(nullptr)
 {}
 
 Tensor::Tensor(const Size &s, cudnnDataType_t data_type, float v)
@@ -62,6 +63,7 @@ void Tensor::allocate()
   chkCuda(cudaMallocManaged(&ts->device_mem_, bytes, cudaMemAttachGlobal));
   chkCuda(cudaMemset(ts->device_mem_, 0, bytes));
   storage_ = ts;
+  device_mem_ = ts->device_mem_;
 }
 
 

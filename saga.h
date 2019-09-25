@@ -106,9 +106,8 @@ public:
   }
 
   void *deviceMem(void) const {
-    assert(storage_ != NULL);
-    assert(storage_->device_mem_ != NULL);
-    return storage_->device_mem_;
+    assert(device_mem_ != NULL);
+    return device_mem_;
   };
 
   void save(float *data) const;
@@ -165,6 +164,8 @@ private:
 
   cudnnDataType_t data_type_;
   cudnnTensorDescriptor_t desc_;
+
+  void *device_mem_;
 
   std::shared_ptr<TensorStorage> storage_;
 };
