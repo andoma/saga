@@ -66,7 +66,10 @@ struct Size {
 
 
 class TensorStorage {
+
 public:
+
+  TensorStorage(size_t bytes);
 
   ~TensorStorage();
 
@@ -90,13 +93,18 @@ public:
 
   static std::shared_ptr<Tensor> createFromPB(const char *path);
 
+
   explicit Tensor(const Tensor &t);
 
   explicit Tensor(const Size &s, cudnnDataType_t dt);
 
   explicit Tensor(const Size &s, cudnnDataType_t data_type, float fill_value);
 
-  void allocate();
+  virtual ~Tensor();
+
+  virtual void allocate();
+
+  void allocate(Tensor *container, size_t offset);
 
   cudnnDataType_t dataType() const { return data_type_; }
 
@@ -147,27 +155,31 @@ public:
   void synchronize() const;
 
   float get(int n, int c, int x, int y) const {
-    const float *p = (const float *)deviceMem();
+    const float *p = (const float *)device_mem_;
     return p[n * ns_ + c * cs_ + y * hs_ + x * ws_];
   }
 
   void set(int n, int c, int x, int y, float v) {
-    float *p = (float *)deviceMem();
+    float *p = (float *)device_mem_;
     p[n * ns_ + c * cs_ + y * hs_ + x * ws_] = v;
   }
 
-private:
+
   int ns_;
   int cs_;
   int hs_;
   int ws_;
 
-  cudnnDataType_t data_type_;
+  std::shared_ptr<TensorStorage> storage_;
+
   cudnnTensorDescriptor_t desc_;
+
+private:
+  cudnnDataType_t data_type_;
 
   void *device_mem_;
 
-  std::shared_ptr<TensorStorage> storage_;
+
 };
 
 

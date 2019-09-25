@@ -44,6 +44,7 @@ public:
     return ss.str();
   }
 
+
   void forward(const Network &n) override {
 
     float alpha = 1.0f, beta = 0.0f;

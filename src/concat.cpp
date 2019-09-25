@@ -5,40 +5,55 @@
 
 #include "common.h"
 
+
+using namespace std;
+
 namespace saga {
 
 
-struct Input {
+class ConcatTensor : public Tensor {
 
-  Input& operator=(Input const&) = delete;
-  Input(Input const &t) = delete;
-
-  Input(const Tensor *input,
-        const Tensor *input_grad,
-        cudnnTensorDescriptor_t desc,
-        void *output_device_mem,
-        void *output_grad_device_mem)
-    : input_(input)
-    , input_grad_(input_grad)
-    , desc_(desc)
-    , output_device_mem_(output_device_mem)
-    , output_grad_device_mem_(output_grad_device_mem)
+public:
+  ConcatTensor(const Size &s, cudnnDataType_t dt, const vector<Tensor *> &parts)
+    : Tensor(s, dt)
+    , parts_(parts)
   {}
 
-  const Tensor *input_;
-  const Tensor *input_grad_;
-  cudnnTensorDescriptor_t desc_;
-  void *output_device_mem_;
-  void *output_grad_device_mem_;
+  ~ConcatTensor()
+  {}
+
+  void allocate() override;
+
+private:
+
+  const vector<Tensor *> parts_;
+
 };
+
+void ConcatTensor::allocate()
+{
+  Tensor::allocate();
+
+  int channels = 0;
+  size_t datasize = sizeof(float);
+
+  for(size_t i = 0; i < parts_.size(); i++) {
+    auto part = parts_[i];
+    const size_t offset = datasize * channels * cs_;
+    part->allocate(this, offset);
+
+    channels += part->c;
+  }
+}
+
+
+
 
 
 class Concat : public Layer {
 
-  std::vector<const Layer *> prevs_;
-
 public:
-  Concat(const std::vector<const Layer *> &prevs, bool backprop)
+  Concat(const vector<const Layer *> &prevs, bool backprop)
   {
     assert(prevs.size() > 0);
     const Tensor *t0 = prevs[0]->output();
@@ -46,16 +61,7 @@ public:
     unsigned int channels = t0->c;
     auto dt = t0->dataType();
     assert(dt == CUDNN_DATA_FLOAT);
-    prevs[0]->output()->allocate();
-
-    if(backprop)
-      prevs[0]->gradient()->allocate();
-
     for(size_t i = 1; i < prevs.size(); i++) {
-      prevs[i]->output()->allocate();
-      if(backprop)
-        prevs[i]->gradient()->allocate();
-
       channels += prevs[i]->output()->c;
       assert(prevs[i]->output()->w == t0->w);
       assert(prevs[i]->output()->h == t0->h);
@@ -63,54 +69,21 @@ public:
 
     Size s(t0->n, channels, t0->h, t0->w);
 
-    output_ = std::make_unique<Tensor>(s, dt);
+    vector<Tensor *> output_parts;
+    output_parts.resize(prevs.size());
+    transform(prevs.begin(), prevs.end(), output_parts.begin(),
+              [](const Layer *l) -> Tensor * { return l->output(); });
 
-    if(backprop)
-      output_grad_ = std::make_unique<Tensor>(s, dt);
+    output_ = make_unique<ConcatTensor>(s, dt, output_parts);
 
-    prevs_ = prevs;
-  }
+    if(backprop) {
 
-  void setup(const Network &n) override {
-    const bool backprop = !!output_grad_.get();
-    cudnnDataType_t odt;
-    int on, oc, oh, ow, osn, osc, osh, osw;
-    chkCUDNN(cudnnGetTensor4dDescriptor(output_->desc(),
-                                        &odt,
-                                        &on, &oc, &oh, &ow,
-                                        &osn, &osc, &osh, &osw));
+      vector<Tensor *> output_grad_parts;
+      output_grad_parts.resize(prevs.size());
+      transform(prevs.begin(), prevs.end(), output_grad_parts.begin(),
+                [](const Layer *l) -> Tensor * { return l->gradient(); });
 
-
-    char *odm = (char *)output_->deviceMem();
-    char *ogdm = backprop ? (char *)output_grad_->deviceMem() : NULL;
-    size_t dtsize = sizeof(float);
-
-    for(size_t i = 0; i < prevs_.size(); i++) {
-
-      cudnnTensorDescriptor_t desc;
-      const Tensor *input = prevs_[i]->output();
-      cudnnDataType_t dt;
-      int n, c, h, w, sn, sc, sh, sw;
-
-      chkCUDNN(cudnnGetTensor4dDescriptor(input->desc(),
-                                          &dt,
-                                          &n, &c, &h, &w,
-                                          &sn, &sc, &sh, &sw));
-
-      chkCUDNN(cudnnCreateTensorDescriptor(&desc));
-      chkCUDNN(cudnnSetTensor4dDescriptorEx(desc, dt,
-                                            n, c, h, w,
-                                            osn, osc, sh, sw));
-
-      inputs_.push_back(std::make_unique<Input>(prevs_[i]->output(),
-                                                prevs_[i]->gradient(),
-                                                desc,
-                                                (float *)odm,
-                                                (float *)ogdm));
-
-      odm += dtsize * sn;
-      if(ogdm != NULL)
-        ogdm += dtsize * sn;
+      output_grad_ = make_unique<ConcatTensor>(s, dt, output_grad_parts);
     }
   }
 
@@ -122,56 +95,31 @@ public:
     return (Tensor *)output_grad_.get();
   }
 
-  std::string name() const override {
-    std::stringstream ss;
-    ss << "Concat {";
-    for(const auto &i : inputs_) {
-      ss << " " << i->input_->name();
-    }
+  string name() const override {
+    stringstream ss;
+    ss << "Concat { ... ";
     ss << " } => " << output_->name();
     return ss.str();
   }
 
   void forward(const Network &n) override {
-    float alpha = 1.0f, beta = 0.0f;
-    for(const auto &it : inputs_) {
-      chkCUDNN(cudnnTransformTensor(n.cudnn_,
-                                    &alpha,
-                                    it->input_->desc(),
-                                    it->input_->deviceMem(),
-                                    &beta,
-                                    it->desc_,
-                                    it->output_device_mem_));
-    }
-
   }
 
 
 
   void backprop(const Network &n) override {
-    float alpha = 1.0f, beta = 0.0f;
-    for(const auto &it : inputs_) {
-      chkCUDNN(cudnnTransformTensor(n.cudnn_,
-                                    &alpha,
-                                    it->desc_,
-                                    it->output_grad_device_mem_,
-                                    &beta,
-                                    it->input_grad_->desc(),
-                                    it->input_grad_->deviceMem()));
-    }
   }
 
-protected:
-  std::vector<std::unique_ptr<Input>> inputs_;
-  std::unique_ptr<Tensor> output_;
-  std::unique_ptr<Tensor> output_grad_;
+private:
+  unique_ptr<Tensor> output_;
+  unique_ptr<Tensor> output_grad_;
 };
 
 
-std::shared_ptr<Layer> makeConcat(const std::vector<const Layer *> &prevs,
-                                  const Network &n)
+shared_ptr<Layer> makeConcat(const vector<const Layer *> &inputs,
+                             const Network &n)
 {
-  return std::make_shared<Concat>(prevs, n.backprop_);
+  return make_shared<Concat>(inputs, n.backprop_);
 }
 
 }

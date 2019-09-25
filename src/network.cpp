@@ -86,8 +86,8 @@ void Network::forward(bool inference)
       last->gradient()->allocate();
 
     for(size_t i = 0; i < layers_.size(); i++) {
-      printf("Setup layer: %s\n", layers_[i]->name().c_str());
       layers_[i]->setup(*this);
+      printf("Setup layer: %s\n", layers_[i]->name().c_str());
       workspace_size_ = std::max(workspace_size_, layers_[i]->workspaceSize());
     }
     chkCuda(cudaMalloc(&workspace_, workspace_size_));

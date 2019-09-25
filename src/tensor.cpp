@@ -15,8 +15,18 @@ TensorStorage::~TensorStorage()
   chkCuda(cudaFree(device_mem_));
 }
 
+TensorStorage::TensorStorage(size_t bytes)
+  : bytes_(bytes)
+{
+  chkCuda(cudaMallocManaged(&device_mem_, bytes_, cudaMemAttachGlobal));
+  chkCuda(cudaMemset(device_mem_, 0, bytes_));
+}
 
 
+Tensor::~Tensor()
+{
+  cudnnDestroyTensorDescriptor(desc_);
+}
 
 
 Tensor::Tensor(const Size &s, cudnnDataType_t data_type)
@@ -25,10 +35,12 @@ Tensor::Tensor(const Size &s, cudnnDataType_t data_type)
   , cs_(0)
   , hs_(0)
   , ws_(0)
-  , data_type_(data_type)
   , desc_(nullptr)
+  , data_type_(data_type)
   , device_mem_(nullptr)
-{}
+{
+  chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
+}
 
 Tensor::Tensor(const Size &s, cudnnDataType_t data_type, float v)
   : Tensor(s, data_type)
@@ -48,25 +60,35 @@ void Tensor::allocate()
 
   int wastedump;
   cudnnDataType_t wastedump2;
-  chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
   chkCUDNN(cudnnSetTensor4dDescriptor(desc_, CUDNN_TENSOR_NCHW, data_type_,
                                       n, c, h, w));
 
-  cudnnGetTensor4dDescriptor(desc(), &wastedump2,
+  cudnnGetTensor4dDescriptor(desc_, &wastedump2,
                              &wastedump, &wastedump, &wastedump, &wastedump,
                              &ns_, &cs_, &hs_, &ws_);
 
   size_t bytes;
-  chkCUDNN(cudnnGetTensorSizeInBytes(desc(), &bytes));
+
+  chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes));
+  storage_ = std::make_shared<TensorStorage>(bytes);
+  device_mem_ = storage_->device_mem_;
+}
 
 
-  auto ts = std::make_shared<TensorStorage>();
+void Tensor::allocate(Tensor *container, size_t offset)
+{
+  if(storage_)
+    return; // Already allocated
 
-  ts->bytes_ = bytes;
-  chkCuda(cudaMallocManaged(&ts->device_mem_, bytes, cudaMemAttachGlobal));
-  chkCuda(cudaMemset(ts->device_mem_, 0, bytes));
-  storage_ = ts;
-  device_mem_ = ts->device_mem_;
+  chkCUDNN(cudnnSetTensor4dDescriptorEx(desc_, data_type_,
+                                        n, c, h, w,
+                                        container->ns_,
+                                        container->cs_,
+                                        container->hs_,
+                                        container->ws_));
+
+  storage_ = container->storage_;
+  device_mem_ = (void *)((char *)storage_->device_mem_ + offset);
 }
 
 
@@ -99,7 +121,6 @@ std::vector<unsigned int> Tensor::prediction() const
   }
   return r;
 }
-
 
 float Tensor::loss(const unsigned int *labels) const
 {
@@ -310,6 +331,25 @@ Tensor::Stats Tensor::stats() const {
   s.stddev = sqrt(sum2 / elements());
   return s;
 }
+
+
+#if 0
+static void
+printDesc(cudnnTensorDescriptor_t desc)
+{
+  cudnnDataType_t dt;
+  int n, c, h, w;
+  int ns, cs, hs, ws;
+
+  cudnnGetTensor4dDescriptor(desc, &dt, &n, &c, &h, &w,
+                             &ns, &cs, &hs, &ws);
+  printf("dt:%d n=%d c=%d h=%d w=%d ns=%d cs=%d hs=%d ws=%d\n",
+         dt,
+         n, c, h, w,
+         ns, cs, hs, ws);
+}
+#endif
+
 
 
 }
