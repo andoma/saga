@@ -155,8 +155,20 @@ public:
   void synchronize() const;
 
   float get(int n, int c, int x, int y) const {
-    const float *p = (const float *)device_mem_;
-    return p[n * ns_ + c * cs_ + y * hs_ + x * ws_];
+    const size_t o = n * ns_ + c * cs_ + y * hs_ + x * ws_;
+    switch(data_type_) {
+    case CUDNN_DATA_FLOAT:
+      return ((const float *)device_mem_)[o];
+    case CUDNN_DATA_UINT8:
+      return ((const uint8_t *)device_mem_)[o];
+    default:
+      abort();
+    }
+  }
+
+  void *getAddr(int n, int c, int x, int y) {
+    char *p = (char *)device_mem_;
+    return p + n * ns_ + c * cs_ + y * hs_ + x * ws_ * element_size_;
   }
 
   void set(int n, int c, int x, int y, float v) {
@@ -179,6 +191,7 @@ private:
 
   void *device_mem_;
 
+  size_t element_size_;
 
 };
 

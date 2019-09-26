@@ -39,6 +39,21 @@ Tensor::Tensor(const Size &s, cudnnDataType_t data_type)
   , data_type_(data_type)
   , device_mem_(nullptr)
 {
+  switch(data_type) {
+  case CUDNN_DATA_FLOAT:
+    element_size_ = sizeof(float);
+    break;
+  case CUDNN_DATA_HALF:
+    element_size_ = 2;
+    break;
+  case CUDNN_DATA_UINT8:
+    element_size_ = 1;
+    break;
+  default:
+    fprintf(stderr, "Unsupported data_type %d in tensor\n", data_type);
+    abort();
+  }
+
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
 }
 
