@@ -106,9 +106,6 @@ public:
 
   void setup(const Network &n) override {
 
-    printf("Input: "); printDesc(input_->desc());
-    printf("Output: "); printDesc(output_->desc());
-
     chkCUDNN(cudnnGetConvolutionForwardAlgorithm(n.cudnn_,
                                                  input_->desc(),
                                                  filter_desc_,
