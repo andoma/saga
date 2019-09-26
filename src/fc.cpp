@@ -28,6 +28,7 @@ public:
     } else {
       weights_ = make_shared<Tensor>(Size(num_inputs_, num_outputs, 1, 1),
                                      input_->dataType());
+      weights_->allocate(CUDNN_TENSOR_NCHW);
       weights_->randomize(sqrt(2.0 / num_inputs_));
     }
 
