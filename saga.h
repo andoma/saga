@@ -168,7 +168,7 @@ public:
 
   void *getAddr(int n, int c, int x, int y) {
     char *p = (char *)device_mem_;
-    return p + n * ns_ + c * cs_ + y * hs_ + x * ws_ * element_size_;
+    return p + (n * ns_ + c * cs_ + y * hs_ + x * ws_) * element_size_;
   }
 
   void set(int n, int c, int x, int y, float v) {
