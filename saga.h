@@ -261,11 +261,19 @@ public:
     optimizer_factory_ = fn;
   }
 
+  std::shared_ptr<Tensor> findTensor(const char *name,
+                                     const Size &s,
+                                     cudnnDataType_t dt,
+                                     float mean,
+                                     float sigma);
+
   std::unique_ptr<Optimizer> makeOptimizer(const Size &s) const;
 
   std::vector<std::shared_ptr<Layer>> layers_;
 
   std::unordered_map<std::string, std::shared_ptr<Layer>> named_layers_;
+
+  std::unordered_map<std::string, std::shared_ptr<Tensor>> named_tensors_;
 
   std::function<std::unique_ptr<Optimizer>(const Size &s,
                                            const Network &net)> optimizer_factory_;
@@ -288,19 +296,19 @@ public:
 
 std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
                                           const Layer &prev,
-                                          const Network &n,
-                                          std::shared_ptr<Tensor> weights = NULL,
-                                          std::shared_ptr<Tensor> bias = NULL);
+                                          Network &n,
+                                          const char *weights = NULL,
+                                          const char *bias = NULL);
 
 std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int filter_size,
                                        int stride,
                                        int padding,
                                        const Layer &prev,
-                                       const Network &n,
+                                       Network &n,
                                        bool with_bias = true,
-                                       std::shared_ptr<Tensor> weights = NULL,
-                                       std::shared_ptr<Tensor> bias = NULL);
+                                       const char *weights = NULL,
+                                       const char *bias = NULL);
 
 std::shared_ptr<Layer> makeActivation(ActivationMode mode, float a,
                                       const Layer &prev,
@@ -326,12 +334,12 @@ std::shared_ptr<Layer> makeConcat(const std::vector<const Layer *> &prevs,
 
 std::shared_ptr<Layer> makeBatchNorm(double epsilon,
                                      const Layer &prev,
-                                     const Network &n,
+                                     Network &n,
                                      float expavgf,
-                                     std::shared_ptr<Tensor> scale = NULL,
-                                     std::shared_ptr<Tensor> bias = NULL,
-                                     std::shared_ptr<Tensor> mean = NULL,
-                                     std::shared_ptr<Tensor> var = NULL);
+                                     const char *scale = NULL,
+                                     const char *bias = NULL,
+                                     const char *mean = NULL,
+                                     const char *var = NULL);
 
 // Optimizers
 

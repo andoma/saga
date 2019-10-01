@@ -47,28 +47,22 @@ public:
               int stride,
               int padding,
               const Layer &prev,
-              const Network &n,
+              Network &n,
               bool use_bias,
-              std::shared_ptr<Tensor> kernel,
-              std::shared_ptr<Tensor> bias)
+              const char *kernel,
+              const char *bias)
     : input_(prev.output())
     , conv_fwd_algo_(CUDNN_CONVOLUTION_FWD_ALGO_COUNT)
   {
     prev.output()->allocate();
     const auto data_type = input_->dataType();
 
-    if(kernel != NULL) {
-      kernel_ = kernel;
-    } else {
-      kernel_ = std::make_unique<Tensor>(Size(activation_maps,
-                                              input_->c,
-                                              filter_size,
-                                              filter_size),
-                                         input_->dataType());
-
-      kernel_->allocate(CUDNN_TENSOR_NHWC);
-      kernel_->randomize(sqrt(2.0 / (input_->c * filter_size * filter_size)));
-    }
+    kernel_ = n.findTensor(kernel,
+                           Size(activation_maps, input_->c,
+                                filter_size, filter_size),
+                           input_->dataType(),
+                           0.0f, sqrt(2.0 / (input_->c * filter_size *
+                                             filter_size)));
 
     chkCUDNN(cudnnCreateFilterDescriptor(&filter_desc_));
 
@@ -94,10 +88,9 @@ public:
                                                    filter_desc_,
                                                    &on, &oc, &oh, &ow));
 
-    if(use_bias) {
-      bias_ = bias ?: make_shared<Tensor>(Size(1, oc, 1, 1), input_->dataType(),
-                                          0.0f);
-    }
+    if(use_bias)
+      bias_ = n.findTensor(bias, Size(1, oc, 1, 1), input_->dataType(),
+                           0.0f, 0.0f);
 
     output_ = std::make_unique<Tensor>(Size(on, oc, oh, ow),
                                        input_->dataType());
@@ -195,10 +188,10 @@ public:
                       int stride,
                       int padding,
                       const Layer &prev,
-                      const Network &n,
+                      Network &n,
                       bool use_bias,
-                      std::shared_ptr<Tensor> kernel,
-                      std::shared_ptr<Tensor> bias)
+                      const char *kernel,
+                      const char *bias)
     : Convolution(activation_maps, filter_size, stride, padding, prev, n,
                   use_bias, kernel, bias)
     , input_grad_(prev.gradient())
@@ -339,10 +332,10 @@ std::shared_ptr<Layer> makeConvolution(int activation_maps,
                                        int stride,
                                        int padding,
                                        const Layer &prev,
-                                       const Network &n,
+                                       Network &n,
                                        bool use_bias,
-                                       std::shared_ptr<Tensor> kernel,
-                                       std::shared_ptr<Tensor> bias)
+                                       const char *kernel,
+                                       const char *bias)
 {
   if(n.backprop_) {
     return std::make_shared<ConvolutionBackProp>(activation_maps, filter_size,

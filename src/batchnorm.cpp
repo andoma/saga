@@ -12,11 +12,11 @@ class BatchNorm : public Layer {
 public:
   BatchNorm(double epsilon,
             const Layer &prev,
-            const Network &n,
-            shared_ptr<Tensor> scale,
-            shared_ptr<Tensor> bias,
-            shared_ptr<Tensor> mean,
-            shared_ptr<Tensor> var)
+            Network &n,
+            const char *scale,
+            const char *bias,
+            const char *mean,
+            const char *var)
     : epsilon_(epsilon)
     , input_(prev.output())
     , output_(std::make_unique<Tensor>(*input_))
@@ -26,10 +26,10 @@ public:
     const Size s(1, input_->c, 1, 1);
     const cudnnDataType_t dt = input_->dataType();
 
-    scale_ = scale ?: make_shared<Tensor>(s, dt, 1.0f);
-    bias_  = bias  ?: make_shared<Tensor>(s, dt, 0.0f);
-    mean_  = mean  ?: make_shared<Tensor>(s, dt, 0.0f);
-    var_   = var   ?: make_shared<Tensor>(s, dt, 0.0f);
+    scale_ = n.findTensor(scale, s, dt, 1.0f, 0.0f);
+    bias_  = n.findTensor(bias,  s, dt, 0.0f, 0.0f);
+    mean_  = n.findTensor(mean,  s, dt, 0.0f, 0.0f);
+    var_   = n.findTensor(var,   s, dt, 0.0f, 0.0f);
   }
 
   Tensor *output() const override {
@@ -83,12 +83,12 @@ class BatchNormBackProp : public BatchNorm {
 public:
   BatchNormBackProp(double epsilon,
                     const Layer &prev,
-                    const Network &n,
+                    Network &n,
                     float expavgf,
-                    shared_ptr<Tensor> scale,
-                    shared_ptr<Tensor> bias,
-                    shared_ptr<Tensor> mean,
-                    shared_ptr<Tensor> var)
+                    const char *scale,
+                    const char *bias,
+                    const char *mean,
+                    const char *var)
     : BatchNorm(epsilon, prev, n, scale, bias, mean, var)
     , input_grad_(prev.gradient())
     , output_grad_(make_unique<Tensor>(*output_))
@@ -192,12 +192,12 @@ private:
 
 shared_ptr<Layer> makeBatchNorm(double epsilon,
                                 const Layer &prev,
-                                const Network &n,
+                                Network &n,
                                 float expavgf,
-                                shared_ptr<Tensor> scale,
-                                shared_ptr<Tensor> bias,
-                                shared_ptr<Tensor> mean,
-                                shared_ptr<Tensor> variance)
+                                const char *scale,
+                                const char *bias,
+                                const char *mean,
+                                const char *variance)
 {
   if(n.backprop_) {
     return make_shared<BatchNormBackProp>(epsilon, prev, n, expavgf,

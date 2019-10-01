@@ -3,6 +3,8 @@
 
 #include "common.h"
 
+using namespace std;
+
 namespace saga {
 
 
@@ -65,6 +67,30 @@ std::shared_ptr<Layer> Network::nameLayer(std::shared_ptr<Layer> layer,
   return layer;
 }
 
+std::shared_ptr<Tensor> Network::findTensor(const char *name,
+                                            const Size &s,
+                                            cudnnDataType_t dt,
+                                            float mean,
+                                            float sigma)
+{
+  if(name != NULL) {
+    auto r = named_tensors_.find(name);
+    if(r != named_tensors_.end())
+      return r->second;
+  }
+
+  auto t = make_shared<Tensor>(s, dt);
+  t->allocate(CUDNN_TENSOR_NHWC);
+  if(sigma) {
+    t->randomize(sigma);
+  } else {
+    t->fill(mean);
+  }
+
+  if(name != NULL)
+    named_tensors_[name] = t;
+  return t;
+}
 
 std::shared_ptr<Layer> Network::findLayer(const std::string &name) const
 {

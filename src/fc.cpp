@@ -13,8 +13,9 @@ class FullyConnected : public Layer {
 public:
   FullyConnected(int num_outputs,
                  const Layer &prev,
-                 shared_ptr<Tensor> weights,
-                 shared_ptr<Tensor> bias)
+                 Network &net,
+                 const char *weights,
+                 const char *bias)
     : input_(prev.output())
     , num_inputs_(input_->c * input_->h * input_->w)
     , num_outputs_(num_outputs)
@@ -23,25 +24,14 @@ public:
   {
     prev.output()->allocate();
 
-    if(weights != NULL) {
-      weights_ = weights;
-    } else {
-      weights_ = make_shared<Tensor>(Size(num_inputs_, num_outputs, 1, 1),
-                                     input_->dataType());
-      weights_->allocate(CUDNN_TENSOR_NCHW);
-      weights_->randomize(sqrt(2.0 / num_inputs_));
-    }
+    weights_ = net.findTensor(weights, Size(num_inputs_, num_outputs, 1, 1),
+                              input_->dataType(),
+                              0.0, sqrt(2.0 / num_inputs_));
 
-    if(bias != NULL) {
-      bias_ = bias;
-    } else {
-
-      bias_ = make_shared<Tensor>(Size(1, num_outputs, 1, 1),
-                                  input_->dataType(), 0.0f);
-    }
+    bias_ = net.findTensor(bias, Size(1, num_outputs, 1, 1),
+                           input_->dataType(),
+                           0.0, 0.0f);
   }
-
-
 
   Tensor *output() const override {
     return output_.get();
@@ -92,10 +82,10 @@ class FullyConnectedBackProp : public FullyConnected {
 public:
   FullyConnectedBackProp(int num_outputs,
                          const Layer &prev,
-                         const Network &n,
-                         shared_ptr<Tensor> weights,
-                         shared_ptr<Tensor> bias)
-    : FullyConnected(num_outputs, prev, weights, bias)
+                         Network &n,
+                         const char *weights,
+                         const char *bias)
+    : FullyConnected(num_outputs, prev, n, weights, bias)
     , input_grad_(prev.gradient())
     , weights_grad_(make_unique<Tensor>(*weights_))
     , bias_grad_(make_unique<Tensor>(*bias_))
@@ -163,15 +153,16 @@ protected:
 
 std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
                                           const Layer &prev,
-                                          const Network &n,
-                                          shared_ptr<Tensor> weights,
-                                          shared_ptr<Tensor> bias)
+                                          Network &n,
+                                          const char *weights,
+                                          const char *bias)
 {
   if(n.backprop_)
     return std::make_shared<FullyConnectedBackProp>(num_outputs, prev, n,
                                                     weights, bias);
   else
-    return std::make_shared<FullyConnected>(num_outputs, prev, weights, bias);
+    return std::make_shared<FullyConnected>(num_outputs, prev, n, weights,
+                                            bias);
 }
 
 

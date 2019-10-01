@@ -192,6 +192,23 @@ public:
 };
 
 
+
+static void
+loadNCHW(const float *src, Tensor &t)
+{
+  for(size_t i = 0; i < t.n; i++) {
+    for(size_t j = 0; j < t.c; j++) {
+      for(size_t y = 0; y < t.h; y++) {
+        for(size_t x = 0; x < t.w; x++) {
+          t.set(i, j, y, x, *src++);
+        }
+      }
+    }
+  }
+}
+
+
+
 static shared_ptr<Tensor>
 tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
 {
@@ -210,12 +227,13 @@ tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
 
   auto t = make_shared<Tensor>(Size(dims), CUDNN_DATA_FLOAT);
 
-  t->allocate(CUDNN_TENSOR_NCHW);
+  t->allocate(CUDNN_TENSOR_NHWC);
 
   if(tp.raw_data().size()) {
-    t->load((const void *)&tp.raw_data()[0], tp.raw_data().size());
+    loadNCHW((const float *)&tp.raw_data()[0], *t);
   } else if(tp.float_data_size()) {
-    t->load(std::vector<float>(tp.float_data().begin(), tp.float_data().end()));
+    std::vector<float> v(tp.float_data().begin(), tp.float_data().end());
+    loadNCHW(&v[0], *t);
   } else {
     fprintf(stderr, "Unable to load %s: Can't load data format (please fix)\n",
             tp.name().c_str());
@@ -227,16 +245,19 @@ tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
 
 
 
-static shared_ptr<Tensor>
+static std::shared_ptr<Tensor>
 make_initializer(const TensorMap &initializers, const string &initializername,
-                 int first_axis = 0)
+                 Network &n, int first_axis = 0)
 {
   auto x = initializers.find(initializername);
   if(x == initializers.end()) {
     fprintf(stderr, "Unable to find %s", initializername.c_str());
     exit(1);
   }
-  return tensor_from_TensorProto(*x->second, first_axis);
+  auto t = tensor_from_TensorProto(*x->second, first_axis);
+
+  n.named_tensors_[initializername] = t;
+  return t;
 }
 
 
@@ -254,20 +275,18 @@ onnx_add_batchnorm(Network &n,
     return NULL;
   }
 
-  auto scale    = make_initializer(initializers, np.input(1), 1);
-  auto bias     = make_initializer(initializers, np.input(2), 1);
-  auto mean     = make_initializer(initializers, np.input(3), 1);
-  auto variance = make_initializer(initializers, np.input(4), 1);
+  make_initializer(initializers, np.input(1), n, 1);
+  make_initializer(initializers, np.input(2), n, 1);
+  make_initializer(initializers, np.input(3), n, 1);
+  make_initializer(initializers, np.input(4), n, 1);
 
   float epsilon = attribs.getFloat("epsilon", 1e-05);
 
-  printf("scale:    %s\n", scale->name().c_str());
-  printf(" bias:    %s\n", bias->name().c_str());
-  printf(" mean:    %s\n", mean->name().c_str());
-  printf("variance: %s\n", variance->name().c_str());
-
   return n.addLayer(makeBatchNorm(epsilon, *x.get(), n, 0.5,
-                                  scale, bias, mean, variance));
+                                  np.input(1).c_str(),
+                                  np.input(2).c_str(),
+                                  np.input(3).c_str(),
+                                  np.input(4).c_str()));
 }
 
 
@@ -291,12 +310,12 @@ onnx_add_conv(Network &n,
     assert(d == 1);
   }
 
-  auto weights = make_initializer(initializers, np.input(1));
+  auto weights = make_initializer(initializers, np.input(1), n);
   const int feature_maps = weights->n;
   const int kernel_size = weights->w;
   assert(weights->w == weights->h); // Only square kernels for now
 
-  auto bias = with_bias ? make_initializer(initializers, np.input(2), 1) : NULL;
+  auto bias = with_bias ? make_initializer(initializers, np.input(2), n, 1) : NULL;
 
   int pad = 0;
   auto pads = attribs.getInts("pads");
@@ -320,7 +339,9 @@ onnx_add_conv(Network &n,
   }
 
   return n.addLayer(makeConvolution(feature_maps, kernel_size, stride, pad,
-                                    *x.get(), n, with_bias, weights, bias));
+                                    *x.get(), n, with_bias,
+                                    np.input(1).c_str(),
+                                    with_bias ? np.input(2).c_str() : NULL));
 }
 
 
