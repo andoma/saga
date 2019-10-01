@@ -101,6 +101,11 @@ void Tensor::allocate(Tensor *container, size_t offset)
                                         container->hs_,
                                         container->ws_));
 
+  ns_ = container->ns_;
+  cs_ = container->cs_;
+  hs_ = container->hs_;
+  ws_ = container->ws_;
+
   storage_ = container->storage_;
   device_mem_ = (void *)((char *)storage_->device_mem_ + offset);
 }
