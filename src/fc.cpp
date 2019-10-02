@@ -157,6 +157,16 @@ std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
                                           const char *weights,
                                           const char *bias)
 {
+  if(0) {
+    // Fully connected layers can be done via convolution layers,
+    // but it's significantly slower
+    int w = prev.output()->w;
+    int h = prev.output()->h;
+    assert(w == h);
+    return makeConvolution(num_outputs, w, 1, 0, prev, n, true, weights, bias);
+  }
+
+
   if(n.backprop_)
     return std::make_shared<FullyConnectedBackProp>(num_outputs, prev, n,
                                                     weights, bias);
