@@ -341,6 +341,14 @@ std::shared_ptr<Layer> makeBatchNorm(double epsilon,
                                      const char *mean = NULL,
                                      const char *var = NULL);
 
+std::shared_ptr<Layer> makeMathOp(const Layer &prev,
+                                  cudnnOpTensorOp_t op,
+                                  std::shared_ptr<Tensor> b,
+                                  float alpha1,
+                                  float alpha2,
+                                  Network &net);
+
+
 // Optimizers
 
 std::unique_ptr<Optimizer> makeAdamOptimizer(const Size &s,
