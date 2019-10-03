@@ -148,6 +148,8 @@ public:
 
   struct Stats stats() const;
 
+  void printStats(const char *postfix) const;
+
   std::vector<unsigned int> prediction() const;
 
   float loss(const unsigned int *labels) const;

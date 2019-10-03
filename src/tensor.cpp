@@ -349,6 +349,12 @@ Tensor::Stats Tensor::stats() const {
   return s;
 }
 
+void Tensor::printStats(const char *postfix) const {
+  const auto s = stats();
+  printf("%f\t%f\t%f\t%f\t%s\n",
+         s.min, s.max, s.mean, s.stddev, postfix);
+}
+
 
 void
 printDesc(cudnnTensorDescriptor_t desc)
