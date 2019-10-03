@@ -220,9 +220,11 @@ public:
 
 protected:
 
-  Layer() : workspace_size_(0) {}
+  Layer() : workspace_size_(0), debug_(false) {}
 
   size_t workspace_size_;
+public:
+  bool debug_;
 };
 
 

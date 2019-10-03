@@ -122,6 +122,8 @@ void Network::forward(bool inference)
 
   for(size_t i = 0; i < layers_.size(); i++) {
     layers_[i]->forward(*this);
+    if(layers_[i]->debug_)
+      layers_[i]->output()->printStats(layers_[i]->name().c_str());
   }
 }
 
