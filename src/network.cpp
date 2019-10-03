@@ -1,5 +1,9 @@
+#include <dirent.h>
 #include <math.h>
 #include <assert.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #include "common.h"
 
@@ -75,8 +79,10 @@ std::shared_ptr<Tensor> Network::findTensor(const char *name,
 {
   if(name != NULL) {
     auto r = named_tensors_.find(name);
-    if(r != named_tensors_.end())
+    if(r != named_tensors_.end()) {
+      assert(*r->second == s);
       return r->second;
+    }
   }
 
   auto t = make_shared<Tensor>(s, dt);
@@ -91,6 +97,107 @@ std::shared_ptr<Tensor> Network::findTensor(const char *name,
     named_tensors_[name] = t;
   return t;
 }
+
+struct TensorDiskHeader {
+  uint8_t magic[8];
+  unsigned int n;
+  unsigned int h;
+  unsigned int w;
+  unsigned int c;
+
+} __attribute__((packed));
+
+
+
+void Network::saveTensors(const char *path) const
+{
+  TensorDiskHeader tdh;
+  memcpy(tdh.magic, "sagaT000", 8);
+
+  mkdir(path, 0755);
+  char filepath[PATH_MAX];
+  for(const auto &it : named_tensors_) {
+    snprintf(filepath, sizeof(filepath), "%s/%s", path, it.first.c_str());
+
+    int fd = open(filepath, O_CREAT | O_TRUNC | O_RDWR, 0644);
+    if(fd == -1) {
+      fprintf(stderr, "Unable to create %s -- %s\n",
+              filepath, strerror(errno));
+      continue;
+    }
+
+    auto &t = it.second;
+    tdh.n = t->n;
+    tdh.h = t->h;
+    tdh.w = t->w;
+    tdh.c = t->c;
+    if(write(fd, &tdh, sizeof(tdh)) != sizeof(tdh)) {
+      fprintf(stderr, "Unable to write to %s\n",
+              filepath);
+      close(fd);
+      unlink(filepath);
+      continue;
+    }
+
+    ssize_t s = t->elements() * t->elementSize();
+
+    if(write(fd, t->deviceMem(), s) != s) {
+      fprintf(stderr, "Unable to write to %s\n",
+              filepath);
+      close(fd);
+      unlink(filepath);
+      continue;
+    }
+    close(fd);
+  }
+}
+
+void Network::loadTensors(const char *path)
+{
+   struct dirent **namelist;
+   int n = scandir(path, &namelist, NULL, NULL);
+   if(n == -1) {
+     fprintf(stderr, "Unable to load tensors from %s -- %s",
+             path, strerror(errno));
+     return;
+   }
+
+
+   while(n--) {
+     const char *fname = namelist[n]->d_name;
+     if(fname[0] != '.') {
+       char filepath[PATH_MAX];
+       snprintf(filepath, sizeof(filepath), "%s/%s", path, fname);
+
+       int fd = open(filepath, O_RDONLY);
+       if(fd != -1) {
+         TensorDiskHeader tdh;
+
+         if(read(fd, &tdh, sizeof(tdh)) == sizeof(tdh)) {
+           if(!memcmp(tdh.magic, "sagaT000", 8)) {
+
+             auto t = make_shared<Tensor>(Size(tdh.n, tdh.c, tdh.h, tdh.w),
+                                          CUDNN_DATA_FLOAT);
+             t->allocate(CUDNN_TENSOR_NHWC);
+             ssize_t s = t->elements() * t->elementSize();
+             if(read(fd, t->deviceMem(), s) != s) {
+               fprintf(stderr, "Unable to read values from %s\n", path);
+             } else {
+               named_tensors_[fname] = t;
+             }
+           }
+
+         } else {
+           fprintf(stderr, "Unable to read header from %s\n", path);
+         }
+         close(fd);
+       }
+     }
+     free(namelist[n]);
+   }
+   free(namelist);
+}
+
 
 std::shared_ptr<Layer> Network::findLayer(const std::string &name) const
 {

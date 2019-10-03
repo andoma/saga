@@ -156,6 +156,8 @@ public:
 
   void synchronize() const;
 
+  size_t elementSize() const { return element_size_; }
+
   float get(int n, int c, int x, int y) const {
     const size_t o = n * ns_ + c * cs_ + y * hs_ + x * ws_;
     switch(data_type_) {
@@ -272,6 +274,10 @@ public:
                                      float sigma);
 
   std::unique_ptr<Optimizer> makeOptimizer(const Size &s) const;
+
+  void saveTensors(const char *path) const;
+
+  void loadTensors(const char *path);
 
   std::vector<std::shared_ptr<Layer>> layers_;
 
