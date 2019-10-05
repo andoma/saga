@@ -16,6 +16,7 @@ SRCS += main.cpp \
 	test/mnist.cpp \
 	test/test_concat.cpp \
 	test/test_onnx.cpp \
+	test/util.cpp \
 
 SRCS += ${SAGA_SRCS}
 
