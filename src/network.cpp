@@ -19,9 +19,8 @@ logcb(cudnnSeverity_t sev, void *udata, const cudnnDebug_t *dbg,
   fprintf(stderr, "%s\n", msg);
 }
 
-Network::Network(int batch_size, bool backprop)
-  : batch_size_(batch_size)
-  , backprop_(backprop)
+Network::Network(bool backprop)
+  : backprop_(backprop)
   , workspace_(NULL)
   , workspace_size_(0)
 {

@@ -243,7 +243,7 @@ typedef std::unique_ptr<Optimizer> (OptimizerFactory)(const Size &s,
 class Network {
 
 public:
-  Network(int batch_size, bool backprop);
+  Network(bool backprop);
 
   bool load(const char *path);
 
@@ -286,8 +286,6 @@ public:
 
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
-
-  int batch_size_;
 
   bool backprop_;
 

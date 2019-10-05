@@ -50,7 +50,7 @@ public:
     float alpha = 1.0f, beta = 0.0f;
 
     chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_T, CUBLAS_OP_N,
-                        num_outputs_, n.batch_size_, num_inputs_,
+                        num_outputs_, input_->n, num_inputs_,
                         &alpha,
                         (const float *)weights_->deviceMem(), num_inputs_,
                         (const float *)input_->deviceMem(), num_inputs_,
@@ -89,7 +89,7 @@ public:
     , input_grad_(prev.gradient())
     , weights_grad_(make_unique<Tensor>(*weights_))
     , bias_grad_(make_unique<Tensor>(*bias_))
-    , batch_of_one_(Size(n.batch_size_, 1, 1, 1), input_->dataType(), 1.0f)
+    , batch_of_one_(Size(input_->n, 1, 1, 1), input_->dataType(), 1.0f)
     , output_grad_(make_unique<Tensor>(*output_))
     , weights_optimizer_(n.makeOptimizer(*weights_.get()))
     , bias_optimizer_(n.makeOptimizer(*bias_.get()))
@@ -105,14 +105,14 @@ public:
     float alpha = 1.0f, beta = 0.0f;
 
     chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
-                        num_inputs_, num_outputs_, n.batch_size_,
+                        num_inputs_, num_outputs_, input_->n,
                         &alpha,
                         (const float *)input_->deviceMem(), num_inputs_,
                         (const float *)output_grad_->deviceMem(), num_outputs_,
                         &beta,
                         (float *)weights_grad_->deviceMem(), num_inputs_));
 
-    chkCuda(cublasSgemv(n.cublas_, CUBLAS_OP_N, num_outputs_, n.batch_size_,
+    chkCuda(cublasSgemv(n.cublas_, CUBLAS_OP_N, num_outputs_, input_->n,
                         &alpha,
                         (const float *)output_grad_->deviceMem(), num_outputs_,
                         (const float *)batch_of_one_.deviceMem(), 1,
@@ -121,7 +121,7 @@ public:
 
     if(input_grad_ != NULL) {
       chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
-                          num_inputs_, n.batch_size_, num_outputs_,
+                          num_inputs_, input_->n, num_outputs_,
                           &alpha,
                           (const float *)weights_->deviceMem(), num_inputs_,
                           (const float *)output_grad_->deviceMem(), num_outputs_,
