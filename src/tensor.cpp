@@ -119,39 +119,6 @@ void Tensor::synchronize() const
 
 
 
-std::vector<unsigned int> Tensor::prediction() const
-{
-  synchronize();
-
-  std::vector<unsigned int> r;
-  r.reserve(n);
-
-  for(unsigned int i = 0; i < n; i++) {
-    unsigned int label = 0;
-    float best = get(i, 0, 0, 0);
-    for(unsigned int j = 1; j < c; j++) {
-      float v = get(i, j, 0, 0);
-      if(v > best) {
-        label = j;
-        best = v;
-      }
-    }
-    r.push_back(label);
-  }
-  return r;
-}
-
-float Tensor::loss(const unsigned int *labels) const
-{
-  synchronize();
-
-  float loss_sum = 0;
-  for(unsigned int i = 0; i < n; i++) {
-    float v = get(i, labels[i], 0, 0);
-    loss_sum += -log(v);
-  }
-  return loss_sum / n;
-}
 
 
 void Tensor::load(const float *data)
@@ -164,15 +131,6 @@ void Tensor::load(const float *data)
 void Tensor::load(const std::vector<float> &data)
 {
   load(&data[0]);
-}
-
-void Tensor::load(__restrict__ const uint8_t *data)
-{
-  const size_t num_elements = elements();
-  float floats[num_elements];
-  for(size_t i = 0; i < num_elements; i++)
-    floats[i] = data[i] / 255.0f;
-  load(floats);
 }
 
 void Tensor::load(__restrict__ const uint8_t **data)

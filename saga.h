@@ -132,8 +132,6 @@ public:
 
   void load(const float *data);
 
-  void load(const uint8_t *data);
-
   void load(const void *data, size_t size);
 
   void randomize(float sigma);
@@ -149,10 +147,6 @@ public:
   struct Stats stats() const;
 
   void printStats(const char *postfix) const;
-
-  std::vector<unsigned int> prediction() const;
-
-  float loss(const unsigned int *labels) const;
 
   void synchronize() const;
 
