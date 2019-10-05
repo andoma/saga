@@ -10,6 +10,33 @@
 
 namespace saga {
 
+static float
+get_float(const void *base, size_t offset)
+{
+  return ((const float *)base)[offset];
+}
+
+static float
+get_u8(const void *base, size_t offset)
+{
+  return ((const uint8_t *)base)[offset];
+}
+
+static void
+set_float(void *base, size_t offset, float v)
+{
+  ((float *)base)[offset] = v;
+}
+
+static void
+set_u8(void *base, size_t offset, float v)
+{
+  ((uint8_t *)base)[offset] = v;
+}
+
+
+
+
 TensorStorage::~TensorStorage()
 {
   chkCuda(cudaFree(device_mem_));
@@ -42,12 +69,13 @@ Tensor::Tensor(const Size &s, cudnnDataType_t data_type)
   switch(data_type) {
   case CUDNN_DATA_FLOAT:
     element_size_ = sizeof(float);
-    break;
-  case CUDNN_DATA_HALF:
-    element_size_ = 2;
+    gettype_ = get_float;
+    settype_ = set_float;
     break;
   case CUDNN_DATA_UINT8:
     element_size_ = 1;
+    gettype_ = get_u8;
+    settype_ = set_u8;
     break;
   default:
     fprintf(stderr, "Unsupported data_type %d in tensor\n", data_type);

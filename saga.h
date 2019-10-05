@@ -153,15 +153,7 @@ public:
   size_t elementSize() const { return element_size_; }
 
   float get(int n, int c, int x, int y) const {
-    const size_t o = n * ns_ + c * cs_ + y * hs_ + x * ws_;
-    switch(data_type_) {
-    case CUDNN_DATA_FLOAT:
-      return ((const float *)device_mem_)[o];
-    case CUDNN_DATA_UINT8:
-      return ((const uint8_t *)device_mem_)[o];
-    default:
-      abort();
-    }
+    return gettype_(device_mem_, n * ns_ + c * cs_ + y * hs_ + x * ws_);
   }
 
   void *getAddr(int n, int c, int x, int y) {
@@ -170,10 +162,8 @@ public:
   }
 
   void set(int n, int c, int x, int y, float v) {
-    float *p = (float *)device_mem_;
-    p[n * ns_ + c * cs_ + y * hs_ + x * ws_] = v;
+    settype_(device_mem_, n * ns_ + c * cs_ + y * hs_ + x * ws_, v);
   }
-
 
   int ns_;
   int cs_;
@@ -190,6 +180,9 @@ private:
   void *device_mem_;
 
   size_t element_size_;
+
+  float (*gettype_)(const void *base, size_t offset);
+  void (*settype_)(void *base, size_t offset, float value);
 
 };
 
