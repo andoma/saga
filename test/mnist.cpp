@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <assert.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -6,6 +7,14 @@
 #include <algorithm>
 
 #include "saga.h"
+
+static int g_run = 1;
+
+static void
+stop(int x)
+{
+  g_run = 0;
+}
 
 
 using namespace saga;
@@ -101,16 +110,13 @@ static void
 loadOutputTensor(Tensor &t, const LabeledImage *lis)
 {
   const size_t n = t.n;
-  const size_t c = t.c;
 
-  float values[n * c];
-
-  memset(values, 0, sizeof(float) * n * c);
-
+  uint8_t labels[n];
   for(size_t j = 0; j < n; j++) {
-    values[c * j + lis[j].label] = 1.0f;
+    labels[j] = lis[j].label;
   }
-  t.load(values);
+
+  memcpy(t.deviceMem(), labels, n);
 }
 
 
@@ -138,19 +144,41 @@ build_fire_module(Network &net, const Layer &input,
 extern int
 mnist_main(int argc, char **argv)
 {
-  if(argc < 2) {
-    fprintf(stderr, "mnist usage: <path> <batch_size>\n");
-    return 1;
+  size_t batch_size = 64;
+  bool learn = true;
+
+  const char *loadpath = NULL;
+  const char *savepath = NULL;
+  int opt;
+
+  while((opt = getopt(argc, argv, "ns:l:b:")) != -1) {
+    switch(opt) {
+    case 's':
+      savepath = optarg;
+      break;
+    case 'l':
+      loadpath = optarg;
+      break;
+    case 'n':
+      learn = false;
+      break;
+    case 'b':
+      batch_size = atoi(optarg);
+      break;
+    }
   }
 
+  argc -= optind;
+  argv += optind;
+
+  if(argc < 1) {
+    fprintf(stderr, "mnist usage: [OPTIONS] <path>\n");
+    return 1;
+  }
 
   std::string path(argv[0]);
-  size_t batch_size = atoi(argv[1]);
 
-  if(batch_size < 1) {
-    fprintf(stderr, "Bad batch_size: %s\n", argv[1]);
-    return 1;
-  }
+  signal(SIGINT, stop);
 
   const int labels = 10;
 
@@ -186,13 +214,16 @@ mnist_main(int argc, char **argv)
                                      test_inputs);
 
 
-  Network net(batch_size, true);
+  Network net(batch_size, learn);
+
+  if(loadpath)
+    net.loadTensors(loadpath);
 
   Tensor input(Size(batch_size, 1, 28, 28), CUDNN_DATA_FLOAT);
 
   auto tail = net.addLayer(makeInput(&input));
 
-  if(1) {
+  if(0) {
     tail = net.addLayer(makeConvolution(64, 3, 1, 0, *tail, net));
     tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 
@@ -211,30 +242,33 @@ mnist_main(int argc, char **argv)
     tail = net.addLayer(makeDropout(0.25, tail, net));
     tail = net.addLayer(makeConvolution(labels, 1, 1, 0, *tail, net));
     tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-    tail = net.addLayer(makePooling(PoolingMode::AVERAGE, 2, 0, 2, *tail, net));
+    //    tail = net.addLayer(makePooling(PoolingMode::AVERAGE, 2, 0, 2, *tail, net));
+    tail = net.addLayer(makeFullyConnected(labels, *tail, net));
 
   } else {
 
-    tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, net));
+    tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, net, true,
+                                        "c1w", "c1b"));
     tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
     tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 0, 2, *tail, net));
 
-    tail = net.addLayer(makeConvolution(64, 5, 1, 0, *tail, net));
+    tail = net.addLayer(makeConvolution(64, 5, 1, 0, *tail, net, true,
+                                        "c2w", "c2b"));
     tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
     tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 0, 2, *tail, net));
 
-    tail = net.addLayer(makeFullyConnected(1024, *tail, net));
+    tail = net.addLayer(makeFullyConnected(1024, *tail, net, "fc1w", "fc1b"));
     tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 
-    tail = net.addLayer(makeDropout(0.25, tail, net));
-    tail = net.addLayer(makeFullyConnected(labels, *tail, net));
+    tail = net.addLayer(makeFullyConnected(labels, *tail, net,
+                                           "fc2w", "fc2b"));
 
   }
-
-  tail = net.addLayer(makeSoftmax(*tail, net));
+  auto tail_m1 = tail;
+  tail = net.addLayer(makeCatClassifier(*tail, CUDNN_DATA_UINT8, net));
 
   unsigned int iteration = 0;
-  while(1) {
+  while(g_run) {
     std::random_shuffle(train_data.begin(), train_data.end());
 
     // Train
@@ -244,40 +278,41 @@ mnist_main(int argc, char **argv)
     for(size_t i = 0; i < train_inputs; i += batch_size) {
       loadInputTensor(input, &train_data[i]);
       net.forward(false);
-      loadOutputTensor(*tail->gradient(), &train_data[i]);
-      net.backprop(iteration);
+      if(learn) {
+        loadOutputTensor(*tail->gradient(), &train_data[i]);
+        net.backprop(iteration);
+      }
     }
     iteration++;
 
-    const int64_t t1 = get_ts();
-
     // Test
+    const int64_t t1 = get_ts();
     int correct = 0;
     float loss_sum = 0;
     for(size_t i = 0; i < test_inputs; i += batch_size) {
       loadInputTensor(input, &test_data[i]);
       net.forward(true);
 
-      unsigned int labels[batch_size];
-      for(size_t j = 0; j < batch_size; j++) {
-        labels[j] = test_data[i + j].label;
-      }
+      loss_sum += tail->loss();
 
-      loss_sum += tail->output()->loss(labels);
-
-      const auto prediction = tail->output()->prediction();
       for(size_t j = 0; j < batch_size; j++) {
-        if(prediction[j] == test_data[i + j].label)
+        if(tail->output()->get(j, 0, 0, 0) == test_data[i + j].label)
           correct++;
       }
     }
     const int64_t t2 = get_ts();
+    float percentage = 100.0 * correct / test_inputs;
     printf("%3.3f%% Train:%.3fs Test:%.3fs Loss:%f\n",
-           100.0 * correct / test_inputs,
+           percentage,
            (t1 - t0) / 1e6,
            (t2 - t1) / 1e6,
            loss_sum / (test_inputs / batch_size));
+    if(percentage > 99)
+      break;
   }
+
+  if(savepath)
+    net.saveTensors(savepath);
 
   return 0;
 }

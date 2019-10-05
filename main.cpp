@@ -19,8 +19,8 @@ main(int argc, char **argv)
   }
 
   if(!strcmp(argv[1], "mnist")) {
-    argv += 2;
-    argc -= 2;
+    argv += 1;
+    argc -= 1;
     return mnist_main(argc, argv);
   } else if(!strcmp(argv[1], "concat")) {
     argv += 2;
