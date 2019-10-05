@@ -218,6 +218,8 @@ public:
 
   virtual void backprop(const Network &n) {}
 
+  virtual float loss() const { return NAN; }
+
   size_t workspaceSize() const { return workspace_size_; };
 
 protected:
@@ -358,6 +360,10 @@ std::shared_ptr<Layer> makeMathOp(const Layer &prev,
                                   float alpha2,
                                   Network &net);
 
+
+std::shared_ptr<Layer> makeCatClassifier(const Layer &prev,
+                                         cudnnDataType_t data_type,
+                                         const Network &n);
 
 // Optimizers
 
