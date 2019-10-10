@@ -13,7 +13,7 @@ util_showtensors(int argc, char **argv)
     return 1;
   }
 
-  Network net(1, false);
+  Network net(false);
   net.loadTensors(argv[0]);
 
   for(const auto &it : net.named_tensors_) {

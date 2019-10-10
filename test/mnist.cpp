@@ -214,7 +214,7 @@ mnist_main(int argc, char **argv)
                                      test_inputs);
 
 
-  Network net(batch_size, learn);
+  Network net(learn);
 
   if(loadpath)
     net.loadTensors(loadpath);

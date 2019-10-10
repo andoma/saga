@@ -18,7 +18,7 @@ test_concat_main(int argc, char **argv)
 {
   int batch_size = 2;
 
-  Network net(batch_size, true);
+  Network net(true);
 
   float test[24+16];
   for(int i = 0; i < 24; i++)

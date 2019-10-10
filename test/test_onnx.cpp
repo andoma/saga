@@ -18,7 +18,7 @@ test_onnx_main(int argc, char **argv)
   if(!input)
     exit(1);
 
-  Network n(1, false);
+  Network n(false);
 
   auto inputLayer = n.nameLayer(n.addLayer(makeInput(input.get())), argv[1]);
 
