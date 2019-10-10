@@ -104,7 +104,7 @@ public:
 
   virtual void allocate(cudnnTensorFormat_t format = CUDNN_TENSOR_NHWC);
 
-  void allocate(Tensor *container, size_t offset);
+  void allocate(Tensor *container, void *deviceMem);
 
   cudnnDataType_t dataType() const { return data_type_; }
 

@@ -117,7 +117,7 @@ void Tensor::allocate(cudnnTensorFormat_t format)
 }
 
 
-void Tensor::allocate(Tensor *container, size_t offset)
+void Tensor::allocate(Tensor *container, void *deviceMem)
 {
   if(storage_)
     return; // Already allocated
@@ -135,7 +135,7 @@ void Tensor::allocate(Tensor *container, size_t offset)
   ws_ = container->ws_;
 
   storage_ = container->storage_;
-  device_mem_ = (void *)((char *)storage_->device_mem_ + offset);
+  device_mem_ = deviceMem;
 }
 
 

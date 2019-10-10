@@ -33,14 +33,10 @@ private:
 void ConcatTensor::allocate(cudnnTensorFormat_t format)
 {
   Tensor::allocate(format);
-
   int channels = 0;
-  size_t datasize = sizeof(float);
-
   for(size_t i = 0; i < parts_.size(); i++) {
     auto part = parts_[i];
-    const size_t offset = datasize * channels * cs_;
-    part->allocate(this, offset);
+    part->allocate(this, getAddr(0, channels, 0, 0));
     channels += part->c;
   }
 }
@@ -59,11 +55,11 @@ public:
 
     unsigned int channels = t0->c;
     auto dt = t0->dataType();
-    assert(dt == CUDNN_DATA_FLOAT);
     for(size_t i = 1; i < prevs.size(); i++) {
       channels += prevs[i]->output()->c;
       assert(prevs[i]->output()->w == t0->w);
       assert(prevs[i]->output()->h == t0->h);
+      assert(prevs[i]->output()->dataType() == dt);
     }
 
     Size s(t0->n, channels, t0->h, t0->w);
