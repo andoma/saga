@@ -288,6 +288,8 @@ public:
   int iteration_;
 
   bool inference_;
+
+  bool setup_;
 };
 
 

@@ -23,6 +23,7 @@ Network::Network(bool backprop)
   : backprop_(backprop)
   , workspace_(NULL)
   , workspace_size_(0)
+  , setup_(false)
 {
 
   int device;
@@ -210,7 +211,8 @@ void Network::forward(bool inference)
 {
   inference_ = inference;
 
-  if(workspace_ == NULL) {
+  if(!setup_) {
+    setup_ = true;
     auto last = layers_[layers_.size() - 1];
 
     last->output()->allocate();
