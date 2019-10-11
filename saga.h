@@ -172,12 +172,12 @@ public:
     settype_(device_mem_, n * ns_ + c * cs_ + y * hs_ + x * ws_, v);
   }
 
+private:
+
   int ns_;
   int cs_;
   int hs_;
   int ws_;
-
-private:
 
   Type type_;
 
