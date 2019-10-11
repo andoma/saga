@@ -73,7 +73,7 @@ std::shared_ptr<Layer> Network::nameLayer(std::shared_ptr<Layer> layer,
 
 std::shared_ptr<Tensor> Network::findTensor(const char *name,
                                             const Size &s,
-                                            cudnnDataType_t dt,
+                                            Tensor::Type type,
                                             float mean,
                                             float sigma)
 {
@@ -81,11 +81,12 @@ std::shared_ptr<Tensor> Network::findTensor(const char *name,
     auto r = named_tensors_.find(name);
     if(r != named_tensors_.end()) {
       assert(*r->second == s);
+      assert(r->second->type() == type);
       return r->second;
     }
   }
 
-  auto t = make_shared<Tensor>(s, dt);
+  auto t = make_shared<Tensor>(s, type);
   t->allocate(CUDNN_TENSOR_NHWC);
   if(sigma) {
     t->randomize(sigma);
@@ -177,7 +178,7 @@ void Network::loadTensors(const char *path)
            if(!memcmp(tdh.magic, "sagaT000", 8)) {
 
              auto t = make_shared<Tensor>(Size(tdh.n, tdh.c, tdh.h, tdh.w),
-                                          CUDNN_DATA_FLOAT);
+                                          Tensor::Type::FLOAT);
              t->allocate(CUDNN_TENSOR_NHWC);
              ssize_t s = t->elements() * t->elementSize();
              if(read(fd, t->deviceMem(), s) != s) {

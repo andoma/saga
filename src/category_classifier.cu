@@ -54,10 +54,10 @@ namespace saga {
 class CatClassifier : public Layer {
 
 public:
-  CatClassifier(const Layer &prev, cudnnDataType_t data_type)
+  CatClassifier(const Layer &prev, Tensor::Type type)
     : input_(prev.output())
     , prob_(*input_)
-    , output_(make_unique<Tensor>(Size(prev.output()->n, 1, 1, 1), data_type))
+    , output_(make_unique<Tensor>(Size(prev.output()->n, 1, 1, 1), type))
   {
     prev.output()->allocate();
     prob_.allocate();
@@ -101,11 +101,11 @@ protected:
 
 class CatClassifierBackProp : public CatClassifier {
 public:
-  CatClassifierBackProp(const Layer &prev, cudnnDataType_t data_type)
-    : CatClassifier(prev, data_type)
+  CatClassifierBackProp(const Layer &prev, Tensor::Type type)
+    : CatClassifier(prev, type)
     , input_grad_(prev.gradient())
-    , loss_(Size(prev.output()->n, 1, 1, 1), CUDNN_DATA_FLOAT)
-    , labels_(make_unique<Tensor>(Size(prev.output()->n, 1, 1, 1), data_type))
+    , loss_(Size(prev.output()->n, 1, 1, 1), Tensor::Type::FLOAT)
+    , labels_(make_unique<Tensor>(Size(prev.output()->n, 1, 1, 1), type))
   {
     prev.gradient()->allocate();
     loss_.allocate();
@@ -148,13 +148,13 @@ protected:
 
 
 std::shared_ptr<Layer> makeCatClassifier(const Layer &prev,
-                                        cudnnDataType_t data_type,
-                                        const Network &n)
+                                         Tensor::Type type,
+                                         const Network &n)
 {
   if(n.backprop_)
-    return std::make_shared<CatClassifierBackProp>(prev, data_type);
+    return std::make_shared<CatClassifierBackProp>(prev, type);
   else
-    return std::make_shared<CatClassifier>(prev, data_type);
+    return std::make_shared<CatClassifier>(prev, type);
 }
 
 }

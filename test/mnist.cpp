@@ -219,7 +219,7 @@ mnist_main(int argc, char **argv)
   if(loadpath)
     net.loadTensors(loadpath);
 
-  Tensor input(Size(batch_size, 1, 28, 28), CUDNN_DATA_FLOAT);
+  Tensor input(Size(batch_size, 1, 28, 28), Tensor::Type::FLOAT);
 
   auto tail = net.addLayer(makeInput(&input));
 
@@ -265,7 +265,7 @@ mnist_main(int argc, char **argv)
 
   }
   auto tail_m1 = tail;
-  tail = net.addLayer(makeCatClassifier(*tail, CUDNN_DATA_UINT8, net));
+  tail = net.addLayer(makeCatClassifier(*tail, Tensor::Type::U8, net));
 
   unsigned int iteration = 0;
   while(g_run) {

@@ -20,16 +20,15 @@ public:
     , num_inputs_(input_->c * input_->h * input_->w)
     , num_outputs_(num_outputs)
     , output_(make_unique<Tensor>(Size(input_->n, num_outputs, 1, 1),
-                                  input_->dataType()))
+                                  input_->type()))
   {
     prev.output()->allocate();
 
     weights_ = net.findTensor(weights, Size(num_inputs_, num_outputs, 1, 1),
-                              input_->dataType(),
+                              input_->type(),
                               0.0, sqrt(2.0 / num_inputs_));
 
-    bias_ = net.findTensor(bias, Size(1, num_outputs, 1, 1),
-                           input_->dataType(),
+    bias_ = net.findTensor(bias, Size(1, num_outputs, 1, 1), input_->type(),
                            0.0, 0.0f);
   }
 
@@ -89,7 +88,7 @@ public:
     , input_grad_(prev.gradient())
     , weights_grad_(make_unique<Tensor>(*weights_))
     , bias_grad_(make_unique<Tensor>(*bias_))
-    , batch_of_one_(Size(input_->n, 1, 1, 1), input_->dataType(), 1.0f)
+    , batch_of_one_(Size(input_->n, 1, 1, 1), input_->type(), 1.0f)
     , output_grad_(make_unique<Tensor>(*output_))
     , weights_optimizer_(n.makeOptimizer(*weights_.get()))
     , bias_optimizer_(n.makeOptimizer(*bias_.get()))

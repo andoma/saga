@@ -225,7 +225,7 @@ tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
 
   assert(tp.data_type() == onnx::TensorProto_DataType_FLOAT);
 
-  auto t = make_shared<Tensor>(Size(dims), CUDNN_DATA_FLOAT);
+  auto t = make_shared<Tensor>(Size(dims), Tensor::Type::FLOAT);
 
   t->allocate(CUDNN_TENSOR_NHWC);
 

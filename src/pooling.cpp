@@ -41,8 +41,7 @@ public:
                                                input_->desc(),
                                                &on, &oc, &oh, &ow));
 
-    output_ = std::make_unique<Tensor>(Size(on, oc, oh, ow),
-                                       input_->dataType());
+    output_ = std::make_unique<Tensor>(Size(on, oc, oh, ow), input_->type());
   }
 
   Tensor *output() const override {

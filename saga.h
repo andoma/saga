@@ -26,7 +26,6 @@ enum class PoolingMode {
   AVERAGE
 };
 
-
 struct Size {
   const unsigned int n, c, h, w;
 
@@ -89,16 +88,22 @@ class Tensor : public Size {
 
 public:
 
+  enum class Type {
+    FLOAT,
+    HALF,
+    U8,
+    MIXED,
+  };
+
   // Constructors
 
   static std::shared_ptr<Tensor> createFromPB(const char *path);
 
-
   explicit Tensor(const Tensor &t);
 
-  explicit Tensor(const Size &s, cudnnDataType_t dt);
+  explicit Tensor(const Size &s, Type type);
 
-  explicit Tensor(const Size &s, cudnnDataType_t data_type, float fill_value);
+  explicit Tensor(const Size &s, Type type, float fill_value);
 
   virtual ~Tensor();
 
@@ -106,7 +111,9 @@ public:
 
   void allocate(Tensor *container, void *deviceMem);
 
-  cudnnDataType_t dataType() const { return data_type_; }
+  Type type() const { return type_; }
+
+  cudnnDataType_t cudnnType() const;
 
   cudnnTensorDescriptor_t desc() const {
     assert(desc_ != NULL);
@@ -170,12 +177,13 @@ public:
   int hs_;
   int ws_;
 
-  std::shared_ptr<TensorStorage> storage_;
+private:
+
+  Type type_;
 
   cudnnTensorDescriptor_t desc_;
 
-private:
-  cudnnDataType_t data_type_;
+  std::shared_ptr<TensorStorage> storage_;
 
   void *device_mem_;
 
@@ -258,7 +266,7 @@ public:
 
   std::shared_ptr<Tensor> findTensor(const char *name,
                                      const Size &s,
-                                     cudnnDataType_t dt,
+                                     Tensor::Type type,
                                      float mean,
                                      float sigma);
 
@@ -349,7 +357,7 @@ std::shared_ptr<Layer> makeMathOp(const Layer &prev,
 
 
 std::shared_ptr<Layer> makeCatClassifier(const Layer &prev,
-                                         cudnnDataType_t data_type,
+                                         Tensor::Type output_type,
                                          const Network &n);
 
 // Optimizers

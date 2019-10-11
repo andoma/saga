@@ -14,8 +14,8 @@ namespace saga {
 class ConcatTensor : public Tensor {
 
 public:
-  ConcatTensor(const Size &s, cudnnDataType_t dt, const vector<Tensor *> &parts)
-    : Tensor(s, dt)
+  ConcatTensor(const Size &s, Type type, const vector<Tensor *> &parts)
+    : Tensor(s, type)
     , parts_(parts)
   {}
 
@@ -54,12 +54,12 @@ public:
     const Tensor *t0 = prevs[0]->output();
 
     unsigned int channels = t0->c;
-    auto dt = t0->dataType();
+    auto dt = t0->type();
     for(size_t i = 1; i < prevs.size(); i++) {
       channels += prevs[i]->output()->c;
       assert(prevs[i]->output()->w == t0->w);
       assert(prevs[i]->output()->h == t0->h);
-      assert(prevs[i]->output()->dataType() == dt);
+      assert(prevs[i]->output()->type() == dt);
     }
 
     Size s(t0->n, channels, t0->h, t0->w);

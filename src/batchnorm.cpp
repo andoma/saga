@@ -24,7 +24,7 @@ public:
     prev.output()->allocate();
 
     const Size s(1, input_->c, 1, 1);
-    const cudnnDataType_t dt = input_->dataType();
+    auto dt = input_->type();
 
     scale_ = n.findTensor(scale, s, dt, 1.0f, 0.0f);
     bias_  = n.findTensor(bias,  s, dt, 0.0f, 0.0f);

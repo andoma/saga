@@ -56,56 +56,74 @@ Tensor::~Tensor()
 }
 
 
-Tensor::Tensor(const Size &s, cudnnDataType_t data_type)
+Tensor::Tensor(const Size &s, Type type)
   : Size(s)
   , ns_(0)
   , cs_(0)
   , hs_(0)
   , ws_(0)
+  , type_(type)
   , desc_(nullptr)
-  , data_type_(data_type)
   , device_mem_(nullptr)
 {
-  switch(data_type) {
-  case CUDNN_DATA_FLOAT:
+  switch(type) {
+  case Type::FLOAT:
     element_size_ = sizeof(float);
     gettype_ = get_float;
     settype_ = set_float;
     break;
-  case CUDNN_DATA_UINT8:
-    element_size_ = 1;
+
+  case Type::U8:
+    element_size_ = sizeof(uint8_t);
     gettype_ = get_u8;
     settype_ = set_u8;
     break;
+
   default:
-    fprintf(stderr, "Unsupported data_type %d in tensor\n", data_type);
+    fprintf(stderr, "Unsupported data_type %d in tensor\n", (int)type);
     abort();
   }
 
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
 }
 
-Tensor::Tensor(const Size &s, cudnnDataType_t data_type, float v)
-  : Tensor(s, data_type)
+Tensor::Tensor(const Size &s, Type type, float v)
+  : Tensor(s, type)
 {
   fill(v);
 }
 
 Tensor::Tensor(const Tensor &t)
-  : Tensor(t, t.dataType())
+  : Tensor(t, t.type())
 {
 }
 
-void Tensor::allocate(cudnnTensorFormat_t format)
+cudnnDataType_t
+Tensor::cudnnType() const
+{
+  switch(type_) {
+  case Tensor::Type::FLOAT:
+    return CUDNN_DATA_FLOAT;
+  case Tensor::Type::U8:
+    return CUDNN_DATA_UINT8;
+  default:
+    fprintf(stderr, "Unsupported data_type %d in tensor\n", (int)type_);
+    abort();
+  }
+}
+
+
+void
+Tensor::allocate(cudnnTensorFormat_t format)
 {
   if(storage_)
     return; // Already allocated
 
   int wastedump;
-  cudnnDataType_t wastedump2;
-  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, data_type_, n, c, h, w));
+  auto data_type = cudnnType();
+  chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, data_type, n, c, h, w));
 
-  cudnnGetTensor4dDescriptor(desc_, &wastedump2,
+  cudnnGetTensor4dDescriptor(desc_, &data_type,
                              &wastedump, &wastedump, &wastedump, &wastedump,
                              &ns_, &cs_, &hs_, &ws_);
 
@@ -117,12 +135,13 @@ void Tensor::allocate(cudnnTensorFormat_t format)
 }
 
 
-void Tensor::allocate(Tensor *container, void *deviceMem)
+void
+Tensor::allocate(Tensor *container, void *deviceMem)
 {
   if(storage_)
     return; // Already allocated
 
-  chkCUDNN(cudnnSetTensor4dDescriptorEx(desc_, data_type_,
+  chkCUDNN(cudnnSetTensor4dDescriptorEx(desc_, cudnnType(),
                                         n, c, h, w,
                                         container->ns_,
                                         container->cs_,
@@ -186,7 +205,7 @@ void Tensor::load(const void *data, size_t size)
 
 void Tensor::fill(float value)
 {
-  assert(dataType() == CUDNN_DATA_FLOAT);
+  assert(type() == Type::FLOAT);
 
   allocate();
 
@@ -201,7 +220,7 @@ void Tensor::fill(float value)
 
 void Tensor::randomize(float sigma)
 {
-  assert(dataType() == CUDNN_DATA_FLOAT);
+  assert(type() == Type::FLOAT);
 
   if(sigma == 0) {
     fill(0);

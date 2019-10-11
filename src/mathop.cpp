@@ -26,7 +26,7 @@ public:
     prev.output()->allocate();
     chkCUDNN(cudnnCreateOpTensorDescriptor(&desc_));
     chkCUDNN(cudnnSetOpTensorDescriptor(desc_,
-                                        op, input_->dataType(),
+                                        op, input_->cudnnType(),
                                         CUDNN_PROPAGATE_NAN));
   }
 

@@ -55,19 +55,19 @@ public:
     , conv_fwd_algo_(CUDNN_CONVOLUTION_FWD_ALGO_COUNT)
   {
     prev.output()->allocate();
-    const auto data_type = input_->dataType();
+    auto data_type = input_->cudnnType();
 
     kernel_ = n.findTensor(kernel,
                            Size(activation_maps, input_->c,
                                 filter_size, filter_size),
-                           input_->dataType(),
+                           input_->type(),
                            0.0f, sqrt(2.0 / (input_->c * filter_size *
                                              filter_size)));
 
     chkCUDNN(cudnnCreateFilterDescriptor(&filter_desc_));
 
     chkCUDNN(cudnnSetFilter4dDescriptor(filter_desc_,
-                                        kernel_->dataType(),
+                                        data_type,
                                         CUDNN_TENSOR_NHWC,
                                         kernel_->n,
                                         kernel_->c,
@@ -89,11 +89,11 @@ public:
                                                    &on, &oc, &oh, &ow));
 
     if(use_bias)
-      bias_ = n.findTensor(bias, Size(1, oc, 1, 1), input_->dataType(),
+      bias_ = n.findTensor(bias, Size(1, oc, 1, 1), input_->type(),
                            0.0f, 0.0f);
 
     output_ = std::make_unique<Tensor>(Size(on, oc, oh, ow),
-                                       input_->dataType());
+                                       input_->type());
   }
 
 
