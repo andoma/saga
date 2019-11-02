@@ -6,7 +6,7 @@ CPPFLAGS += -g -O2 -Wall -Werror -I.
 CPPFLAGS += $(shell pkg-config --cflags cuda-10.1 cudart-10.1)
 LDFLAGS += $(shell pkg-config --libs cuda-10.1 cudart-10.1)
 
-CXXFLAGS += --std=c++14
+CXXFLAGS += --std=c++14 -march=native
 
 NVCCFLAGS := --std=c++14 -O2 -g -I.
 
