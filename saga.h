@@ -257,7 +257,7 @@ public:
 
   std::shared_ptr<Layer> findLayer(const std::string &name) const;
 
-  void forward(bool inference);
+  void forward(bool inferenceOnly = false);
 
   void backprop(unsigned int iteration);
 
