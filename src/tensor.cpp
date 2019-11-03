@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <random>
 
+#include <x86intrin.h>
+
 #include "common.h"
 
 namespace saga {
@@ -14,6 +16,12 @@ static float
 get_float(const void *base, size_t offset)
 {
   return ((const float *)base)[offset];
+}
+
+static float
+get_half(const void *base, size_t offset)
+{
+  return _cvtsh_ss(((const uint16_t *)base)[offset]);
 }
 
 static float
@@ -26,6 +34,12 @@ static void
 set_float(void *base, size_t offset, float v)
 {
   ((float *)base)[offset] = v;
+}
+
+static void
+set_half(void *base, size_t offset, float v)
+{
+  ((uint16_t *)base)[offset] = _cvtss_sh(v, 0);
 }
 
 static void
@@ -73,6 +87,12 @@ Tensor::Tensor(const Size &s, Type type)
     settype_ = set_float;
     break;
 
+  case Type::HALF:
+    element_size_ = 2;
+    gettype_ = get_half;
+    settype_ = set_half;
+    break;
+
   case Type::U8:
     element_size_ = sizeof(uint8_t);
     gettype_ = get_u8;
@@ -104,6 +124,8 @@ Tensor::cudnnType() const
   switch(type_) {
   case Tensor::Type::FLOAT:
     return CUDNN_DATA_FLOAT;
+  case Tensor::Type::HALF:
+    return CUDNN_DATA_HALF;
   case Tensor::Type::U8:
     return CUDNN_DATA_UINT8;
   default:
@@ -170,43 +192,84 @@ void Tensor::synchronize() const
 
 void Tensor::load(const float *data)
 {
+  // Deprecate this
   assert(storage_ != NULL);
   memcpy(deviceMem(), (const void *)data, storage_->bytes_);
 }
 
 
-void Tensor::load(const std::vector<float> &data)
-{
-  load(&data[0]);
-}
-
-void Tensor::load(__restrict__ const uint8_t **data)
-{
-  const size_t num_elements = elements();
-  float floats[num_elements];
-  const size_t chw = c * h * w;
-  float *dst = &floats[0];
-  for(size_t i = 0; i < n; i++) {
-    const uint8_t *src = data[i];
-    for(size_t j = 0; j < chw; j++)
-      *dst++ = src[j] / 255.0f;
-  }
-  load(floats);
-}
-
-
 void Tensor::load(const void *data, size_t size)
 {
+  // Deprecate this
   assert(storage_ != NULL);
   assert(storage_->bytes_ == size);
   memcpy(deviceMem(), (const void *)data, storage_->bytes_);
 }
 
 
+
+void Tensor::load(const std::vector<float> &data)
+{
+  assert(type_ == Type::FLOAT);
+  assert(storage_ != NULL);
+  assert(storage_->bytes_ == data.size() * sizeof(float));
+
+  memcpy(deviceMem(), (const void *)&data[0], data.size() * sizeof(float));
+}
+
+void Tensor::load(const std::vector<uint16_t> &data)
+{
+  assert(type_ == Type::HALF);
+  assert(storage_ != NULL);
+  assert(storage_->bytes_ ==  data.size() * sizeof(uint16_t));
+
+  memcpy(deviceMem(), (const void *)&data[0], data.size() * sizeof(uint16_t));
+}
+
+
+void Tensor::load(__restrict__ const uint8_t **data)
+{
+  // This is a bit of an special case, doesn't belong here really
+  // as it's only used from the mnist test code.
+  // We should prolly do conversion as a layer on the GPU instead
+
+  const size_t chw = c * h * w;
+
+  switch(type_) {
+
+  case Type::FLOAT: {
+    std::vector<float> values(elements());
+    size_t p = 0;
+    for(size_t i = 0; i < n; i++) {
+      const uint8_t *src = data[i];
+      for(size_t j = 0; j < chw; j++)
+        values[p++] = src[j] / 255.0f;
+    }
+    load(values);
+    break;
+  }
+
+  case Type::HALF: {
+    std::vector<uint16_t> values(elements());
+    size_t p = 0;
+    for(size_t i = 0; i < n; i++) {
+      const uint8_t *src = data[i];
+      for(size_t j = 0; j < chw; j++)
+        values[p++] = _cvtss_sh(src[j] / 255.0f, 0);
+    }
+    load(values);
+    break;
+  }
+  default:
+    abort();
+  }
+}
+
+
+
+
 void Tensor::fill(float value)
 {
-  assert(type() == Type::FLOAT);
-
   allocate();
 
   if(value == 0) {
@@ -214,14 +277,21 @@ void Tensor::fill(float value)
     return;
   }
 
-  load(std::vector<float>(elements(), value));
+  switch(type_) {
+  case Type::FLOAT:
+    load(std::vector<float>(elements(), value));
+    break;
+  case Type::HALF:
+    load(std::vector<uint16_t>(elements(), _cvtss_sh(value, 0)));
+    break;
+  default:
+    abort();
+  }
 }
 
 
 void Tensor::randomize(float sigma)
 {
-  assert(type() == Type::FLOAT);
-
   if(sigma == 0) {
     fill(0);
     return;
@@ -230,12 +300,29 @@ void Tensor::randomize(float sigma)
   std::default_random_engine generator;
   std::normal_distribution<float> distribution(0,sigma);
 
-  std::vector<float> values(elements());
+  switch(type_) {
+  case Type::FLOAT: {
+    std::vector<float> values(elements());
 
-  for(size_t i = 0; i < values.size(); i++) {
-    values[i] = distribution(generator);
+    for(size_t i = 0; i < values.size(); i++) {
+      values[i] = distribution(generator);
+    }
+    load(values);
+    break;
   }
-  load(values);
+
+  case Type::HALF: {
+    std::vector<uint16_t> values(elements());
+    for(size_t i = 0; i < values.size(); i++) {
+      values[i] = _cvtss_sh(distribution(generator), 0);
+    }
+    load(values);
+    break;
+  }
+
+  default:
+    abort();
+  }
 }
 
 

@@ -8,9 +8,8 @@
 #define ADAM_B2      0.999
 
 
-__global__
-static void
-adam(int n, float alpha, float *weights, const float *dweights, float *t,
+template< typename T> __global__ static void
+adam(int n, float alpha, T *weights, const T *dweights, float *t,
      float b1t, float b2t)
 {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
@@ -67,10 +66,24 @@ public:
 
     const float b1t = 1.0 / (1.0 - pow(ADAM_B1, i));
     const float b2t = 1.0 / (1.0 - pow(ADAM_B2, i));
-    adam<<<(elements+255)/256, 256>>>(elements, lr_,
-                                      (float *)x.deviceMem(),
-                                      (const float *)grad.deviceMem(),
-                                      (float *)temp_, b1t, b2t);
+
+    switch(x.type()) {
+    case Tensor::Type::FLOAT:
+      adam<<<(elements+255)/256, 256>>>(elements, lr_,
+                                        (float *)x.deviceMem(),
+                                        (const float *)grad.deviceMem(),
+                                        (float *)temp_, b1t, b2t);
+      break;
+
+    case Tensor::Type::HALF:
+      adam<<<(elements+255)/256, 256>>>(elements, lr_,
+                                        (__half *)x.deviceMem(),
+                                        (const __half *)grad.deviceMem(),
+                                        (float *)temp_, b1t, b2t);
+      break;
+    default:
+      abort();
+    }
   }
 };
 

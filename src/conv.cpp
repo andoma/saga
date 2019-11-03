@@ -75,12 +75,16 @@ public:
                                         kernel_->w));
 
     chkCUDNN(cudnnCreateConvolutionDescriptor(&conv_desc_));
+
+    chkCUDNN(cudnnSetConvolutionMathType(conv_desc_,
+                                         CUDNN_TENSOR_OP_MATH));
+
     chkCUDNN(cudnnSetConvolution2dDescriptor(conv_desc_,
                                              padding, padding,
                                              stride, stride,
                                              1, 1,
                                              CUDNN_CROSS_CORRELATION,
-                                             data_type));
+                                             CUDNN_DATA_FLOAT));
 
     int on, oc, oh, ow;
     chkCUDNN(cudnnGetConvolution2dForwardOutputDim(conv_desc_,

@@ -42,19 +42,23 @@ public:
     return ss.str();
   }
 
-  // Replace this with cuTensor?
-
   void forward(const Network &n) override {
 
     float alpha = 1.0f, beta = 0.0f;
 
-    chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_T, CUBLAS_OP_N,
-                        num_outputs_, input_->n, num_inputs_,
-                        &alpha,
-                        (const float *)weights_->deviceMem(), num_inputs_,
-                        (const float *)input_->deviceMem(), num_inputs_,
-                        &beta,
-                        (float *)output_->deviceMem(), num_outputs_));
+    switch(input_->type()) {
+    case Tensor::Type::FLOAT:
+      chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_T, CUBLAS_OP_N,
+                          num_outputs_, input_->n, num_inputs_,
+                          &alpha,
+                          (const float *)weights_->deviceMem(), num_inputs_,
+                          (const float *)input_->deviceMem(), num_inputs_,
+                          &beta,
+                          (float *)output_->deviceMem(), num_outputs_));
+      break;
+    default:
+      abort();
+    }
 
     chkCUDNN(cudnnAddTensor(n.cudnn_,
                             &alpha, bias_->desc(), bias_->deviceMem(),
@@ -156,7 +160,7 @@ std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
                                           const char *weights,
                                           const char *bias)
 {
-  if(0) {
+  if(prev.output()->type() == Tensor::Type::HALF) {
     // Fully connected layers can be done via convolution layers,
     // but it's significantly slower
     int w = prev.output()->w;

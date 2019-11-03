@@ -151,7 +151,9 @@ mnist_main(int argc, char **argv)
   const char *savepath = NULL;
   int opt;
 
-  while((opt = getopt(argc, argv, "ns:l:b:")) != -1) {
+  auto dt = Tensor::Type::FLOAT;
+
+  while((opt = getopt(argc, argv, "ns:l:b:h")) != -1) {
     switch(opt) {
     case 's':
       savepath = optarg;
@@ -164,6 +166,9 @@ mnist_main(int argc, char **argv)
       break;
     case 'b':
       batch_size = atoi(optarg);
+      break;
+    case 'h':
+      dt = Tensor::Type::HALF;
       break;
     }
   }
@@ -219,7 +224,7 @@ mnist_main(int argc, char **argv)
   if(loadpath)
     net.loadTensors(loadpath);
 
-  Tensor input(Size(batch_size, 1, 28, 28), Tensor::Type::FLOAT);
+  Tensor input(Size(batch_size, 1, 28, 28), dt);
 
   auto tail = net.addLayer(makeInput(&input));
 

@@ -135,6 +135,8 @@ public:
 
   void load(const std::vector<float> &data);
 
+  void load(const std::vector<uint16_t> &data);
+
   void load(const uint8_t **data);
 
   void load(const float *data);

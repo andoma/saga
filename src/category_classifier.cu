@@ -31,7 +31,7 @@ pred(int n, const T *input, L *output, unsigned int channels)
 
 template< typename T, typename L > __global__ static void
 bp(int n, const T *prob, T *grad, const L *labels, float *loss,
-   unsigned int channels, T scale)
+   unsigned int channels, float scale)
 {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i >= n)
@@ -42,9 +42,9 @@ bp(int n, const T *prob, T *grad, const L *labels, float *loss,
 
   L label = labels[i];
   for(unsigned int j = 0; j < channels; j++) {
-    grad[j] = (prob[j] - (label == j ? 1.0f : 0.0f)) * scale;
+    grad[j] = static_cast<T>((static_cast<float>(prob[j]) - (label == j ? 1.0f : 0.0f)) * scale);
   }
-  loss[i] = -log(prob[label]);
+  loss[i] = -log(static_cast<float>(prob[label]));
 }
 
 
@@ -86,10 +86,20 @@ public:
                                  prob_.desc(), prob_.deviceMem()));
     const int bs = prob_.n;
 
-    pred<<<(bs+255)/256, 256>>>(bs,
-                                (const float *)prob_.deviceMem(),
-                                (uint8_t *)output_->deviceMem(),
-                                prob_.c);
+    switch(prob_.type()) {
+    case Tensor::Type::FLOAT:
+      pred<<<(bs+255)/256, 256>>>(bs,
+                                  (const float *)prob_.deviceMem(),
+                                  (uint8_t *)output_->deviceMem(),
+                                  prob_.c);
+      break;
+    case Tensor::Type::HALF:
+      pred<<<(bs+255)/256, 256>>>(bs,
+                                  (const __half *)prob_.deviceMem(),
+                                  (uint8_t *)output_->deviceMem(),
+                                  prob_.c);
+      break;
+    }
   }
 
 protected:
@@ -116,13 +126,24 @@ public:
     int bs = prob_.n;
     float scale = 1.0f / bs;
 
-    bp<<<(bs+255)/256, 256>>>(bs,
-                              (const float *)prob_.deviceMem(),
-                              (float *)input_grad_->deviceMem(),
-                              (const uint8_t *)labels_->deviceMem(),
-                              (float *)loss_.deviceMem(),
-                              prob_.c, scale);
-
+    switch(prob_.type()) {
+    case Tensor::Type::FLOAT:
+      bp<<<(bs+255)/256, 256>>>(bs,
+                                (const float *)prob_.deviceMem(),
+                                (float *)input_grad_->deviceMem(),
+                                (const uint8_t *)labels_->deviceMem(),
+                                (float *)loss_.deviceMem(),
+                                prob_.c, scale);
+      break;
+    case Tensor::Type::HALF:
+      bp<<<(bs+255)/256, 256>>>(bs,
+                                (const __half *)prob_.deviceMem(),
+                                (__half *)input_grad_->deviceMem(),
+                                (const uint8_t *)labels_->deviceMem(),
+                                (float *)loss_.deviceMem(),
+                                prob_.c, scale);
+      break;
+    }
   }
 
   Tensor *gradient() const {
