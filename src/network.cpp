@@ -44,6 +44,8 @@ Network::Network(bool backprop)
   chkCUDNN(cudnnCreate(&cudnn_));
   chkCuda(cublasCreate(&cublas_));
 
+  chkCuda(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+
   if(0)
     chkCUDNN(cudnnSetCallback(CUDNN_SEV_INFO_EN, this, logcb));
 

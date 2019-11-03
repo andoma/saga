@@ -45,6 +45,7 @@ public:
   void forward(const Network &n) override {
 
     float alpha = 1.0f, beta = 0.0f;
+    __half halpha = 1.0f, hbeta = 0.0f;
 
     switch(input_->type()) {
     case Tensor::Type::FLOAT:
@@ -55,6 +56,15 @@ public:
                           (const float *)input_->deviceMem(), num_inputs_,
                           &beta,
                           (float *)output_->deviceMem(), num_outputs_));
+      break;
+    case Tensor::Type::HALF:
+      chkCuda(cublasHgemm(n.cublas_, CUBLAS_OP_T, CUBLAS_OP_N,
+                          num_outputs_, input_->n, num_inputs_,
+                          &halpha,
+                          (const __half *)weights_->deviceMem(), num_inputs_,
+                          (const __half *)input_->deviceMem(), num_inputs_,
+                          &hbeta,
+                          (__half *)output_->deviceMem(), num_outputs_));
       break;
     default:
       abort();
@@ -106,30 +116,76 @@ public:
   void backprop(const Network &n) override {
 
     float alpha = 1.0f, beta = 0.0f;
+    __half halpha = 1.0f, hbeta = 0.0f;
 
-    chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
-                        num_inputs_, num_outputs_, input_->n,
-                        &alpha,
-                        (const float *)input_->deviceMem(), num_inputs_,
-                        (const float *)output_grad_->deviceMem(), num_outputs_,
-                        &beta,
-                        (float *)weights_grad_->deviceMem(), num_inputs_));
+    switch(input_->type()) {
 
-    chkCuda(cublasSgemv(n.cublas_, CUBLAS_OP_N, num_outputs_, input_->n,
-                        &alpha,
-                        (const float *)output_grad_->deviceMem(), num_outputs_,
-                        (const float *)batch_of_one_.deviceMem(), 1,
-                        &beta,
-                        (float *)bias_grad_->deviceMem(), 1));
-
-    if(input_grad_ != NULL) {
-      chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
-                          num_inputs_, input_->n, num_outputs_,
+    case Tensor::Type::FLOAT:
+      chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
+                          num_inputs_, num_outputs_, input_->n,
                           &alpha,
-                          (const float *)weights_->deviceMem(), num_inputs_,
-                          (const float *)output_grad_->deviceMem(), num_outputs_,
+                          (const float *)input_->deviceMem(), num_inputs_,
+                          (const float *)output_grad_->deviceMem(),
+                          num_outputs_,
                           &beta,
-                          (float *)input_grad_->deviceMem(), num_inputs_));
+                          (float *)weights_grad_->deviceMem(), num_inputs_));
+
+
+      chkCuda(cublasSgemv(n.cublas_, CUBLAS_OP_N, num_outputs_, input_->n,
+                          &alpha,
+                          (const float *)output_grad_->deviceMem(),
+                          num_outputs_,
+                          (const float *)batch_of_one_.deviceMem(), 1,
+                          &beta,
+                          (float *)bias_grad_->deviceMem(), 1));
+
+
+      if(input_grad_ != NULL) {
+        chkCuda(cublasSgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
+                            num_inputs_, input_->n, num_outputs_,
+                            &alpha,
+                            (const float *)weights_->deviceMem(), num_inputs_,
+                            (const float *)output_grad_->deviceMem(),
+                            num_outputs_,
+                            &beta,
+                            (float *)input_grad_->deviceMem(), num_inputs_));
+      }
+      break;
+
+    case Tensor::Type::HALF:
+      chkCuda(cublasHgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
+                          num_inputs_, num_outputs_, input_->n,
+                          &halpha,
+                          (const __half *)input_->deviceMem(), num_inputs_,
+                          (const __half *)output_grad_->deviceMem(),
+                          num_outputs_,
+                          &hbeta,
+                          (__half *)weights_grad_->deviceMem(), num_inputs_));
+
+      // No cublasSgemv() for half type, so do matrix*matrix instead
+      chkCuda(cublasHgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
+                          1, num_outputs_, input_->n,
+                          &halpha,
+                          (const __half *)batch_of_one_.deviceMem(),
+                          1,
+                          (const __half *)output_grad_->deviceMem(),
+                          num_outputs_,
+                          &hbeta,
+                          (__half *)bias_grad_->deviceMem(), 1));
+
+      if(input_grad_ != NULL) {
+        chkCuda(cublasHgemm(n.cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
+                            num_inputs_, input_->n, num_outputs_,
+                            &halpha,
+                            (const __half *)weights_->deviceMem(), num_inputs_,
+                            (const __half *)output_grad_->deviceMem(),
+                            num_outputs_,
+                            &hbeta,
+                            (__half *)input_grad_->deviceMem(), num_inputs_));
+      }
+      break;
+    default:
+      abort();
     }
 
     weights_optimizer_->optimize(*weights_.get(), *weights_grad_, n);
@@ -160,7 +216,7 @@ std::shared_ptr<Layer> makeFullyConnected(int num_outputs,
                                           const char *weights,
                                           const char *bias)
 {
-  if(prev.output()->type() == Tensor::Type::HALF) {
+  if(0) {
     // Fully connected layers can be done via convolution layers,
     // but it's significantly slower
     int w = prev.output()->w;
