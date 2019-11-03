@@ -151,9 +151,11 @@ mnist_main(int argc, char **argv)
   const char *savepath = NULL;
   int opt;
 
+  std::string mode = "lecun";
+
   auto dt = Tensor::Type::FLOAT;
 
-  while((opt = getopt(argc, argv, "ns:l:b:h")) != -1) {
+  while((opt = getopt(argc, argv, "ns:l:b:hm:")) != -1) {
     switch(opt) {
     case 's':
       savepath = optarg;
@@ -169,6 +171,9 @@ mnist_main(int argc, char **argv)
       break;
     case 'h':
       dt = Tensor::Type::HALF;
+      break;
+    case 'm':
+      mode = optarg;
       break;
     }
   }
@@ -228,7 +233,7 @@ mnist_main(int argc, char **argv)
 
   auto tail = net.addLayer(makeInput(&input));
 
-  if(0) {
+  if(mode == "squeezenet" || mode == "squeezenet-fc") {
     tail = net.addLayer(makeConvolution(64, 3, 1, 0, *tail, net));
     tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
 
@@ -247,10 +252,16 @@ mnist_main(int argc, char **argv)
     tail = net.addLayer(makeDropout(0.25, tail, net));
     tail = net.addLayer(makeConvolution(labels, 1, 1, 0, *tail, net));
     tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-    //    tail = net.addLayer(makePooling(PoolingMode::AVERAGE, 2, 0, 2, *tail, net));
-    tail = net.addLayer(makeFullyConnected(labels, *tail, net));
 
-  } else {
+    if(mode == "squeezenet-fc") {
+
+      tail = net.addLayer(makeFullyConnected(labels, *tail, net));
+    } else {
+      tail = net.addLayer(makePooling(PoolingMode::AVERAGE, 2, 0, 2,
+                                      *tail, net));
+    }
+
+  } else if(mode == "lecun") {
 
     tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, net, true,
                                         "c1w", "c1b"));
@@ -268,6 +279,10 @@ mnist_main(int argc, char **argv)
     tail = net.addLayer(makeFullyConnected(labels, *tail, net,
                                            "fc2w", "fc2b"));
 
+  } else {
+
+    fprintf(stderr, "Unknown mode %s", mode.c_str());
+    exit(1);
   }
   auto tail_m1 = tail;
   tail = net.addLayer(makeCatClassifier(*tail, Tensor::Type::U8, net));
