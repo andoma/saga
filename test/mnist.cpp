@@ -295,7 +295,7 @@ mnist_main(int argc, char **argv)
 
     const int64_t t0 = get_ts();
 
-    for(size_t i = 0; i < train_inputs; i += batch_size) {
+    for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
       loadInputTensor(input, &train_data[i]);
       net.forward(false);
       if(learn) {
@@ -304,6 +304,9 @@ mnist_main(int argc, char **argv)
       }
     }
     iteration++;
+
+    if(!g_run)
+      break;
 
     // Test
     const int64_t t1 = get_ts();
