@@ -92,7 +92,6 @@ public:
     FLOAT,
     HALF,
     U8,
-    MIXED,
   };
 
   // Constructors
