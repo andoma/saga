@@ -120,14 +120,12 @@ public:
   }
 
   void *deviceMem(void) const {
+    hostmustsync_ = true;
     assert(device_mem_ != NULL);
     return device_mem_;
   };
 
-  void *hostMem(void) const {
-    assert(device_mem_ != NULL);
-    return device_mem_;
-  };
+  void *hostMem(void) const;
 
   void save(float *data) const;
 
@@ -143,10 +141,6 @@ public:
 
   void load(const uint8_t **data);
 
-  void load(const float *data);
-
-  void load(const void *data, size_t size);
-
   void randomize(float sigma);
 
   void fill(float value);
@@ -161,24 +155,24 @@ public:
 
   void printStats(const char *postfix) const;
 
-  void synchronize() const;
-
   size_t elementSize() const { return element_size_; }
-
-  float get(int n = 0, int c = 0, int x = 0, int y = 0) const {
-    return gettype_(device_mem_, n * ns_ + c * cs_ + y * hs_ + x * ws_);
-  }
 
   void *getAddr(int n = 0, int c = 0, int x = 0, int y = 0) {
     char *p = (char *)device_mem_;
     return p + (n * ns_ + c * cs_ + y * hs_ + x * ws_) * element_size_;
   }
 
+  float get(int n = 0, int c = 0, int x = 0, int y = 0) const {
+    return gettype_(hostMem(), n * ns_ + c * cs_ + y * hs_ + x * ws_);
+  }
+
   void set(int n, int c, int x, int y, float v) {
-    settype_(device_mem_, n * ns_ + c * cs_ + y * hs_ + x * ws_, v);
+    settype_(hostMem(), n * ns_ + c * cs_ + y * hs_ + x * ws_, v);
   }
 
 private:
+
+  mutable bool hostmustsync_;
 
   int ns_;
   int cs_;
@@ -198,6 +192,7 @@ private:
   float (*gettype_)(const void *base, size_t offset);
   void (*settype_)(void *base, size_t offset, float value);
 
+  void synchronize() const;
 };
 
 

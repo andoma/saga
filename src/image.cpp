@@ -23,7 +23,6 @@ void Tensor::toRGBBitmap(uint8_t *output, int stride,
 
   assert(datatype == CUDNN_DATA_FLOAT);
 
-  synchronize();
   const float *src0 = (const float *)hostMem();
 
   for(int y = 0; y < hh; y++) {

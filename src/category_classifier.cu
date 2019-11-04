@@ -152,7 +152,6 @@ public:
 
   std::vector<float> loss() const override {
     const int bs = loss_.n;
-    loss_.synchronize();
 
     std::vector<float> r;
     r.reserve(bs);

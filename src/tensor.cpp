@@ -72,6 +72,7 @@ Tensor::~Tensor()
 
 Tensor::Tensor(const Size &s, Type type)
   : Size(s)
+  , hostmustsync_(false)
   , ns_(0)
   , cs_(0)
   , hs_(0)
@@ -179,31 +180,14 @@ Tensor::allocate(Tensor *container, void *deviceMem)
   device_mem_ = deviceMem;
 }
 
-
-void Tensor::synchronize() const
+void *Tensor::hostMem() const
 {
-  cudaDeviceSynchronize();
-}
+  if(hostmustsync_) {
+    cudaDeviceSynchronize();
+    hostmustsync_ = false;
+  }
 
-
-
-
-
-
-void Tensor::load(const float *data)
-{
-  // Deprecate this
-  assert(storage_ != NULL);
-  memcpy(hostMem(), (const void *)data, storage_->bytes_);
-}
-
-
-void Tensor::load(const void *data, size_t size)
-{
-  // Deprecate this
-  assert(storage_ != NULL);
-  assert(storage_->bytes_ == size);
-  memcpy(hostMem(), (const void *)data, storage_->bytes_);
+  return device_mem_;
 }
 
 
@@ -214,7 +198,8 @@ void Tensor::load(const std::vector<float> &data)
   assert(storage_ != NULL);
   assert(storage_->bytes_ == data.size() * sizeof(float));
 
-  memcpy(hostMem(), (const void *)&data[0], data.size() * sizeof(float));
+  memcpy(hostMem(), (const void *)&data[0],
+         data.size() * sizeof(float));
 }
 
 void Tensor::load(const std::vector<uint16_t> &data)
@@ -223,7 +208,8 @@ void Tensor::load(const std::vector<uint16_t> &data)
   assert(storage_ != NULL);
   assert(storage_->bytes_ ==  data.size() * sizeof(uint16_t));
 
-  memcpy(hostMem(), (const void *)&data[0], data.size() * sizeof(uint16_t));
+  memcpy(hostMem(), (const void *)&data[0],
+         data.size() * sizeof(uint16_t));
 }
 
 
@@ -341,8 +327,6 @@ void Tensor::dump(const char *prefix, bool intensity) const {
   const int ih = h;
   const int iw = w;
 
-  synchronize();
-
   for(int n = 0; n < in; n++) {
     if(in > dim_size * 2 && n == dim_size) n = in - dim_size;
 
@@ -397,8 +381,6 @@ void Tensor::dump(const char *prefix, bool intensity) const {
 }
 
 Tensor::Stats Tensor::stats() const {
-
-  synchronize();
 
   float max = -INFINITY;
   float min = INFINITY;

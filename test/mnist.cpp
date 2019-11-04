@@ -321,7 +321,6 @@ mnist_main(int argc, char **argv)
       loadInputTensor(input, &test_data[i]);
       net.forward(true);
 
-      tail->output()->synchronize();
       for(size_t j = 0; j < batch_size; j++) {
         if(tail->output()->get(j, 0, 0, 0) == test_data[i + j].label)
           correct++;

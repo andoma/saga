@@ -20,7 +20,8 @@ test_concat_main(int argc, char **argv)
 
   Network net(true);
 
-  float test[24+16];
+
+  std::vector<float> test(24+14);
   for(int i = 0; i < 24; i++)
     test[i] = i;
 
