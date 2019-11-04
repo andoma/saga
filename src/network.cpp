@@ -246,8 +246,8 @@ void Network::backprop(unsigned int iteration)
   }
 }
 
-std::unique_ptr<Optimizer> Network::makeOptimizer(const Size &s) const {
-  return optimizer_factory_(s, *this);
+std::unique_ptr<Optimizer> Network::makeOptimizer(const Tensor &weights) const {
+  return optimizer_factory_(weights, *this);
 }
 
 

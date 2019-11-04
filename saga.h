@@ -239,7 +239,7 @@ public:
 
 };
 
-typedef std::unique_ptr<Optimizer> (OptimizerFactory)(const Size &s,
+typedef std::unique_ptr<Optimizer> (OptimizerFactory)(const Tensor &weights,
                                                       const Network &net);
 
 class Network {
@@ -260,7 +260,7 @@ public:
 
   void backprop(unsigned int iteration);
 
-  void setOptimizer(std::function<std::unique_ptr<Optimizer>(const Size &s,
+  void setOptimizer(std::function<std::unique_ptr<Optimizer>(const Tensor &weights,
                                                              const Network &net)> fn) {
     optimizer_factory_ = fn;
   }
@@ -271,7 +271,7 @@ public:
                                      float mean,
                                      float sigma);
 
-  std::unique_ptr<Optimizer> makeOptimizer(const Size &s) const;
+  std::unique_ptr<Optimizer> makeOptimizer(const Tensor &weights) const;
 
   void saveTensors(const char *path) const;
 
@@ -283,7 +283,7 @@ public:
 
   std::unordered_map<std::string, std::shared_ptr<Tensor>> named_tensors_;
 
-  std::function<std::unique_ptr<Optimizer>(const Size &s,
+  std::function<std::unique_ptr<Optimizer>(const Tensor &weights,
                                            const Network &net)> optimizer_factory_;
 
   cudnnHandle_t cudnn_;
@@ -363,7 +363,7 @@ std::shared_ptr<Layer> makeCatClassifier(const Layer &prev,
 
 // Optimizers
 
-std::unique_ptr<Optimizer> makeAdamOptimizer(const Size &s,
+std::unique_ptr<Optimizer> makeAdamOptimizer(const Tensor &weights,
                                              const Network &net,
                                              float learning_rate);
 

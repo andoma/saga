@@ -43,11 +43,11 @@ class Adam : public Optimizer {
   int iter_;
 
 public:
-  Adam(const Size &s, const Network &net, float lr)
+  Adam(const Tensor &weights, const Network &net, float lr)
     : lr_(lr)
     , iter_(0)
   {
-    const size_t bytes = s.elements() * 2 * sizeof(float);
+    const size_t bytes = weights.elements() * 2 * sizeof(float);
     chkCuda(cudaMalloc(&temp_, bytes));
     chkCuda(cudaMemset(temp_, 0, bytes));
   }
@@ -88,11 +88,11 @@ public:
 };
 
 
-std::unique_ptr<Optimizer> makeAdamOptimizer(const Size &s,
+std::unique_ptr<Optimizer> makeAdamOptimizer(const Tensor &weights,
                                              const Network &net,
                                              float lr)
 {
-  return std::make_unique<Adam>(s, net, lr);
+  return std::make_unique<Adam>(weights, net, lr);
 }
 
 
