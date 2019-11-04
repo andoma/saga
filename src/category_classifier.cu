@@ -156,7 +156,7 @@ public:
     std::vector<float> r;
     r.reserve(bs);
     for(unsigned int i = 0; i < bs; i++) {
-      r.push_back(loss_.get(i, 0, 0, 0));
+      r.push_back(loss_.get(i));
     }
     return r;
   }
