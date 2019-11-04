@@ -150,14 +150,16 @@ public:
     return labels_.get();
   }
 
-  float loss() const override {
+  std::vector<float> loss() const override {
     const int bs = loss_.n;
     loss_.synchronize();
-    double s = 0;
+
+    std::vector<float> r;
+    r.reserve(bs);
     for(unsigned int i = 0; i < bs; i++) {
-      s += loss_.get(i, 0, 0, 0);
+      r.push_back(loss_.get(i, 0, 0, 0));
     }
-    return s / bs;
+    return r;
   }
 
 protected:

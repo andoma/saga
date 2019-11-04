@@ -214,7 +214,7 @@ public:
 
   virtual void backprop(const Network &n) {}
 
-  virtual float loss() const { return NAN; }
+  virtual std::vector<float> loss() const { return std::vector<float>(); }
 
   size_t workspaceSize() const { return workspace_size_; };
 

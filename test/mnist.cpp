@@ -5,6 +5,7 @@
 #include <fcntl.h>
 
 #include <algorithm>
+#include <numeric>
 
 #include "saga.h"
 
@@ -295,12 +296,17 @@ mnist_main(int argc, char **argv)
 
     const int64_t t0 = get_ts();
 
+    double loss_sum = 0;
+
     for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
       loadInputTensor(input, &train_data[i]);
       net.forward(false);
       if(learn) {
         loadOutputTensor(*tail->gradient(), &train_data[i]);
         net.backprop(iteration);
+        auto loss = tail->loss();
+
+        loss_sum += std::accumulate(loss.begin(), loss.end(), 0.0f);
       }
     }
     iteration++;
@@ -311,13 +317,11 @@ mnist_main(int argc, char **argv)
     // Test
     const int64_t t1 = get_ts();
     int correct = 0;
-    float loss_sum = 0;
     for(size_t i = 0; i < test_inputs; i += batch_size) {
       loadInputTensor(input, &test_data[i]);
       net.forward(true);
 
-      loss_sum += tail->loss();
-
+      tail->output()->synchronize();
       for(size_t j = 0; j < batch_size; j++) {
         if(tail->output()->get(j, 0, 0, 0) == test_data[i + j].label)
           correct++;
@@ -329,7 +333,7 @@ mnist_main(int argc, char **argv)
            percentage,
            (t1 - t0) / 1e6,
            (t2 - t1) / 1e6,
-           loss_sum / (test_inputs / batch_size));
+           loss_sum / test_inputs);
     if(percentage > 99)
       break;
   }
