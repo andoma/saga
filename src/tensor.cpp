@@ -194,7 +194,7 @@ void Tensor::load(const float *data)
 {
   // Deprecate this
   assert(storage_ != NULL);
-  memcpy(deviceMem(), (const void *)data, storage_->bytes_);
+  memcpy(hostMem(), (const void *)data, storage_->bytes_);
 }
 
 
@@ -203,7 +203,7 @@ void Tensor::load(const void *data, size_t size)
   // Deprecate this
   assert(storage_ != NULL);
   assert(storage_->bytes_ == size);
-  memcpy(deviceMem(), (const void *)data, storage_->bytes_);
+  memcpy(hostMem(), (const void *)data, storage_->bytes_);
 }
 
 
@@ -214,7 +214,7 @@ void Tensor::load(const std::vector<float> &data)
   assert(storage_ != NULL);
   assert(storage_->bytes_ == data.size() * sizeof(float));
 
-  memcpy(deviceMem(), (const void *)&data[0], data.size() * sizeof(float));
+  memcpy(hostMem(), (const void *)&data[0], data.size() * sizeof(float));
 }
 
 void Tensor::load(const std::vector<uint16_t> &data)
@@ -223,7 +223,7 @@ void Tensor::load(const std::vector<uint16_t> &data)
   assert(storage_ != NULL);
   assert(storage_->bytes_ ==  data.size() * sizeof(uint16_t));
 
-  memcpy(deviceMem(), (const void *)&data[0], data.size() * sizeof(uint16_t));
+  memcpy(hostMem(), (const void *)&data[0], data.size() * sizeof(uint16_t));
 }
 
 

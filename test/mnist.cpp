@@ -117,7 +117,7 @@ loadOutputTensor(Tensor &t, const LabeledImage *lis)
     labels[j] = lis[j].label;
   }
 
-  memcpy(t.deviceMem(), labels, n);
+  memcpy(t.hostMem(), labels, n);
 }
 
 

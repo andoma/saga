@@ -144,7 +144,7 @@ void Network::saveTensors(const char *path) const
 
     ssize_t s = t->elements() * t->elementSize();
 
-    if(write(fd, t->deviceMem(), s) != s) {
+    if(write(fd, t->hostMem(), s) != s) {
       fprintf(stderr, "Unable to write to %s\n",
               filepath);
       close(fd);
@@ -183,7 +183,7 @@ void Network::loadTensors(const char *path)
                                           Tensor::Type::FLOAT);
              t->allocate(CUDNN_TENSOR_NHWC);
              ssize_t s = t->elements() * t->elementSize();
-             if(read(fd, t->deviceMem(), s) != s) {
+             if(read(fd, t->hostMem(), s) != s) {
                fprintf(stderr, "Unable to read values from %s\n", path);
              } else {
                named_tensors_[fname] = t;

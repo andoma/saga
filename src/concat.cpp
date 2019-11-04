@@ -36,7 +36,7 @@ void ConcatTensor::allocate(cudnnTensorFormat_t format)
   int channels = 0;
   for(size_t i = 0; i < parts_.size(); i++) {
     auto part = parts_[i];
-    part->allocate(this, getAddr(0, channels, 0, 0));
+    part->allocate(this, getAddr(0, channels));
     channels += part->c;
   }
 }

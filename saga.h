@@ -124,6 +124,11 @@ public:
     return device_mem_;
   };
 
+  void *hostMem(void) const {
+    assert(device_mem_ != NULL);
+    return device_mem_;
+  };
+
   void save(float *data) const;
 
   void toRGBBitmap(uint8_t *output, int stride,
@@ -160,11 +165,11 @@ public:
 
   size_t elementSize() const { return element_size_; }
 
-  float get(int n, int c, int x, int y) const {
+  float get(int n = 0, int c = 0, int x = 0, int y = 0) const {
     return gettype_(device_mem_, n * ns_ + c * cs_ + y * hs_ + x * ws_);
   }
 
-  void *getAddr(int n, int c, int x, int y) {
+  void *getAddr(int n = 0, int c = 0, int x = 0, int y = 0) {
     char *p = (char *)device_mem_;
     return p + (n * ns_ + c * cs_ + y * hs_ + x * ws_) * element_size_;
   }
