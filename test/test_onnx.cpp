@@ -6,34 +6,98 @@
 
 using namespace saga;
 
+
+
+static int
+test_one(const char *base_path,
+         const char *model_name,
+         const char *input_name,
+         int num_tests)
+{
+  char input_path[PATH_MAX];
+  char output_path[PATH_MAX];
+  char model_path[PATH_MAX];
+
+  Network n(false); // No backprop
+
+  snprintf(input_path, sizeof(input_path), "%s/test_data_set_0/input_0.pb",
+           base_path);
+  auto input = Tensor::createFromPB(input_path);
+  if(!input) {
+    fprintf(stderr, "Failed to load %s\n", input_path);
+    return 1;
+  }
+
+  auto inputLayer = n.nameLayer(n.addLayer(makeInput(input.get())),
+                                input_name);
+
+  snprintf(model_path, sizeof(model_path), "%s/%s", base_path, model_name);
+
+  if(!n.load(model_path)) {
+    fprintf(stderr, "Failed to load model graph %s\n", model_path);
+    return 1;
+  }
+
+  for(int i = 0; i < num_tests; i++) {
+    snprintf(input_path, sizeof(input_path), "%s/test_data_set_%d/input_0.pb",
+             base_path, i);
+
+    auto loaded_input = Tensor::createFromPB(input_path);
+    if(!loaded_input) {
+      fprintf(stderr, "Failed to load input %s\n", input_path);
+      return 1;
+    }
+    input->copyFrom(*loaded_input);
+
+    snprintf(output_path, sizeof(output_path),
+             "%s/test_data_set_%d/output_0.pb",
+             base_path, i);
+    auto loaded_output = Tensor::createFromPB(output_path);
+    if(!loaded_output) {
+      fprintf(stderr, "Failed to load output %s\n", output_path);
+      return 1;
+    }
+
+    n.forward(false);
+
+    auto out = n.layers_[n.layers_.size() - 1];
+    float diff = out->output()->compare(*loaded_output);
+
+    printf("Test data %d max tensor diff: %f\n", i, diff);
+
+    if(diff > 0.001) {
+      out->output()->dump("OUTPUT");
+      loaded_output->dump("REFERENCE");
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+
+
+
+
+
+
+
 int
 test_onnx_main(int argc, char **argv)
 {
-  if(argc < 4) {
-    fprintf(stderr, "Usage .. onnx <input> <inputname> <model> <output>\n");
+  if(argc == 3) {
+    return test_one(argv[0], argv[1], argv[2], atoi(argv[3]));
+  }
+
+  if(argc != 0) {
+    fprintf(stderr, "Usage: onnx <basepath> <modelname> <inputname> <num_test_datas>\n");
     exit(1);
   }
 
-  auto input = Tensor::createFromPB(argv[0]);
-  if(!input)
-    exit(1);
-
-  Network n(false);
-
-  auto inputLayer = n.nameLayer(n.addLayer(makeInput(input.get())), argv[1]);
-
-  if(!n.load(argv[2])) {
-    fprintf(stderr, "Failed to load graph\n");
+  if(test_one("models/squeezenet1.1", "squeezenet1.1.onnx", "data", 3)) {
     exit(1);
   }
 
-  n.forward(false);
-
-  auto out = n.layers_[n.layers_.size() - 1];
-  out->output()->dump("OUTPUT");
-
-  auto ref = Tensor::createFromPB(argv[3]);
-  ref->dump("REFERENCE");
 
   return 0;
 }
