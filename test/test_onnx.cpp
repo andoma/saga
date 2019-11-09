@@ -85,7 +85,7 @@ test_one(const char *base_path,
 int
 test_onnx_main(int argc, char **argv)
 {
-  if(argc == 3) {
+  if(argc == 4) {
     return test_one(argv[0], argv[1], argv[2], atoi(argv[3]));
   }
 
