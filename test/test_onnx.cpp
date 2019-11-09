@@ -22,7 +22,10 @@ test_onnx_main(int argc, char **argv)
 
   auto inputLayer = n.nameLayer(n.addLayer(makeInput(input.get())), argv[1]);
 
-  n.load(argv[2]);
+  if(!n.load(argv[2])) {
+    fprintf(stderr, "Failed to load graph\n");
+    exit(1);
+  }
 
   n.forward(false);
 
