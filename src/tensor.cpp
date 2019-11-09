@@ -338,6 +338,42 @@ void Tensor::randomize(float sigma)
 }
 
 
+void Tensor::copyFrom(const Tensor &src)
+{
+  assert((Size)src == (Size)*this);
+  assert(src.ns_ == ns_);
+  assert(src.cs_ == cs_);
+  assert(src.hs_ == hs_);
+  assert(src.ws_ == ws_);
+  assert(src.storage_->bytes_ == storage_->bytes_);
+
+  cudaMemcpy(this->deviceMem(),
+             src.deviceMem(),
+             storage_->bytes_,
+             cudaMemcpyDeviceToDevice);
+}
+
+
+float Tensor::compare(const Tensor &src)
+{
+  assert((Size)src == (Size)*this);
+
+  float maxdiff = 0;
+
+  for(size_t i = 0; i < n; i++) {
+    for(size_t y = 0; y < h; y++) {
+      for(size_t x = 0; x < w; x++) {
+        for(size_t j = 0; j < c; j++) {
+          const float d = fabs(get(i,j,y,x) - src.get(i,j,y,x));
+          maxdiff = std::max(maxdiff, d);
+        }
+      }
+    }
+  }
+  return maxdiff;
+}
+
+
 
 std::string Size::name() const {
   std::stringstream ss;

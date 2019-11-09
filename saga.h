@@ -173,6 +173,10 @@ public:
 
   // Helpers
 
+  void copyFrom(const Tensor &src);
+
+  float compare(const Tensor &src);
+
   void dump(const char *prefix, bool intensity = false) const;
 
   void check() const;
