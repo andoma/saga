@@ -476,6 +476,25 @@ onnx_add_concat(Network &n,
 
 
 static shared_ptr<Layer>
+onnx_add_sum(Network &n,
+             const onnx::NodeProto &np,
+             const AttributeMap &attribs,
+             const TensorMap &initializers)
+{
+  vector<const Layer *>inputs;
+  for(const auto &i : np.input()) {
+    auto l = n.findLayer(i);
+    if(!l) {
+      fprintf(stderr, "Can't find input layer %s\n", i.c_str());
+      return NULL;
+    }
+    inputs.push_back(l.get());
+  }
+  return n.addLayer(makeSum(inputs, n));
+}
+
+
+static shared_ptr<Layer>
 onnx_add_dropout(Network &n,
                  const onnx::NodeProto &np,
                  const AttributeMap &attribs,
@@ -559,6 +578,8 @@ loadgraph(Network &n, const onnx::GraphProto &gp)
                            PoolingMode::AVERAGE);
     } else if(node_type == "Concat") {
       l = onnx_add_concat(n, np, attribs, initializers);
+    } else if(node_type == "Sum") {
+      l = onnx_add_sum(n, np, attribs, initializers);
     } else if(node_type == "Dropout") {
       l = onnx_add_dropout(n, np, attribs, initializers);
     } else if(node_type == "Reshape") {

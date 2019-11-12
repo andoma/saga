@@ -370,6 +370,9 @@ std::shared_ptr<Layer> makeInput(Tensor *input,
 std::shared_ptr<Layer> makeConcat(const std::vector<const Layer *> &prevs,
                                   const Network &n);
 
+std::shared_ptr<Layer> makeSum(const std::vector<const Layer *> &inputs,
+                               const Network &n);
+
 std::shared_ptr<Layer> makeBatchNorm(double epsilon,
                                      const Layer &prev,
                                      Network &n,

@@ -13,6 +13,7 @@ SAGA_SRCS += \
 	src/category_classifier.cu \
 	src/mathop.cpp \
 	src/concat.cpp \
+	src/sum.cpp \
 	src/gd.cpp \
 	src/adam.cu \
 	src/onnx.cpp \
