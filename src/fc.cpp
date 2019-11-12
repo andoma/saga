@@ -50,7 +50,7 @@ public:
   {
     prev.output()->allocate();
 
-    weights_ = net.findTensor(weights, Size(num_inputs_, num_outputs, 1, 1),
+    weights_ = net.findTensor(weights, Size(num_outputs, num_inputs_, 1, 1),
                               input_->type(),
                               0.0, sqrt(2.0 / num_inputs_));
 
