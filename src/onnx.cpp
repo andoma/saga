@@ -386,6 +386,20 @@ onnx_add_relu(Network &n,
   return n.addLayer(makeActivation(ActivationMode::RELU, 0, *x.get(), n));
 }
 
+static shared_ptr<Layer>
+onnx_add_softmax(Network &n,
+                 const onnx::NodeProto &np,
+                 const AttributeMap &attribs)
+{
+  assert(np.input_size() == 1);
+  auto x = n.findLayer(np.input(0));
+  if(!x) {
+    fprintf(stderr, "Can't find input layer %s\n", np.input(0).c_str());
+    return NULL;
+  }
+  return n.addLayer(makeSoftmax(*x.get(), n));
+}
+
 
 static shared_ptr<Layer>
 onnx_add_pool(Network &n,
@@ -535,6 +549,8 @@ loadgraph(Network &n, const onnx::GraphProto &gp)
       l = onnx_add_batchnorm(n, np, attribs, initializers);
     } else if(node_type == "Relu") {
       l = onnx_add_relu(n, np, attribs, initializers);
+    } else if(node_type == "Softmax") {
+      l = onnx_add_softmax(n, np, attribs);
     } else if(node_type == "MaxPool") {
       l = onnx_add_pool(n, np, attribs, initializers,
                            PoolingMode::MAX);
