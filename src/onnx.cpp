@@ -234,9 +234,8 @@ loadNCHW(const float *src, Tensor &t)
 }
 
 
-
 static shared_ptr<Tensor>
-tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
+tensor_from_TensorProto(const onnx::TensorProto &tp, size_t rank)
 {
   if(tp.dims_size() > 4) {
     fprintf(stderr, "Unable to load %s: Tensor of dimension %d not supported\n",
@@ -244,12 +243,13 @@ tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
     return nullptr;
   }
 
+  assert(tp.data_type() == onnx::TensorProto_DataType_FLOAT);
+
+
   auto dims = std::vector<unsigned int>(tp.dims().begin(), tp.dims().end());
 
-  for(int i = 0; i < first_axis; i++)
+  while(rank && dims.size() < rank)
     dims.insert(dims.begin(), 1);
-
-  assert(tp.data_type() == onnx::TensorProto_DataType_FLOAT);
 
   auto t = make_shared<Tensor>(Size(dims), Tensor::Type::FLOAT);
 
@@ -273,14 +273,14 @@ tensor_from_TensorProto(const onnx::TensorProto &tp, int first_axis = 0)
 
 static std::shared_ptr<Tensor>
 make_initializer(const TensorMap &initializers, const string &initializername,
-                 Network &n, int first_axis = 0)
+                 Network &n, size_t rank)
 {
   auto x = initializers.find(initializername);
   if(x == initializers.end()) {
-    fprintf(stderr, "Unable to find %s", initializername.c_str());
+    fprintf(stderr, "Unable to find %s\n", initializername.c_str());
     exit(1);
   }
-  auto t = tensor_from_TensorProto(*x->second, first_axis);
+  auto t = tensor_from_TensorProto(*x->second, rank);
 
   n.named_tensors_[initializername] = t;
   return t;
@@ -301,10 +301,10 @@ onnx_add_batchnorm(Network &n,
     return NULL;
   }
 
-  make_initializer(initializers, np.input(1), n, 1);
-  make_initializer(initializers, np.input(2), n, 1);
-  make_initializer(initializers, np.input(3), n, 1);
-  make_initializer(initializers, np.input(4), n, 1);
+  make_initializer(initializers, np.input(1), n, 2);
+  make_initializer(initializers, np.input(2), n, 2);
+  make_initializer(initializers, np.input(3), n, 2);
+  make_initializer(initializers, np.input(4), n, 2);
 
   float epsilon = attribs.getFloat("epsilon", 1e-05);
 
@@ -336,12 +336,13 @@ onnx_add_conv(Network &n,
     assert(d == 1);
   }
 
-  auto weights = make_initializer(initializers, np.input(1), n);
+  auto weights = make_initializer(initializers, np.input(1), n, 4);
   const int feature_maps = weights->n;
   const int kernel_size = weights->w;
   assert(weights->w == weights->h); // Only square kernels for now
 
-  auto bias = with_bias ? make_initializer(initializers, np.input(2), n, 1) : NULL;
+  auto bias = with_bias ?
+    make_initializer(initializers, np.input(2), n, 2) : NULL;
 
   int pad = 0;
   auto pads = attribs.getInts("pads");
@@ -656,7 +657,7 @@ Tensor::createFromPB(const char *path)
   if(!tp.ParseFromCodedStream(pb.get()))
     return nullptr;
 
-  return tensor_from_TensorProto(tp);
+  return tensor_from_TensorProto(tp, 0);
 }
 
 
