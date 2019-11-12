@@ -94,10 +94,13 @@ test_onnx_main(int argc, char **argv)
     exit(1);
   }
 
-  if(test_one("models/squeezenet1.1", "squeezenet1.1.onnx", "data", 3)) {
+  if(test_one("models/resnet50", "model.onnx", "gpu_0/data_0", 9)) {
     exit(1);
   }
 
+  if(test_one("models/squeezenet1.1", "squeezenet1.1.onnx", "data", 3)) {
+    exit(1);
+  }
 
   return 0;
 }
