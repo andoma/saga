@@ -372,6 +372,33 @@ onnx_add_conv(Network &n,
 }
 
 
+
+static shared_ptr<Layer>
+onnx_add_gemm(Network &n,
+              const onnx::NodeProto &np,
+              const AttributeMap &attribs,
+              const TensorMap &initializers)
+{
+  assert(np.input_size() == 3);
+  auto x = n.findLayer(np.input(0));
+  if(!x) {
+    fprintf(stderr, "Can't find input layer %s\n", np.input(0).c_str());
+    return NULL;
+  }
+
+  auto weights = make_initializer(initializers, np.input(1), n, 2);
+  printf("initialized weights: %s\n", weights->name().c_str());
+
+  auto bias    = make_initializer(initializers, np.input(2), n, 2);
+  printf("   initialized bias: %s\n", bias->name().c_str());
+
+  return n.addLayer(makeFullyConnected(bias->c, *x.get(),
+                                       n,
+                                       np.input(1).c_str(),
+                                       np.input(2).c_str()));
+}
+
+
 static shared_ptr<Layer>
 onnx_add_relu(Network &n,
               const onnx::NodeProto &np,
@@ -585,6 +612,8 @@ loadgraph(Network &n, const onnx::GraphProto &gp)
       l = onnx_add_dropout(n, np, attribs, initializers);
     } else if(node_type == "Reshape") {
       l = onnx_add_reshape(n, np, attribs);
+    } else if(node_type == "Gemm") {
+      l = onnx_add_gemm(n, np, attribs, initializers);
     } else {
       fprintf(stderr, "Can't handle node type %s\n", node_type.c_str());
       return false;
