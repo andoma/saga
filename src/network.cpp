@@ -108,7 +108,11 @@ std::shared_ptr<Tensor> Network::findTensor(const char *name,
   if(name != NULL) {
     auto r = named_tensors_.find(name);
     if(r != named_tensors_.end()) {
-      assert(*r->second == s);
+      if(!(*r->second == s)) {
+        fprintf(stderr, "Finding tensor %s %s mismatch loaded tensor %s\n",
+                name, s.name().c_str(), r->second->name().c_str());
+        exit(1);
+      }
       assert(r->second->type() == type);
       return r->second;
     }
