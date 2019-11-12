@@ -377,7 +377,7 @@ float Tensor::compare(const Tensor &src)
 
 std::string Size::name() const {
   std::stringstream ss;
-  ss << "[" << n << ", " << c << ", " << w << ", " << h << "]";
+  ss << "[" << n << ", " << c << ", " << h << ", " << w << "]";
   return ss.str();
 }
 
