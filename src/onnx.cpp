@@ -562,20 +562,11 @@ static bool
 loadgraph(Network &n, const onnx::GraphProto &gp)
 {
   TensorMap initializers;
-#if 0
-  Tensor input(TensorDescriptor(CUDNN_DATA_FLOAT,
-                                CUDNN_TENSOR_NCHW,
-                                Size(n.batch_size_, 3, 224, 224)));
-
-  auto inputLayer = n.addLayer(makeInput(&input));
-  layers["data"] = inputLayer;
-#endif
 
   for(int i = 0; i < gp.initializer_size(); i++) {
     const auto &ini = gp.initializer(i);
     initializers[ini.name()] = &ini;
   }
-
 
   for(int i = 0; i < gp.node_size(); i++) {
     const auto &np = gp.node(i);
