@@ -1,5 +1,10 @@
 
 SAGA_SRCS += \
+	src/onnx.cpp \
+	src/onnx.proto3.pb.cpp \
+
+
+OLDS_SRCS += \
 	src/network.cpp \
 	src/tensor.cpp \
 	src/image.cpp \
@@ -16,5 +21,3 @@ SAGA_SRCS += \
 	src/sum.cpp \
 	src/gd.cpp \
 	src/adam.cu \
-	src/onnx.cpp \
-	src/onnx.proto3.pb.cpp \

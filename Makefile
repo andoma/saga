@@ -6,18 +6,14 @@ CPPFLAGS += -g -O2 -Wall -Werror -I.
 CPPFLAGS += $(shell pkg-config --cflags cuda-10.1 cudart-10.1)
 LDFLAGS += $(shell pkg-config --libs cuda-10.1 cudart-10.1)
 
-CXXFLAGS += --std=c++14 -march=native
+CXXFLAGS += --std=c++17 -march=native -fno-exceptions
 
 NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
 
 NVCC := /usr/local/cuda-10.1/bin/nvcc
 
 SRCS += main.cpp \
-	test/mnist.cpp \
-	test/test_concat.cpp \
-	test/test_onnx.cpp \
-	test/test_fc.cpp \
-	test/util.cpp \
+	test/test_onnx.cpp
 
 SRCS += ${SAGA_SRCS}
 

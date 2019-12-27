@@ -187,7 +187,7 @@ print_onnx_graph_info(const onnx::GraphProto &gp)
 }
 
 
-typedef unordered_map<string, const onnx::TensorProto *> TensorMap;
+#if 0
 
 class AttributeMap : public unordered_map<string, const onnx::AttributeProto *>
 {
@@ -217,7 +217,63 @@ public:
   }
 };
 
+#endif
 
+
+
+
+struct MappedPBFile : public CodedInputStream {
+public:
+  MappedPBFile(void *data, size_t size)
+    : CodedInputStream((const uint8_t *)data, size)
+    , data_(data)
+    , size_(size)
+  {
+    SetTotalBytesLimit(size, size);
+  }
+
+  ~MappedPBFile() {
+    munmap(data_, size_);
+  }
+
+private:
+  void *data_;
+  size_t size_;
+};
+
+
+
+static unique_ptr<MappedPBFile>
+mapPBfile(const char *path)
+{
+  const int fd = open(path, O_RDONLY);
+  if(fd == -1) {
+    fprintf(stderr, "Failed to open protobuf file %s: %s\n",
+            path, strerror(errno));
+    return nullptr;
+  }
+
+  struct stat st;
+  fstat(fd, &st);
+
+  void *mem = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  close(fd);
+
+  return make_unique<MappedPBFile>(mem, st.st_size);
+}
+
+
+
+
+
+
+
+
+
+
+#if 0
+
+typedef unordered_map<string, const onnx::TensorProto *> TensorMap;
 
 static void
 loadNCHW(const float *src, Tensor &t)
@@ -232,7 +288,6 @@ loadNCHW(const float *src, Tensor &t)
     }
   }
 }
-
 
 static shared_ptr<Tensor>
 tensor_from_TensorProto(const onnx::TensorProto &tp, size_t rank)
@@ -620,47 +675,6 @@ loadgraph(Network &n, const onnx::GraphProto &gp)
 
 
 
-struct MappedPBFile : public CodedInputStream {
-public:
-  MappedPBFile(void *data, size_t size)
-    : CodedInputStream((const uint8_t *)data, size)
-    , data_(data)
-    , size_(size)
-  {
-    SetTotalBytesLimit(size, size);
-  }
-
-  ~MappedPBFile() {
-    munmap(data_, size_);
-  }
-
-private:
-  void *data_;
-  size_t size_;
-};
-
-
-
-static unique_ptr<MappedPBFile>
-mapPBfile(const char *path)
-{
-  const int fd = open(path, O_RDONLY);
-  if(fd == -1) {
-    fprintf(stderr, "Failed to open protobuf file %s: %s\n",
-            path, strerror(errno));
-    return nullptr;
-  }
-
-  struct stat st;
-  fstat(fd, &st);
-
-  void *mem = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-  close(fd);
-
-  return make_unique<MappedPBFile>(mem, st.st_size);
-}
-
-
 
 
 
@@ -699,6 +713,318 @@ Network::load(const char *path)
     print_onnx_graph_info(gp);
 
   return loadgraph(*this, gp);
+}
+#endif
+
+//------------------------------------------------------------------------
+//
+
+
+static shared_ptr<Tensor>
+make_tensor(const onnx::TensorProto &tp)
+{
+  auto t = make_shared<Tensor>();
+  t->name_ = tp.name();
+  t->dims_ = std::vector<unsigned int>(tp.dims().begin(), tp.dims().end());
+  return t;
+}
+
+
+static shared_ptr<Tensor>
+make_tensor(const std::string &name)
+{
+  auto t = make_shared<Tensor>();
+  t->name_ = name;
+  return t;
+}
+
+
+
+
+
+
+
+
+static shared_ptr<Node>
+make_conv(const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() > 1);
+  assert(np.output_size() == 1);
+
+  auto n = std::make_shared<Node>(Node::Type::CONV);
+  n->inputs_["x"] = make_tensor(np.input(0));
+  n->outputs_["y"] = make_tensor(np.output(0));
+
+  n->inputs_["w"] = make_tensor(np.input(1));
+  if(np.input_size() > 2)
+    n->inputs_["b"] = make_tensor(np.input(2));
+
+
+  assert(attribs.find("auto_pad") == attribs.end()); // Can't deal with this
+
+  int group = attribs.get("group", 1);
+  assert(group == 1);
+
+  for(auto d : attribs.get("dilations", std::vector<int>({}))) {
+    assert(d == 1);
+  }
+
+  int pad = 0;
+  auto pads = attribs.get("pads", std::vector<int>({}));
+
+  if(pads.size()) {
+    pad = pads[0];
+    for(auto p : pads) {
+      assert(p == pad);
+    }
+  }
+
+  n->attributes_["padding"] = pad;
+
+  int stride = 1;
+  auto strides = attribs.get("strides", std::vector<int>({}));
+
+  if(strides.size()) {
+    stride = strides[0];
+    for(auto s: strides) {
+      assert(s == stride);
+    }
+  }
+  n->attributes_["stride"] = stride;
+  return n;
+}
+
+
+
+static shared_ptr<Node>
+make_batchnorm(const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() == 5);
+  assert(np.output_size() == 1);
+
+  auto n = std::make_shared<Node>(Node::Type::BATCHNORM);
+  n->inputs_["x"] = make_tensor(np.input(0));
+  n->outputs_["y"] = make_tensor(np.output(0));
+
+  n->inputs_["s"] = make_tensor(np.input(1));
+  n->inputs_["b"] = make_tensor(np.input(2));
+  n->inputs_["rm"] = make_tensor(np.input(3));
+  n->inputs_["riv"] = make_tensor(np.input(4));
+
+  float epsilon = attribs.get("epsilon", 1e-05f);
+  n->attributes_["epsilon"] = epsilon;
+  return n;
+}
+
+
+static shared_ptr<Node>
+make_relu(const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() == 1);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>(Node::Type::RELU);
+  n->inputs_["x"] = make_tensor(np.input(0));
+  n->outputs_["y"] = make_tensor(np.output(0));
+  return n;
+}
+
+static shared_ptr<Node>
+make_pooling(const onnx::NodeProto &np, const Attributes &attribs,
+             Node::Type type)
+{
+  assert(np.input_size() == 1);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>(type);
+  n->inputs_["x"] = make_tensor(np.input(0));
+  n->outputs_["y"] = make_tensor(np.output(0));
+
+  assert(attribs.find("auto_pad") == attribs.end()); // Can't deal with this
+  assert(attribs.get("ceil_mode", 0) == 0);
+  for(auto d : attribs.get("dilations", std::vector<int>({}))) {
+    assert(d == 1);
+  }
+
+  int size = 0;
+  auto kernel_shape = attribs.get("kernel_shape", std::vector<int>({}));
+  if(kernel_shape.size()) {
+    size = kernel_shape[0];
+    for(auto x : kernel_shape) {
+      assert(x == size);
+    }
+  }
+
+  int pad = 0;
+  auto pads = attribs.get("pads", std::vector<int>({}));
+  if(pads.size()) {
+    pad = pads[0];
+    for(auto d : pads) {
+      assert(d == pad);
+    }
+  }
+
+  assert(attribs.get("storage_order", 0) == 0);
+
+  int stride = 0;
+  auto strides = attribs.get("strides", std::vector<int>({}));
+
+  if(strides.size()) {
+    stride = strides[0];
+    for(auto s: strides) {
+      assert(s == stride);
+    }
+  }
+
+  n->attributes_["size"] = size;
+  n->attributes_["pad"] = pad;
+  n->attributes_["stride"] = stride;
+
+  return n;
+}
+
+static shared_ptr<Node>
+make_sum(const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() >= 1);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>(Node::Type::SUM);
+
+  for(int i = 0; i < np.input_size(); i++) {
+    char name[20];
+    snprintf(name, sizeof(name), "x%u", i);
+    n->inputs_[name] = make_tensor(np.input(i));
+  }
+  n->outputs_["y"] = make_tensor(np.output(0));
+  return n;
+}
+
+
+static shared_ptr<Node>
+make_reshape(const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() == 2);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>(Node::Type::RESHAPE);
+  n->inputs_["x"] = make_tensor(np.input(0));
+  n->inputs_["shape"] = make_tensor(np.input(1));
+  n->outputs_["y"] = make_tensor(np.output(0));
+  return n;
+}
+
+static shared_ptr<Node>
+make_gemm(const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() == 3);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>(Node::Type::FC);
+  n->inputs_["x"] = make_tensor(np.input(0));
+  n->inputs_["w"] = make_tensor(np.input(1));
+  n->inputs_["b"] = make_tensor(np.input(2));
+  n->outputs_["y"] = make_tensor(np.output(0));
+  return n;
+}
+
+
+static shared_ptr<Node>
+make_softmax(const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() == 1);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>(Node::Type::SOFTMAX);
+  n->inputs_["x"] = make_tensor(np.input(0));
+  n->outputs_["y"] = make_tensor(np.output(0));
+  return n;
+}
+
+
+static bool
+loadgraph(Graph &g, const onnx::GraphProto &gp)
+{
+  for(const auto &ti : gp.initializer()) {
+    g.tensors_[ti.name()] = make_tensor(ti);
+  }
+
+  for(const auto &np : gp.node()) {
+
+    NodeProto_print(np);
+    assert(np.output_size() == 1);
+
+    Attributes attribs;
+
+    for(const auto &a : np.attribute()) {
+      switch(a.type()) {
+      case onnx::AttributeProto_AttributeType_INT:
+        attribs[a.name()] = (int)a.i();
+        break;
+      case onnx::AttributeProto_AttributeType_FLOAT:
+        attribs[a.name()] = a.f();
+        break;
+      case onnx::AttributeProto_AttributeType_INTS:
+        attribs[a.name()] = vector<int>(a.ints().begin(), a.ints().end());
+        break;
+      default:
+        break;
+      }
+      //      attribs[a.name()] = &a;
+    }
+
+    shared_ptr<Node> n;
+    const auto& node_type = np.op_type();
+    if(node_type == "Conv") {
+      n = make_conv(np, attribs);
+    } else if(node_type == "BatchNormalization") {
+      n = make_batchnorm(np, attribs);
+    } else if(node_type == "Relu") {
+      n = make_relu(np, attribs);
+    } else if(node_type == "MaxPool") {
+      n = make_pooling(np, attribs, Node::Type::MAXPOOL);
+    } else if(node_type == "AveragePool") {
+      n = make_pooling(np, attribs, Node::Type::AVGPOOL);
+    } else if(node_type == "Sum") {
+      n = make_sum(np, attribs);
+    } else if(node_type == "Reshape") {
+      n = make_reshape(np, attribs);
+    } else if(node_type == "Gemm") {
+      n = make_gemm(np, attribs);
+    } else if(node_type == "Softmax") {
+      n = make_softmax(np, attribs);
+    } else {
+      fprintf(stderr, "Can't handle node type %s\n", node_type.c_str());
+      return false;
+    }
+    g.nodes_.push_back(n);
+  }
+
+  return true;
+}
+
+
+
+
+
+std::shared_ptr<Graph>
+Graph::load(const char *path)
+{
+  auto pb = mapPBfile(path);
+  if(pb == NULL)
+    return nullptr;
+
+  onnx::ModelProto mp;
+  if(!mp.ParseFromCodedStream(pb.get()))
+    return nullptr;
+
+  cout << "IR version: " << mp.ir_version() << endl;
+  const auto &gp = mp.graph();
+
+  if(1)
+    print_onnx_graph_info(gp);
+
+
+  auto g = make_shared<Graph>();
+
+  if(!loadgraph(*g.get(), gp))
+    return nullptr;
+
+  return g;
 }
 
 

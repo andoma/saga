@@ -14,10 +14,11 @@ test_one(const char *base_path,
          const char *input_name,
          int num_tests)
 {
-  char input_path[PATH_MAX];
-  char output_path[PATH_MAX];
+  //  char input_path[PATH_MAX];
+  //  char output_path[PATH_MAX];
   char model_path[PATH_MAX];
 
+#if 0
   Network n(false); // No backprop
 
   snprintf(input_path, sizeof(input_path), "%s/test_data_set_0/input_0.pb",
@@ -30,14 +31,16 @@ test_one(const char *base_path,
 
   auto inputLayer = n.nameLayer(n.addLayer(makeInput(input.get())),
                                 input_name);
+#endif
 
   snprintf(model_path, sizeof(model_path), "%s/%s", base_path, model_name);
 
-  if(!n.load(model_path)) {
+  auto g = Graph::load(model_path);
+  if(g == NULL) {
     fprintf(stderr, "Failed to load model graph %s\n", model_path);
     return 1;
   }
-
+#if 0
   for(int i = 0; i < num_tests; i++) {
     snprintf(input_path, sizeof(input_path), "%s/test_data_set_%d/input_0.pb",
              base_path, i);
@@ -71,6 +74,7 @@ test_one(const char *base_path,
       return -1;
     }
   }
+#endif
 
   return 0;
 }

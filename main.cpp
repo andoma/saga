@@ -23,26 +23,10 @@ main(int argc, char **argv)
     return 1;
   }
 
-  if(!strcmp(argv[1], "mnist")) {
-    argv += 1;
-    argc -= 1;
-    return mnist_main(argc, argv);
-  } else if(!strcmp(argv[1], "concat")) {
-    argv += 2;
-    argc -= 2;
-    return test_concat_main(argc, argv);
-  } else if(!strcmp(argv[1], "fc")) {
-    argv += 1;
-    argc -= 1;
-    return test_fc_main(argc, argv);
-  } else if(!strcmp(argv[1], "onnx")) {
+  if(!strcmp(argv[1], "onnx")) {
     argv += 2;
     argc -= 2;
     return test_onnx_main(argc, argv);
-  } else if(!strcmp(argv[1], "showtensors")) {
-    argv += 2;
-    argc -= 2;
-    return util_showtensors(argc, argv);
   } else {
     fprintf(stderr, "Unknown command: %s\n", argv[1]);
     return 1;
