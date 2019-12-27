@@ -67,10 +67,50 @@ public:
 class Tensor {
 
 public:
-  std::vector<unsigned int> dims_;
-  std::string name_;
+
+  enum class DataType {
+    VOID,
+    U8,
+    HALF,
+    FLOAT,
+    INT64,
+  };
+
+  typedef std::vector<int> Dims;
+#if 0
+  Tensor(const std::string &name)
+    : name_(name)
+    , data_type_(DataType::VOID)
+  {};
+
+  Tensor(const std::string &name, DataType data_type)
+    : name_(name)
+    , data_type_(data_type)
+  {};
+#endif
+
+  Tensor(const std::string &name, DataType data_type, Dims dims)
+    : name_(name)
+    , data_type_(data_type)
+    , dims_(dims)
+  {};
+
+  virtual ~Tensor() {};
+
+  std::string info() const;
+
+  const std::string name_;
+  const DataType data_type_;
+  const Dims dims_;
 };
 
+class Tensors : public std::unordered_map<std::string, std::shared_ptr<Tensor>> {
+public:
+  std::shared_ptr<Tensor> get(const std::string &n) const {
+    auto it = find(n);
+    return it == end() ? nullptr : it->second;
+  }
+};
 
 
 class Node {
@@ -91,10 +131,12 @@ public:
 
   Node(Type t) : type_(t) {};
 
-  std::unordered_map<std::string, std::shared_ptr<Tensor>> inputs_;
-  std::unordered_map<std::string, std::shared_ptr<Tensor>> outputs_;
+  Tensors inputs_;
+  Tensors outputs_;
   Attributes attributes_;
   Type type_;
+
+  std::shared_ptr<Tensor> makeOutputTensor(const std::string &name);
 };
 
 
@@ -104,9 +146,13 @@ public:
   std::vector<std::shared_ptr<Node>> nodes_;
   std::vector<std::shared_ptr<Tensor>> inputs_;
   std::vector<std::shared_ptr<Tensor>> outputs_;
-  std::unordered_map<std::string, std::shared_ptr<Tensor>> tensors_;
+  Tensors tensors_;
 
   static std::shared_ptr<Graph> load(const char *path);
+
+  std::shared_ptr<Tensor> loadTensor(const char *path);
+
+  void resolve();
 
 };
 

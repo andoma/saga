@@ -31,6 +31,7 @@ test_one(const char *base_path,
 
   auto inputLayer = n.nameLayer(n.addLayer(makeInput(input.get())),
                                 input_name);
+
 #endif
 
   snprintf(model_path, sizeof(model_path), "%s/%s", base_path, model_name);
@@ -40,6 +41,9 @@ test_one(const char *base_path,
     fprintf(stderr, "Failed to load model graph %s\n", model_path);
     return 1;
   }
+
+  //  g->resolve();
+  exit(0);
 #if 0
   for(int i = 0; i < num_tests; i++) {
     snprintf(input_path, sizeof(input_path), "%s/test_data_set_%d/input_0.pb",

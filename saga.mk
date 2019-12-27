@@ -1,6 +1,9 @@
 
 SAGA_SRCS += \
 	src/onnx.cpp \
+	src/graph.cpp \
+	src/tensor.cpp \
+	src/node.cpp \
 	src/onnx.proto3.pb.cpp \
 
 

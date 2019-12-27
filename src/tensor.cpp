@@ -24,6 +24,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if 0
+
 #include <math.h>
 #include <assert.h>
 
@@ -511,3 +513,34 @@ printDesc(cudnnTensorDescriptor_t desc)
 
 }
 
+#endif
+
+#include <sstream>
+
+#include "saga.h"
+
+namespace saga {
+
+std::string
+Tensor::info() const
+{
+  std::stringstream ss;
+  ss << "\"" << name_ <<  "\"[";
+  const char *prefix = "";
+  for(const auto &x : dims_) {
+    ss << prefix << x;
+    prefix = ", ";
+  }
+  ss << "]";
+#if 0
+  prefix = "";
+  for(const auto &x : dims_) {
+    ss << prefix << x.second;
+    prefix = ", ";
+  }
+  ss << "}";
+#endif
+  return ss.str();
+}
+
+}
