@@ -47,6 +47,9 @@ enum class ActivationMode {
 };
 
 
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
+
 typedef std::variant<float, int, std::vector<int>> Attribute;
 
 class Attributes : public std::unordered_map<std::string, Attribute> {
@@ -63,31 +66,39 @@ public:
 };
 
 
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
+
+typedef std::vector<int64_t> Dims;
+
+class TensorAccess {
+
+protected:
+  TensorAccess() {};
+public:
+  virtual ~TensorAccess() {};
+  virtual Dims strides() = 0;
+  virtual void *data() = 0;
+
+  virtual double get(const std::vector<int64_t> &element) const = 0;
+  virtual void set(const std::vector<int64_t> &element, double value) = 0;
+
+  TensorAccess(TensorAccess const&) = delete;
+  TensorAccess& operator=(TensorAccess const&) = delete;
+};
+
 
 class Tensor {
 
 public:
 
   enum class DataType {
-    VOID,
     U8,
     HALF,
     FLOAT,
     INT64,
   };
 
-  typedef std::vector<int> Dims;
-#if 0
-  Tensor(const std::string &name)
-    : name_(name)
-    , data_type_(DataType::VOID)
-  {};
-
-  Tensor(const std::string &name, DataType data_type)
-    : name_(name)
-    , data_type_(data_type)
-  {};
-#endif
 
   Tensor(const std::string &name, DataType data_type, Dims dims)
     : name_(name)
@@ -97,14 +108,23 @@ public:
 
   virtual ~Tensor() {};
 
-  std::string info() const;
+  virtual std::string info() const;
+
+  virtual std::unique_ptr<TensorAccess> access();
+
+  void print(const char *prefix);
 
   const std::string name_;
   const DataType data_type_;
   const Dims dims_;
 };
 
-class Tensors : public std::unordered_map<std::string, std::shared_ptr<Tensor>> {
+
+std::shared_ptr<Tensor> makeCPUTensor(const std::string &name, Tensor::DataType data_type,
+                                      Dims dims);
+
+class Tensors : public std::unordered_map<std::string,
+                                          std::shared_ptr<Tensor>> {
 public:
   std::shared_ptr<Tensor> get(const std::string &n) const {
     auto it = find(n);
@@ -112,6 +132,8 @@ public:
   }
 };
 
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
 
 class Node {
 public:
@@ -140,6 +162,8 @@ public:
 };
 
 
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
 
 class Graph {
 public:

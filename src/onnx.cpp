@@ -720,17 +720,19 @@ Network::load(const char *path)
 //
 
 
-class ONNXTensor : public Tensor {
-
-public:
-
-  ONNXTensor(const std::string &name, DataType data_type, const Dims &dims)
-    : Tensor(name, data_type, dims)
-  {}
-
-  ~ONNXTensor() {}
-};
-
+static Tensor::DataType
+DataType_map(int dt)
+{
+  switch((onnx::TensorProto_DataType)dt) {
+  case onnx::TensorProto_DataType_FLOAT: return Tensor::DataType::FLOAT;
+  case onnx::TensorProto_DataType_UINT8: return Tensor::DataType::U8;
+  case onnx::TensorProto_DataType_INT64: return Tensor::DataType::INT64;
+  case onnx::TensorProto_DataType_FLOAT16: return Tensor::DataType::HALF;
+  default:
+    fprintf(stderr, "ONNX: No mapping for data-type %s\n",  DataType_str(dt));
+    abort();
+  }
+}
 
 
 static shared_ptr<Tensor>
@@ -742,7 +744,7 @@ make_tensor(const onnx::ValueInfoProto &vip)
 
   const auto &shape = tp.tensor_type().shape();
 
-  Tensor::Dims dims;
+  Dims dims;
   for(const auto dim : shape.dim()) {
     int d;
     switch(dim.value_case()) {
@@ -754,25 +756,30 @@ make_tensor(const onnx::ValueInfoProto &vip)
     }
     dims.push_back(d);
   }
-  return make_shared<Tensor>(vip.name(), Tensor::DataType::FLOAT, dims);
+  return make_shared<Tensor>(vip.name(), DataType_map(tp.tensor_type().elem_type()), dims);
 }
 
 
 static shared_ptr<Tensor>
 make_tensor(const onnx::TensorProto &tp)
 {
-  Tensor::Dims dims;
+  Dims dims;
   for(const auto &dim : tp.dims()) {
     dims.push_back(dim);
   }
-#if 0
-  int stride = 1;
-  for(int i = tp.dims_size() - 1; i >= 0; i--) {
-    dims.insert(dims.begin(), std::make_pair(tp.dims(i), stride));
-    stride *= tp.dims(i);
+
+  auto t = makeCPUTensor(tp.name(), DataType_map(tp.data_type()), dims);
+
+  auto ta = t->access();
+
+  if(tp.raw_data().size()) {
+    printf("Loading %s from %zd bytes\n", t->info().c_str(), tp.raw_data().size());
+    memcpy(ta->data(), (const void *)&tp.raw_data()[0], tp.raw_data().size());
+  } else {
+    fprintf(stderr, "Unable to load %s: Can't load data format (please fix)\n",
+            tp.name().c_str());
   }
-#endif
-  return make_shared<ONNXTensor>(tp.name(), Tensor::DataType::FLOAT, dims);
+  return t;
 }
 
 

@@ -34,47 +34,10 @@
 #include <algorithm>
 #include <random>
 
-#include <x86intrin.h>
 
 #include "common.h"
 
 namespace saga {
-
-static float
-get_float(const void *base, size_t offset)
-{
-  return ((const float *)base)[offset];
-}
-
-static float
-get_half(const void *base, size_t offset)
-{
-  return _cvtsh_ss(((const uint16_t *)base)[offset]);
-}
-
-static float
-get_u8(const void *base, size_t offset)
-{
-  return ((const uint8_t *)base)[offset];
-}
-
-static void
-set_float(void *base, size_t offset, float v)
-{
-  ((float *)base)[offset] = v;
-}
-
-static void
-set_half(void *base, size_t offset, float v)
-{
-  ((uint16_t *)base)[offset] = _cvtss_sh(v, 0);
-}
-
-static void
-set_u8(void *base, size_t offset, float v)
-{
-  ((uint8_t *)base)[offset] = v;
-}
 
 
 
@@ -516,31 +479,329 @@ printDesc(cudnnTensorDescriptor_t desc)
 #endif
 
 #include <sstream>
+#include <x86intrin.h>
 
 #include "saga.h"
 
 namespace saga {
 
+static double
+get_float(const void *base, size_t offset)
+{
+  return ((const float *)base)[offset];
+}
+
+static double
+get_half(const void *base, size_t offset)
+{
+  return _cvtsh_ss(((const uint16_t *)base)[offset]);
+}
+
+static double
+get_u8(const void *base, size_t offset)
+{
+  return ((const uint8_t *)base)[offset];
+}
+
+static double
+get_i64(const void *base, size_t offset)
+{
+  return ((const int64_t *)base)[offset];
+}
+
+static void
+set_float(void *base, size_t offset, double v)
+{
+  ((float *)base)[offset] = v;
+}
+
+static void
+set_half(void *base, size_t offset, double v)
+{
+  ((uint16_t *)base)[offset] = _cvtss_sh(v, 0);
+}
+
+static void
+set_u8(void *base, size_t offset, double v)
+{
+  ((uint8_t *)base)[offset] = v;
+}
+
+static void
+set_i64(void *base, size_t offset, double v)
+{
+  ((int64_t *)base)[offset] = v;
+}
+
+typedef double (getfn_t)(const void *base, size_t offset);
+typedef void (setfn_t)(void *base, size_t offset, double value);
+
+
+const getfn_t *
+datatype_get(Tensor::DataType dt)
+{
+  switch(dt) {
+  case Tensor::DataType::U8:    return &get_u8;
+  case Tensor::DataType::HALF:  return &get_half;
+  case Tensor::DataType::FLOAT: return &get_float;
+  case Tensor::DataType::INT64: return &get_i64;
+  default: abort();
+  }
+}
+
+const setfn_t *
+datatype_set(Tensor::DataType dt)
+{
+  switch(dt) {
+  case Tensor::DataType::U8:    return &set_u8;
+  case Tensor::DataType::HALF:  return &set_half;
+  case Tensor::DataType::FLOAT: return &set_float;
+  case Tensor::DataType::INT64: return &set_i64;
+  default: abort();
+  }
+}
+
+
+const char *
+datatype_str(Tensor::DataType dt)
+{
+  switch(dt) {
+  case Tensor::DataType::U8:    return "u8";
+  case Tensor::DataType::HALF:  return "half";
+  case Tensor::DataType::FLOAT: return "float";
+  case Tensor::DataType::INT64: return "i64";
+  default: return "?";
+  }
+}
+
+const size_t
+datatype_size(Tensor::DataType dt)
+{
+  switch(dt) {
+  case Tensor::DataType::U8:    return 1;
+  case Tensor::DataType::HALF:  return 2;
+  case Tensor::DataType::FLOAT: return 4;
+  case Tensor::DataType::INT64: return 8;
+  default: abort();
+  }
+}
+
+
+
 std::string
 Tensor::info() const
 {
   std::stringstream ss;
-  ss << "\"" << name_ <<  "\"[";
-  const char *prefix = "";
+  ss << "\"" << name_ << "\"";
+  ss << "<" << datatype_str(data_type_) << ">";
+  const char *prefix = "[";
   for(const auto &x : dims_) {
     ss << prefix << x;
     prefix = ", ";
   }
   ss << "]";
-#if 0
-  prefix = "";
-  for(const auto &x : dims_) {
-    ss << prefix << x.second;
-    prefix = ", ";
-  }
-  ss << "}";
-#endif
   return ss.str();
 }
 
+
+static void
+print1dTensor(const char *prefix, Tensor &t, TensorAccess &ta)
+{
+  for(int64_t i = 0; i < t.dims_[0]; i++) {
+    printf("%s: [%5d]: %f\n", prefix, (int)i, ta.get({i}));
+  }
 }
+
+
+static void
+print2dTensor(const char *prefix, Tensor &t, TensorAccess &ta)
+{
+  for(int64_t y = 0; y < t.dims_[0]; y++) {
+    printf("%s: [%5d]: ", prefix, (int)y);
+    for(int64_t x = 0; x < t.dims_[1]; x++) {
+      printf("% 3.3f", ta.get({y, x}));
+    }
+    printf("\n");
+  }
+}
+
+
+void
+Tensor::print(const char *prefix) {
+
+  printf("%s: %s\n", prefix, info().c_str());
+
+  auto ta = access();
+  if(ta == nullptr) {
+    printf("%s: Abstract (no data)\n", prefix);
+    return;
+  }
+
+  if(dims_.size() == 1) {
+    print1dTensor(prefix, *this, *ta);
+    return;
+  } else if(dims_.size() == 2) {
+    print2dTensor(prefix, *this, *ta);
+    return;
+  }
+
+  printf("%s: Can't print n-dimensional tensors yet\n", prefix);
+}
+
+
+std::unique_ptr<TensorAccess>
+Tensor::access()
+{
+  return nullptr;
+}
+
+
+
+static Dims
+computeCPUStrides(const Dims &dims)
+{
+  Dims strides;
+  int stride = 1;
+  for(int i = dims.size() - 1; i >= 0; i--) {
+    strides.insert(strides.begin(), stride);
+    stride *= dims[i];
+  }
+  return strides;
+}
+
+
+
+class TensorStorage {
+
+public:
+
+  TensorStorage(Tensor::DataType data_type, size_t elements)
+    : data_type_(data_type)
+    , elements_(elements)
+    , data_type_size_(datatype_size(data_type))
+    , data_size_(elements * data_type_size_)
+    , get_(datatype_get(data_type))
+    , set_(datatype_set(data_type))
+    , data_(NULL)
+  {}
+
+  double get(size_t offset) const {
+    return get_(data_, offset);
+  }
+
+  void set(size_t offset, double value) {
+    set_(data_, offset, value);
+  }
+
+  const Tensor::DataType data_type_;
+  const size_t elements_;
+  const size_t data_type_size_;
+  const size_t data_size_;
+  const getfn_t *get_;
+  const setfn_t *set_;
+  void *data_;
+};
+
+
+
+
+class CPUTensorStorage : public TensorStorage {
+
+public:
+  CPUTensorStorage(Tensor::DataType data_type, const Dims &dims, const Dims &strides)
+    : TensorStorage(data_type, dims[0] * strides[0])
+  {
+    data_ = calloc(1, data_size_);
+  }
+
+  ~CPUTensorStorage()
+  {
+    free(data_);
+  }
+};
+
+
+
+class CPUTensorAccess : public TensorAccess {
+
+public:
+  CPUTensorAccess(const Dims &strides, std::shared_ptr<CPUTensorStorage> storage)
+    : strides_(strides)
+    , storage_(storage)
+  {}
+
+  ~CPUTensorAccess() {}
+
+  Dims strides() { return strides_; }
+
+  void *data() { return storage_->data_; }
+
+  size_t offsetForElement(const std::vector<int64_t> &element) const {
+    size_t offset = 0;
+    for(size_t i = 0; i < element.size() && i < strides_.size(); i++) {
+      offset += element[i] * strides_[i];
+    }
+    return offset;
+  }
+
+  virtual double get(const std::vector<int64_t> &element) const {
+    return storage_->get(offsetForElement(element));
+  };
+
+  virtual void set(const std::vector<int64_t> &element, double value) {
+    storage_->set(offsetForElement(element), value);
+  }
+
+  const Dims strides_;
+  const std::shared_ptr<CPUTensorStorage> storage_;
+};
+
+
+
+class CPUTensor : public Tensor {
+public:
+  CPUTensor(const std::string &name, DataType data_type, Dims dims)
+    : Tensor(name, data_type, dims)
+    , strides_(computeCPUStrides(dims))
+    , storage_(std::make_shared<CPUTensorStorage>(data_type, dims, strides_))
+  {}
+
+  std::unique_ptr<TensorAccess> access() {
+    return std::make_unique<CPUTensorAccess>(strides_, storage_);
+  }
+
+  virtual std::string info() const;
+
+  const Dims strides_;
+  const std::shared_ptr<CPUTensorStorage> storage_;
+};
+
+
+std::string
+CPUTensor::info() const
+{
+  std::stringstream ss;
+
+  ss << Tensor::info();
+  const char *prefix = "{";
+  for(const auto &x : strides_) {
+    ss << prefix << x;
+    prefix = ", ";
+  }
+  ss << "}";
+  return ss.str();
+}
+
+
+
+std::shared_ptr<Tensor>
+makeCPUTensor(const std::string &name, Tensor::DataType data_type, Dims dims)
+{
+  return std::make_shared<CPUTensor>(name, data_type, dims);
+}
+
+
+}
+
+
+

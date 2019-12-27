@@ -58,7 +58,7 @@ makeConvOutputTensor(const std::string &name, const Node &n)
     1 + (inputdim_h + 2 * pad - (((filterdim_h - 1) * dilation) + 1))/stride;
 
   return std::make_shared<Tensor>(name, x->data_type_,
-                                  Tensor::Dims({1, features,
+                                  Dims({1, features,
                                         outputdim_h, outputdim_w}));
 }
 
@@ -85,8 +85,33 @@ makePoolingOutputTensor(const std::string &name, const Node &n)
     1 + (inputdim_w + 2 * pad - size) / stride;
 
   return std::make_shared<Tensor>(name, x->data_type_,
-                                  Tensor::Dims({1, channels,
+                                  Dims({1, channels,
                                         outputdim_h, outputdim_w}));
+}
+
+std::shared_ptr<Tensor>
+makeReshapeOutputTensor(const std::string &name, const Node &n)
+{
+  auto x = n.inputs_.get("x");
+  if(x == nullptr)
+    return nullptr;
+  auto shape = n.inputs_.get("shape");
+  if(shape == nullptr)
+    return nullptr;
+
+  if(shape->dims_.size() != 1) {
+    fprintf(stderr, "Shape tensor is not 1d\n");
+    return nullptr;
+  }
+
+  auto ta = shape->access();
+
+  Dims dims;
+  for(int64_t i = 0; i < shape->dims_[0]; i++) {
+    dims.push_back(ta->get({i}));
+  }
+
+  return std::make_shared<Tensor>(name, x->data_type_, dims);
 }
 
 std::shared_ptr<Tensor>
@@ -97,7 +122,7 @@ makeFCOutputTensor(const std::string &name, const Node &n)
     return nullptr;
 
   return std::make_shared<Tensor>(name, w->data_type_,
-                                  Tensor::Dims({1, w->dims_[0], 1, 1}));
+                                  Dims({1, w->dims_[0]}));
 }
 
 
@@ -128,7 +153,7 @@ Node::makeOutputTensor(const std::string &name)
     y = makePoolingOutputTensor(name, *this);
     break;
   case Type::RESHAPE:
-    y = makeOutputTensorFromBlueprint(name, "shape", *this);
+    y = makeReshapeOutputTensor(name, *this);
     break;
   case Type::BATCHNORM:
   case Type::SOFTMAX:
