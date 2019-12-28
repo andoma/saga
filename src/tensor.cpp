@@ -37,6 +37,7 @@
 
 #include "common.h"
 
+
 namespace saga {
 
 
@@ -482,8 +483,11 @@ printDesc(cudnnTensorDescriptor_t desc)
 #include <x86intrin.h>
 
 #include "saga.h"
+#include "tensor.h"
 
 namespace saga {
+
+//------------------------------------------------------------------------
 
 static double
 get_float(const void *base, size_t offset)
@@ -533,11 +537,8 @@ set_i64(void *base, size_t offset, double v)
   ((int64_t *)base)[offset] = v;
 }
 
-typedef double (getfn_t)(const void *base, size_t offset);
-typedef void (setfn_t)(void *base, size_t offset, double value);
 
-
-const getfn_t *
+const TensorStorageAccess::getfn_t *
 datatype_get(Tensor::DataType dt)
 {
   switch(dt) {
@@ -549,7 +550,7 @@ datatype_get(Tensor::DataType dt)
   }
 }
 
-const setfn_t *
+const TensorStorageAccess::setfn_t *
 datatype_set(Tensor::DataType dt)
 {
   switch(dt) {
@@ -588,6 +589,38 @@ datatype_size(Tensor::DataType dt)
 
 
 
+
+TensorStorageAccess::TensorStorageAccess(Tensor::DataType data_type)
+  : get_(datatype_get(data_type))
+  , set_(datatype_set(data_type))
+  , data_type_(data_type)
+  , data_(NULL)
+{}
+
+
+//------------------------------------------------------------------------
+
+
+static int64_t
+elements_form_dims(const Dims &dims)
+{
+  int64_t elements = 1;
+  for(auto d : dims)
+    elements *= d;
+  return elements;
+}
+
+
+
+Tensor::Tensor(const std::string &name, DataType data_type, const Dims &dims)
+  : name_(name)
+  , data_type_(data_type)
+  , dims_(dims)
+  , elements_(elements_form_dims(dims))
+{};
+
+
+
 std::string
 Tensor::info() const
 {
@@ -613,18 +646,6 @@ print1dTensor(const char *prefix, Tensor &t, TensorAccess &ta)
 }
 
 
-static void
-print2dTensor(const char *prefix, Tensor &t, TensorAccess &ta)
-{
-  for(int64_t y = 0; y < t.dims_[0]; y++) {
-    printf("%s: [%5d]: ", prefix, (int)y);
-    for(int64_t x = 0; x < t.dims_[1]; x++) {
-      printf("% 3.3f", ta.get({y, x}));
-    }
-    printf("\n");
-  }
-}
-
 
 void
 Tensor::print(const char *prefix) {
@@ -638,80 +659,83 @@ Tensor::print(const char *prefix) {
   }
 
   if(dims_.size() == 1) {
+    // We format 1d tensor vertically instead of a long horizontal line
     print1dTensor(prefix, *this, *ta);
     return;
-  } else if(dims_.size() == 2) {
-    print2dTensor(prefix, *this, *ta);
+  }
+
+  const size_t rank = dims_.size();
+  std::vector<int64_t> c(rank, 0);
+
+  const char *lf = "";
+
+  while(1) {
+    if(c[rank - 1] == 0) {
+      printf("%s%s: [", lf, prefix);
+      for(size_t j = 0; j < c.size(); j++) {
+        printf("%s%3ld", j ? "," : "", c[j]);
+      }
+      printf("]");
+      lf = "\n";
+    }
+    printf(" % 3.3f", ta->get(c));
+
+    for(ssize_t j = rank - 1; j >= 0; j--) {
+      c[j]++;
+      if(c[j] == dims_[j]) {
+        if(j == 0) {
+          printf("%s", lf);
+          return;
+        }
+        c[j] = 0;
+      } else {
+        break;
+      }
+    }
+  }
+}
+
+
+void
+Tensor::copyFrom(Tensor &t)
+{
+  auto src = t.access();
+  if(src == nullptr)
     return;
+
+  auto dst = access();
+
+  std::vector<int64_t> c(dims_.size(), 0);
+
+  assert(t.dims_ == dims_);
+
+  // This is very slow
+  for(int64_t i = 0; i < elements_; i++) {
+    dst->set(c, src->get(c));
+    for(ssize_t j = c.size() - 1; j >= 0; j--) {
+      c[j]++;
+      if(c[j] == dims_[j]) {
+        c[j] = 0;
+      } else {
+        break;
+      }
+    }
   }
 
-  printf("%s: Can't print n-dimensional tensors yet\n", prefix);
+
 }
 
 
-std::unique_ptr<TensorAccess>
-Tensor::access()
-{
-  return nullptr;
-}
+//------------------------------------------------------------------------
 
 
-
-static Dims
-computeCPUStrides(const Dims &dims)
-{
-  Dims strides;
-  int stride = 1;
-  for(int i = dims.size() - 1; i >= 0; i--) {
-    strides.insert(strides.begin(), stride);
-    stride *= dims[i];
-  }
-  return strides;
-}
-
-
-
-class TensorStorage {
-
-public:
-
-  TensorStorage(Tensor::DataType data_type, size_t elements)
-    : data_type_(data_type)
-    , elements_(elements)
-    , data_type_size_(datatype_size(data_type))
-    , data_size_(elements * data_type_size_)
-    , get_(datatype_get(data_type))
-    , set_(datatype_set(data_type))
-    , data_(NULL)
-  {}
-
-  double get(size_t offset) const {
-    return get_(data_, offset);
-  }
-
-  void set(size_t offset, double value) {
-    set_(data_, offset, value);
-  }
-
-  const Tensor::DataType data_type_;
-  const size_t elements_;
-  const size_t data_type_size_;
-  const size_t data_size_;
-  const getfn_t *get_;
-  const setfn_t *set_;
-  void *data_;
-};
-
-
-
-
-class CPUTensorStorage : public TensorStorage {
+class CPUTensorStorage : public TensorStorageAccess {
 
 public:
   CPUTensorStorage(Tensor::DataType data_type, const Dims &dims, const Dims &strides)
-    : TensorStorage(data_type, dims[0] * strides[0])
+    : TensorStorageAccess(data_type)
   {
-    data_ = calloc(1, data_size_);
+    data_ = calloc(1, dims[0] * strides[0] * datatype_size(data_type));
   }
 
   ~CPUTensorStorage()
@@ -721,6 +745,8 @@ public:
 };
 
 
+
+//------------------------------------------------------------------------
 
 class CPUTensorAccess : public TensorAccess {
 
@@ -755,6 +781,24 @@ public:
   const Dims strides_;
   const std::shared_ptr<CPUTensorStorage> storage_;
 };
+
+
+//------------------------------------------------------------------------
+
+
+static Dims
+computeCPUStrides(const Dims &dims)
+{
+  Dims strides;
+  int stride = 1;
+  for(int i = dims.size() - 1; i >= 0; i--) {
+    strides.insert(strides.begin(), stride);
+    stride *= dims[i];
+  }
+  return strides;
+}
+
+
 
 
 

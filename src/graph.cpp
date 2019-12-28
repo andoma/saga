@@ -28,38 +28,4 @@
 
 namespace saga {
 
-#if 0
-static std::shared_ptr<Tensor>
-findTensor(Graph &g, const std::string &name)
-{
-  auto it = g.tensors_.find(name);
-  if(it == g.tensors_.end())
-    return nullptr;
-  return it->second;
-}
-
-
-void Graph::resolve()
-{
-  for(const auto &n : nodes_) {
-    for(auto &i: n->inputs_) {
-
-      std::shared_ptr<Tensor> t = i.second;
-      if(t->data_type_ != Tensor::DataType::VOID)
-        continue; // Already resolved
-
-      auto r = findTensor(*this, t->name_.c_str());
-      if(r == NULL) {
-        printf("Unable to find tensor %s\n", t->name_.c_str());
-      } else {
-        printf("Resolved tensor %s\n", t->name_.c_str());
-        i.second = r;
-      }
-    }
-    printf("\n");
-  }
-}
-#endif
-
-
 }

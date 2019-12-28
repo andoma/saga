@@ -5,6 +5,7 @@ SAGA_SRCS += \
 	src/tensor.cpp \
 	src/node.cpp \
 	src/onnx.proto3.pb.cpp \
+	src/cudnn.cpp \
 
 
 OLDS_SRCS += \

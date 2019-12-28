@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -14,25 +15,10 @@ test_one(const char *base_path,
          const char *input_name,
          int num_tests)
 {
-  //  char input_path[PATH_MAX];
-  //  char output_path[PATH_MAX];
+  char input_path[PATH_MAX];
+  char output_path[PATH_MAX];
   char model_path[PATH_MAX];
 
-#if 0
-  Network n(false); // No backprop
-
-  snprintf(input_path, sizeof(input_path), "%s/test_data_set_0/input_0.pb",
-           base_path);
-  auto input = Tensor::createFromPB(input_path);
-  if(!input) {
-    fprintf(stderr, "Failed to load %s\n", input_path);
-    return 1;
-  }
-
-  auto inputLayer = n.nameLayer(n.addLayer(makeInput(input.get())),
-                                input_name);
-
-#endif
 
   snprintf(model_path, sizeof(model_path), "%s/%s", base_path, model_name);
 
@@ -42,43 +28,42 @@ test_one(const char *base_path,
     return 1;
   }
 
-  //  g->resolve();
-  exit(0);
-#if 0
+  auto p = cudnn_inference(g, 1);
+
+  auto input = *p->inputs_.begin();
+  printf("INPUT: %s\n", input->info().c_str());
+
+  auto output = *p->outputs_.begin();
+  printf("OUTPUT: %s\n", output->info().c_str());
+
   for(int i = 0; i < num_tests; i++) {
     snprintf(input_path, sizeof(input_path), "%s/test_data_set_%d/input_0.pb",
              base_path, i);
 
-    auto loaded_input = Tensor::createFromPB(input_path);
+    auto loaded_input = Tensor::load(input_path);
     if(!loaded_input) {
       fprintf(stderr, "Failed to load input %s\n", input_path);
       return 1;
     }
+
     input->copyFrom(*loaded_input);
 
     snprintf(output_path, sizeof(output_path),
              "%s/test_data_set_%d/output_0.pb",
              base_path, i);
-    auto loaded_output = Tensor::createFromPB(output_path);
+    auto loaded_output = Tensor::load(output_path);
     if(!loaded_output) {
       fprintf(stderr, "Failed to load output %s\n", output_path);
       return 1;
     }
 
-    n.forward(false);
+    p->exec();
 
-    auto out = n.layers_[n.layers_.size() - 1];
-    float diff = out->output()->compare(*loaded_output);
+    output->print("OUTPUT");
+    loaded_output->print("   REF");
+    exit(0);
 
-    printf("Test data %d max tensor diff: %f\n", i, diff);
-
-    if(diff > 0.001) {
-      out->output()->dump("OUTPUT");
-      loaded_output->dump("REFERENCE");
-      return -1;
-    }
   }
-#endif
 
   return 0;
 }

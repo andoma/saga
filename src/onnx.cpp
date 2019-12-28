@@ -773,7 +773,7 @@ make_tensor(const onnx::TensorProto &tp)
   auto ta = t->access();
 
   if(tp.raw_data().size()) {
-    printf("Loading %s from %zd bytes\n", t->info().c_str(), tp.raw_data().size());
+    //    printf("Loading %s from %zd bytes\n", t->info().c_str(), tp.raw_data().size());
     memcpy(ta->data(), (const void *)&tp.raw_data()[0], tp.raw_data().size());
   } else {
     fprintf(stderr, "Unable to load %s: Can't load data format (please fix)\n",
@@ -801,7 +801,7 @@ make_conv(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   assert(np.input_size() > 1);
   assert(np.output_size() == 1);
 
-  auto n = std::make_shared<Node>(Node::Type::CONV);
+  auto n = std::make_shared<Node>("conv");
   n->inputs_["x"] = find_tensor(g, np.input(0));
 
   n->inputs_["w"] = find_tensor(g, np.input(1));
@@ -853,7 +853,7 @@ make_batchnorm(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   assert(np.input_size() == 5);
   assert(np.output_size() == 1);
 
-  auto n = std::make_shared<Node>(Node::Type::BATCHNORM);
+  auto n = std::make_shared<Node>("batchnorm");
   n->inputs_["x"] = find_tensor(g, np.input(0));
 
   n->inputs_["s"] = find_tensor(g, np.input(1));
@@ -874,7 +874,7 @@ make_relu(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() == 1);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>(Node::Type::RELU);
+  auto n = std::make_shared<Node>("relu");
   n->inputs_["x"] = find_tensor(g, np.input(0));
   g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
   return n;
@@ -882,7 +882,7 @@ make_relu(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 
 static shared_ptr<Node>
 make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
-             Node::Type type)
+             const std::string &type)
 {
   assert(np.input_size() == 1);
   assert(np.output_size() == 1);
@@ -938,7 +938,7 @@ make_sum(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() >= 1);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>(Node::Type::SUM);
+  auto n = std::make_shared<Node>("sum");
 
   for(int i = 0; i < np.input_size(); i++) {
     char name[20];
@@ -955,7 +955,7 @@ make_reshape(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() == 2);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>(Node::Type::RESHAPE);
+  auto n = std::make_shared<Node>("reshape");
   n->inputs_["x"] = find_tensor(g, np.input(0));
   n->inputs_["shape"] = find_tensor(g, np.input(1));
   g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
@@ -967,7 +967,7 @@ make_gemm(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() == 3);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>(Node::Type::FC);
+  auto n = std::make_shared<Node>("fc");
   n->inputs_["x"] = find_tensor(g, np.input(0));
   n->inputs_["w"] = find_tensor(g, np.input(1));
   n->inputs_["b"] = find_tensor(g, np.input(2));
@@ -981,7 +981,7 @@ make_softmax(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() == 1);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>(Node::Type::SOFTMAX);
+  auto n = std::make_shared<Node>("softmax");
   n->inputs_["x"] = find_tensor(g, np.input(0));
   g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
   return n;
@@ -992,20 +992,29 @@ static bool
 loadgraph(Graph &g, const onnx::GraphProto &gp)
 {
   for(const auto &vip : gp.input()) {
-    g.tensors_[vip.name()] = make_tensor(vip);
+    auto t = make_tensor(vip);
+    g.tensors_[vip.name()] = t;
+    g.inputs_.insert(t);
   }
 
   for(const auto &vip : gp.output()) {
-    g.tensors_[vip.name()] = make_tensor(vip);
+    auto t = make_tensor(vip);
+    g.tensors_[vip.name()] = t;
+    g.outputs_.insert(t);
   }
 
   for(const auto &tp : gp.initializer()) {
+
+    auto it = g.tensors_.find(tp.name());
+    if(it != g.tensors_.end()) {
+      g.inputs_.erase(it->second);
+    }
     g.tensors_[tp.name()] = make_tensor(tp);
   }
 
   for(const auto &np : gp.node()) {
 
-    NodeProto_print(np);
+    //    NodeProto_print(np);
     assert(np.output_size() == 1);
 
     Attributes attribs;
@@ -1035,9 +1044,9 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
     } else if(node_type == "Relu") {
       n = make_relu(g, np, attribs);
     } else if(node_type == "MaxPool") {
-      n = make_pooling(g, np, attribs, Node::Type::MAXPOOL);
+      n = make_pooling(g, np, attribs, "maxpool");
     } else if(node_type == "AveragePool") {
-      n = make_pooling(g, np, attribs, Node::Type::AVGPOOL);
+      n = make_pooling(g, np, attribs, "avgpool");
     } else if(node_type == "Sum") {
       n = make_sum(g, np, attribs);
     } else if(node_type == "Reshape") {
@@ -1048,18 +1057,28 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
       n = make_softmax(g, np, attribs);
     } else {
       fprintf(stderr, "Can't handle node type %s\n", node_type.c_str());
+      abort();
       return false;
     }
     g.nodes_.push_back(n);
 
-
+#if 0
     for(const auto &i : n->inputs_) {
       printf("%15s: %s\n", i.first.c_str(), i.second->info().c_str());
     }
     for(const auto &i : n->outputs_) {
       printf("%15s: %s\n", i.first.c_str(), i.second->info().c_str());
     }
+#endif
   }
+#if 0
+  for(const auto &i : g.inputs_) {
+    printf("Input: %s\n", i->info().c_str());
+  }
+  for(const auto &i : g.outputs_) {
+    printf("Output: %s\n", i->info().c_str());
+  }
+#endif
 
   return true;
 }
@@ -1079,10 +1098,9 @@ Graph::load(const char *path)
   if(!mp.ParseFromCodedStream(pb.get()))
     return nullptr;
 
-  cout << "IR version: " << mp.ir_version() << endl;
   const auto &gp = mp.graph();
 
-  if(1)
+  if(0)
     print_onnx_graph_info(gp);
 
 
@@ -1098,7 +1116,7 @@ Graph::load(const char *path)
 
 
 std::shared_ptr<Tensor>
-Graph::loadTensor(const char *path)
+Tensor::load(const char *path)
 {
   auto pb = mapPBfile(path);
   if(pb == NULL)
@@ -1108,12 +1126,7 @@ Graph::loadTensor(const char *path)
   if(!tp.ParseFromCodedStream(pb.get()))
     return nullptr;
 
-  auto t = make_tensor(tp);
-
-  printf("Loaded named tensor %s from %s\n", tp.name().c_str(), path);
-  tensors_[tp.name()] = t;
-  return t;
-
+  return make_tensor(tp);
 }
 
 

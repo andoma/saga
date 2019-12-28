@@ -33,18 +33,11 @@
 #include <unordered_map>
 #include <functional>
 #include <variant>
+#include <unordered_set>
 
 #include <assert.h>
-#include <cudnn.h>
-#include <cublas_v2.h>
-
 
 namespace saga {
-
-enum class ActivationMode {
-  RELU,
-  ELU
-};
 
 
 //------------------------------------------------------------------------
@@ -99,28 +92,30 @@ public:
     INT64,
   };
 
-
-  Tensor(const std::string &name, DataType data_type, Dims dims)
-    : name_(name)
-    , data_type_(data_type)
-    , dims_(dims)
-  {};
+  Tensor(const std::string &name, DataType data_type, const Dims &dims);
 
   virtual ~Tensor() {};
 
   virtual std::string info() const;
 
-  virtual std::unique_ptr<TensorAccess> access();
+  virtual std::unique_ptr<TensorAccess> access() { return nullptr; }
 
   void print(const char *prefix);
 
   const std::string name_;
   const DataType data_type_;
   const Dims dims_;
+  const int64_t elements_;
+
+  static std::shared_ptr<Tensor> load(const char *path);
+
+  void copyFrom(Tensor &t);
+
 };
 
 
-std::shared_ptr<Tensor> makeCPUTensor(const std::string &name, Tensor::DataType data_type,
+std::shared_ptr<Tensor> makeCPUTensor(const std::string &name,
+                                      Tensor::DataType data_type,
                                       Dims dims);
 
 class Tensors : public std::unordered_map<std::string,
@@ -137,26 +132,13 @@ public:
 
 class Node {
 public:
-  enum class Type {
-    RESHAPE,
-    CONV,
-    BATCHNORM,
-    RELU,
-    SOFTMAX,
-    MAXPOOL,
-    AVGPOOL,
-    CONCAT,
-    SUM,
-    DROPOUT,
-    FC
-  };
 
-  Node(Type t) : type_(t) {};
+  Node(const std::string &type) : type_(type) {};
 
   Tensors inputs_;
   Tensors outputs_;
   Attributes attributes_;
-  Type type_;
+  const std::string type_;
 
   std::shared_ptr<Tensor> makeOutputTensor(const std::string &name);
 };
@@ -168,20 +150,37 @@ public:
 class Graph {
 public:
   std::vector<std::shared_ptr<Node>> nodes_;
-  std::vector<std::shared_ptr<Tensor>> inputs_;
-  std::vector<std::shared_ptr<Tensor>> outputs_;
+  std::unordered_set<std::shared_ptr<Tensor>> inputs_;
+  std::unordered_set<std::shared_ptr<Tensor>> outputs_;
   Tensors tensors_;
 
   static std::shared_ptr<Graph> load(const char *path);
-
-  std::shared_ptr<Tensor> loadTensor(const char *path);
-
-  void resolve();
-
 };
+
+
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
 
 class Operation {
+public:
+  virtual ~Operation() {}
+  virtual void exec() {}
+};
+
+
+class Program {
+public:
+  std::vector<std::shared_ptr<Operation>> operations_;
+  std::unordered_set<std::shared_ptr<Tensor>> inputs_;
+  std::unordered_set<std::shared_ptr<Tensor>> outputs_;
+  virtual void exec() {}
 
 };
+
+
+
+std::shared_ptr<Program> cudnn_inference(std::shared_ptr<Graph> g,
+                                         int batch_size);
+
 
 }

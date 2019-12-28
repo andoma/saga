@@ -34,7 +34,7 @@ makeConvOutputTensor(const std::string &name, const Node &n)
   // Should make this more generic for n-dimensions
 
   const int stride = n.attributes_.get("stride", 1);
-  const int pad = n.attributes_.get("pad", 1);
+  const int pad = n.attributes_.get("pad", 0);
   const int dilation = n.attributes_.get("dilation", 1);
   auto w = n.inputs_.get("w");
   if(w == nullptr)
@@ -141,35 +141,26 @@ Node::makeOutputTensor(const std::string &name)
 {
   std::shared_ptr<Tensor> y;
 
-  switch(type_) {
-  case Type::CONV:
+  if(type_ == "conv") {
     y = makeConvOutputTensor(name, *this);
-    break;
-  case Type::FC:
+  } else if(type_ == "fc") {
     y = makeFCOutputTensor(name, *this);
-    break;
-  case Type::MAXPOOL:
-  case Type::AVGPOOL:
+  } else if(type_ == "maxpool" ||
+            type_ == "avgpool") {
     y = makePoolingOutputTensor(name, *this);
-    break;
-  case Type::RESHAPE:
+  } else if(type_ == "reshape") {
     y = makeReshapeOutputTensor(name, *this);
-    break;
-  case Type::BATCHNORM:
-  case Type::SOFTMAX:
-  case Type::RELU:
-  case Type::DROPOUT:
+  } else if(type_ == "batchnorm" ||
+            type_ == "softmax" ||
+            type_ == "relu" ||
+            type_ == "dropout") {
     y = makeOutputTensorFromBlueprint(name, "x", *this);
-    break;
-  case Type::SUM:
+  } else if(type_ == "sum") {
     y = makeOutputTensorFromBlueprint(name, "x0", *this);
-    break;
-
-  default:
-    break;
   }
   if(y == nullptr) {
-    fprintf(stderr, "Can't compute output tensor for type %d\n", (int)type_);
+    fprintf(stderr, "Failed to compute output tensor for type %s\n",
+            type_.c_str());
     abort();
   }
   outputs_["y"] = y;
