@@ -137,7 +137,7 @@ makeOutputTensorFromBlueprint(const std::string &name, const char *blueprint,
 }
 
 std::shared_ptr<Tensor>
-Node::makeOutputTensor(const std::string &name)
+Node::inferTensor_y(const std::string &name)
 {
   std::shared_ptr<Tensor> y;
 
@@ -163,7 +163,6 @@ Node::makeOutputTensor(const std::string &name)
             type_.c_str());
     abort();
   }
-  outputs_["y"] = y;
   return y;
 }
 

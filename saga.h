@@ -85,6 +85,13 @@ class Tensor {
 
 public:
 
+  struct Stats {
+    double min;
+    double max;
+    double mean;
+    double stddev;
+  };
+
   enum class DataType {
     U8,
     HALF,
@@ -98,18 +105,24 @@ public:
 
   virtual std::string info() const;
 
+  // Make this const?
   virtual std::unique_ptr<TensorAccess> access() { return nullptr; }
 
+  void copyFrom(Tensor &t);
+
+  static std::shared_ptr<Tensor> load(const char *path);
+
+  // Info / Debug / etc
   void print(const char *prefix);
+  Stats stats();
+  void printStats(const char *prefix);
+  std::string statsString(void);
+
 
   const std::string name_;
   const DataType data_type_;
   const Dims dims_;
   const int64_t elements_;
-
-  static std::shared_ptr<Tensor> load(const char *path);
-
-  void copyFrom(Tensor &t);
 
 };
 
@@ -140,7 +153,7 @@ public:
   Attributes attributes_;
   const std::string type_;
 
-  std::shared_ptr<Tensor> makeOutputTensor(const std::string &name);
+  std::shared_ptr<Tensor> inferTensor_y(const std::string &name);
 };
 
 

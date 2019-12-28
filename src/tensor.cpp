@@ -481,6 +481,8 @@ printDesc(cudnnTensorDescriptor_t desc)
 
 #include <sstream>
 #include <x86intrin.h>
+#include <math.h>
+
 
 #include "saga.h"
 #include "tensor.h"
@@ -646,10 +648,78 @@ print1dTensor(const char *prefix, Tensor &t, TensorAccess &ta)
 }
 
 
+Tensor::Stats
+Tensor::stats()
+{
+  auto ta = access();
+  if(ta == nullptr) {
+    return Stats({});
+  }
+  std::vector<int64_t> c(dims_.size(), 0);
+
+  double max = -INFINITY;
+  double min = INFINITY;
+  double sum = 0;
+
+  for(int64_t i = 0; i < elements_; i++) {
+    const double v = ta->get(c);
+
+    max = std::max(max, v);
+    min = std::min(min, v);
+    sum += v;
+
+    for(ssize_t j = c.size() - 1; j >= 0; j--) {
+      c[j]++;
+      if(c[j] == dims_[j]) {
+        c[j] = 0;
+      } else {
+        break;
+      }
+    }
+  }
+
+  const double mean = sum / elements_;
+  double sum2 = 0;
+  for(int64_t i = 0; i < elements_; i++) {
+    const double v = ta->get(c) - mean;
+    sum2 += v * v;
+    for(ssize_t j = c.size() - 1; j >= 0; j--) {
+      c[j]++;
+      if(c[j] == dims_[j]) {
+        c[j] = 0;
+      } else {
+        break;
+      }
+    }
+  }
+  return Stats({.min = min, .max = max, .mean = mean,
+        .stddev = sqrt(sum2 / elements_)});
+}
+
+
+std::string
+Tensor::statsString(void)
+{
+  auto s = stats();
+  char buf[512];
+  snprintf(buf, sizeof(buf), "{min:%f mean:%f max:%f stddev:%f}",
+           s.min, s.mean, s.max, s.stddev);
+  return std::string(buf);
+}
+
 
 void
-Tensor::print(const char *prefix) {
+Tensor::printStats(const char *prefix)
+{
+  auto s = stats();
+  printf("%s: min:%f max:%f mean:%f stddev:%f\n", prefix,
+         s.min, s.max, s.mean, s.stddev);
+}
 
+
+void
+Tensor::print(const char *prefix)
+{
   printf("%s: %s\n", prefix, info().c_str());
 
   auto ta = access();
@@ -705,21 +775,34 @@ Tensor::copyFrom(Tensor &t)
 
   auto dst = access();
 
-  std::vector<int64_t> c(dims_.size(), 0);
+  assert(t.elements_ == elements_);
 
-  assert(t.dims_ == dims_);
+  std::vector<int64_t> c_s(t.dims_.size(), 0);
+  std::vector<int64_t> c_d(dims_.size(), 0);
 
   // This is very slow
   for(int64_t i = 0; i < elements_; i++) {
-    dst->set(c, src->get(c));
-    for(ssize_t j = c.size() - 1; j >= 0; j--) {
-      c[j]++;
-      if(c[j] == dims_[j]) {
-        c[j] = 0;
+    dst->set(c_d, src->get(c_s));
+
+    for(ssize_t j = c_d.size() - 1; j >= 0; j--) {
+      c_d[j]++;
+      if(c_d[j] == dims_[j]) {
+        c_d[j] = 0;
       } else {
         break;
       }
     }
+
+    for(ssize_t j = c_s.size() - 1; j >= 0; j--) {
+      c_s[j]++;
+      if(c_s[j] == t.dims_[j]) {
+        c_s[j] = 0;
+      } else {
+        break;
+      }
+    }
+
+
   }
 
 

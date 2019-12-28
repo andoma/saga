@@ -790,9 +790,23 @@ find_tensor(Graph &g, const std::string &name)
   auto it = g.tensors_.find(name);
   if(it != g.tensors_.end())
     return it->second;
-  fprintf(stderr, "Unable to find tensor %s\n", name.c_str());
   return nullptr;
 }
+
+static void
+make_tensor_y(Graph &g, Node &n, const std::string &name)
+{
+  auto t = find_tensor(g, name);
+  if(!t) {
+    t = n.inferTensor_y(name);
+    g.tensors_[name] = t;
+  }
+  n.outputs_["y"] = t;
+}
+
+
+
+
 
 
 static shared_ptr<Node>
@@ -841,7 +855,7 @@ make_conv(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   }
   n->attributes_["stride"] = stride;
 
-  g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
+  make_tensor_y(g, *n, np.output(0));
   return n;
 }
 
@@ -858,13 +872,13 @@ make_batchnorm(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 
   n->inputs_["s"] = find_tensor(g, np.input(1));
   n->inputs_["b"] = find_tensor(g, np.input(2));
-  n->inputs_["rm"] = find_tensor(g, np.input(3));
-  n->inputs_["riv"] = find_tensor(g, np.input(4));
+  n->inputs_["m"] = find_tensor(g, np.input(3));
+  n->inputs_["v"] = find_tensor(g, np.input(4));
 
   float epsilon = attribs.get("epsilon", 1e-05f);
   n->attributes_["epsilon"] = epsilon;
 
-  g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
+  make_tensor_y(g, *n, np.output(0));
   return n;
 }
 
@@ -876,7 +890,7 @@ make_relu(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   assert(np.output_size() == 1);
   auto n = std::make_shared<Node>("relu");
   n->inputs_["x"] = find_tensor(g, np.input(0));
-  g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
+  make_tensor_y(g, *n, np.output(0));
   return n;
 }
 
@@ -928,8 +942,7 @@ make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
   n->attributes_["size"] = size;
   n->attributes_["pad"] = pad;
   n->attributes_["stride"] = stride;
-  g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
-
+  make_tensor_y(g, *n, np.output(0));
   return n;
 }
 
@@ -945,7 +958,7 @@ make_sum(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
     snprintf(name, sizeof(name), "x%u", i);
     n->inputs_[name] = find_tensor(g, np.input(i));
   }
-  g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
+  make_tensor_y(g, *n, np.output(0));
   return n;
 }
 
@@ -958,7 +971,7 @@ make_reshape(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   auto n = std::make_shared<Node>("reshape");
   n->inputs_["x"] = find_tensor(g, np.input(0));
   n->inputs_["shape"] = find_tensor(g, np.input(1));
-  g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
+  make_tensor_y(g, *n, np.output(0));
   return n;
 }
 
@@ -971,7 +984,7 @@ make_gemm(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   n->inputs_["x"] = find_tensor(g, np.input(0));
   n->inputs_["w"] = find_tensor(g, np.input(1));
   n->inputs_["b"] = find_tensor(g, np.input(2));
-  g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
+  make_tensor_y(g, *n, np.output(0));
   return n;
 }
 
@@ -983,7 +996,7 @@ make_softmax(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   assert(np.output_size() == 1);
   auto n = std::make_shared<Node>("softmax");
   n->inputs_["x"] = find_tensor(g, np.input(0));
-  g.tensors_[np.output(0)] = n->makeOutputTensor(np.output(0));
+  make_tensor_y(g, *n, np.output(0));
   return n;
 }
 
@@ -999,6 +1012,7 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
 
   for(const auto &vip : gp.output()) {
     auto t = make_tensor(vip);
+    printf("Made output tensor %s\n", t->info().c_str());
     g.tensors_[vip.name()] = t;
     g.outputs_.insert(t);
   }

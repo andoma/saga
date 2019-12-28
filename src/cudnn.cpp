@@ -182,6 +182,22 @@ computeCudaStrides(const Dims &dims)
 }
 
 
+cudnnDataType_t
+cudnnDataType_from_dataType(Tensor::DataType data_type)
+{
+  switch(data_type) {
+  case Tensor::DataType::FLOAT:
+    return CUDNN_DATA_FLOAT;
+  case Tensor::DataType::HALF:
+    return CUDNN_DATA_HALF;
+  case Tensor::DataType::U8:
+    return CUDNN_DATA_UINT8;
+  default:
+    fprintf(stderr, "Unsupported data_type %d for cuda tensor\n",
+            (int)data_type);
+    abort();
+  }
+}
 
 
 class CudaTensor : public Tensor {
@@ -190,27 +206,10 @@ public:
   CudaTensor(const std::string &name, DataType data_type, Dims dims,
              cudnnTensorFormat_t format)
     : Tensor(name, data_type, dims)
+    , type_(cudnnDataType_from_dataType(data_type))
   {
     chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-
-    switch(data_type) {
-    case Tensor::DataType::FLOAT:
-      type_ = CUDNN_DATA_FLOAT;
-      break;
-    case Tensor::DataType::HALF:
-      type_ = CUDNN_DATA_HALF;
-      break;
-    case Tensor::DataType::U8:
-      type_ = CUDNN_DATA_UINT8;
-      break;
-    default:
-      fprintf(stderr, "Unsupported data_type %d for cuda tensor\n",
-              (int)data_type);
-      abort();
-    }
-
-    // Use cudnnSetTensorNdDescriptorEx() ?
-
+    assert(dims.size() >= 0 && dims.size() <= 4);
     chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, type_,
                                         dims[0],
                                         dims.size() > 1 ? dims[1] : 1,
@@ -224,30 +223,14 @@ public:
   }
 
 
-  CudaTensor(const std::string &name, std::shared_ptr<CudaTensorStorage> storage,
+  CudaTensor(const std::string &name,
+             std::shared_ptr<CudaTensorStorage> storage,
              Dims dims, cudnnTensorFormat_t format)
     : Tensor(name, storage->data_type_, dims)
+    , type_(cudnnDataType_from_dataType(storage->data_type_))
   {
     chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-
-    switch(storage->data_type_) {
-    case Tensor::DataType::FLOAT:
-      type_ = CUDNN_DATA_FLOAT;
-      break;
-    case Tensor::DataType::HALF:
-      type_ = CUDNN_DATA_HALF;
-      break;
-    case Tensor::DataType::U8:
-      type_ = CUDNN_DATA_UINT8;
-      break;
-    default:
-      fprintf(stderr, "Unsupported data_type %d for cuda tensor\n",
-              (int)storage->data_type_);
-      abort();
-    }
-
-    // Use cudnnSetTensorNdDescriptorEx() ?
-
+    assert(dims.size() >= 0 && dims.size() <= 4);
     chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, type_,
                                         dims[0],
                                         dims.size() > 1 ? dims[1] : 1,
@@ -270,8 +253,8 @@ public:
 
   virtual std::string info() const;
 
+  const cudnnDataType_t type_;
   cudnnTensorDescriptor_t desc_;
-  cudnnDataType_t type_;
   std::shared_ptr<CudaTensorStorage> storage_;
 };
 
@@ -326,6 +309,7 @@ CudaTensor::info() const
 
 
 
+//------------------------------------------------------------------------
 
 class CudnnProgram : public Program {
 public:
@@ -347,21 +331,29 @@ public:
 
 
 static std::shared_ptr<CudaTensor>
-lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src, int rank = 0)
+lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
+             size_t leading_dimensions = 0)
 {
   if(src == nullptr)
     return nullptr;
 
   auto it = p.tensors_.find(src);
   if(it != p.tensors_.end()) {
+    printf("Tensor %s %p already lowered to %p\n",
+           src->name_.c_str(), src.get(), it->second.get());
     return it->second;
   }
 
+  std::vector<int64_t> dims(leading_dimensions, 1);
+  dims.insert(dims.end(),  src->dims_.begin(),  src->dims_.end());
+
   auto t = std::make_shared<CudaTensor>(src->name_, src->data_type_,
-                                        src->dims_, CUDNN_TENSOR_NHWC);
+                                        dims, CUDNN_TENSOR_NHWC);
 
   t->copyFrom(*src);
   p.tensors_[src] = t;
+  printf("Tensor %s (%s) %p lowered to %p\n",
+         src->name_.c_str(), src->info().c_str(),src.get(), t.get());
   return t;
 }
 
@@ -439,6 +431,7 @@ struct CudnnConvolutionFwd : public Operation {
   void exec() {
     float alpha = 1.0f, beta = 0.0f;
 
+
     chkCUDNN(cudnnConvolutionForward(ctx_->cudnn_, &alpha,
                                      x_->desc(),
                                      x_->deviceMem(),
@@ -456,6 +449,15 @@ struct CudnnConvolutionFwd : public Operation {
                               &alpha, b_->desc(), b_->deviceMem(),
                               &alpha, y_->desc(), y_->deviceMem()));
     }
+
+
+    printf("conv x: %s\n", x_->statsString().c_str());
+    printf("conv w: %s\n", w_->statsString().c_str());
+    if(b_)
+      printf("conv b: %s\n", b_->statsString().c_str());
+    printf("conv y: %s\n", y_->statsString().c_str());
+
+
   }
 
 };
@@ -466,16 +468,16 @@ struct CudnnConvolutionFwd : public Operation {
 struct CudnnBatchNormFwd : public Operation {
 
   const std::shared_ptr<CudnnContext> ctx_;
-  const std::shared_ptr<CudaTensor> x_, s_, b_, rm_, riv_, y_;
+  const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_;
   const float epsilon_;
 
   CudnnBatchNormFwd(CudnnProgram &p, const Node &n)
     : ctx_(p.ctx_)
     , x_(lower_tensor(p, n.inputs_.get("x")))
-    , s_(lower_tensor(p, n.inputs_.get("s")))
-    , b_(lower_tensor(p, n.inputs_.get("b")))
-    , rm_(lower_tensor(p, n.inputs_.get("rm")))
-    , riv_(lower_tensor(p, n.inputs_.get("riv")))
+    , s_(lower_tensor(p, n.inputs_.get("s"), 1))
+    , b_(lower_tensor(p, n.inputs_.get("b"), 1))
+    , m_(lower_tensor(p, n.inputs_.get("m"), 1))
+    , v_(lower_tensor(p, n.inputs_.get("v"), 1))
     , y_(lower_tensor(p, n.outputs_.get("y")))
     , epsilon_(n.attributes_.get("epsilon", 1e-5f))
   {
@@ -490,13 +492,13 @@ struct CudnnBatchNormFwd : public Operation {
     rm_->print("rm");
     riv_->print("riv");
     y_->print("y");
+    printf("x: %s\n", x_->info().c_str());
+    printf("s: %s\n", s_->info().c_str());
+    printf("b: %s\n", b_->info().c_str());
+    printf("m: %s\n", m_->info().c_str());
+    printf("v: %s\n", v_->info().c_str());
+    printf("y: %s\n", y_->info().c_str());
 #endif
-    printf("x:   %s\n", x_->info().c_str());
-    printf("s:   %s\n", s_->info().c_str());
-    printf("b:   %s\n", b_->info().c_str());
-    printf("rm:  %s\n", rm_->info().c_str());
-    printf("riv: %s\n", riv_->info().c_str());
-    printf("y:   %s\n", y_->info().c_str());
 
     chkCUDNN(cudnnBatchNormalizationForwardInference(ctx_->cudnn_,
                                                      CUDNN_BATCHNORM_SPATIAL,
@@ -508,8 +510,8 @@ struct CudnnBatchNormFwd : public Operation {
                                                      s_->desc(),
                                                      s_->deviceMem(),
                                                      b_->deviceMem(),
-                                                     rm_->deviceMem(),
-                                                     riv_->deviceMem(),
+                                                     m_->deviceMem(),
+                                                     v_->deviceMem(),
                                                      epsilon_));
 
   }
@@ -653,7 +655,7 @@ struct CudnnFcFwd : public Operation {
     : ctx_(p.ctx_)
     , x_(lower_tensor(p, n.inputs_.get("x")))
     , w_(lower_tensor(p, n.inputs_.get("w")))
-    , b_(lower_tensor(p, n.inputs_.get("b")))
+    , b_(lower_tensor(p, n.inputs_.get("b"), 1))
     , y_(lower_tensor(p, n.outputs_.get("y")))
     , n_(x_->dims_[0])
     , num_inputs_(x_->dims_[1])
@@ -722,7 +724,9 @@ struct CudnnSoftmaxFwd : public Operation {
                                  &beta,
                                  y_->desc(), y_->deviceMem()));
 
-
+    printf("softmax x: %s\n", x_->statsString().c_str());
+    printf("softmax y: %s %s\n", y_->statsString().c_str(),
+           y_->info().c_str());
   }
 };
 
@@ -819,6 +823,12 @@ cudnn_inference(std::shared_ptr<Graph> g,
 
   }
 
+  printf("workspace needed: %zd\n", p->workspace_size_);
+
+  p->ctx_->workspace_size_ = p->workspace_size_;
+
+  chkCuda(cudaMalloc(&p->ctx_->workspace_, p->ctx_->workspace_size_));
+
 
   return p;
 }
@@ -827,6 +837,7 @@ cudnn_inference(std::shared_ptr<Graph> g,
 void
 CudnnProgram::exec()
 {
+  printf("exec!\n");
   for(const auto &op : operations_) {
     op->exec();
   }
