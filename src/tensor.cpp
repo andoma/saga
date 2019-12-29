@@ -577,8 +577,8 @@ datatype_str(Tensor::DataType dt)
   }
 }
 
-const size_t
-datatype_size(Tensor::DataType dt)
+size_t
+Tensor::DataTypeSize(DataType dt)
 {
   switch(dt) {
   case Tensor::DataType::U8:    return 1;
@@ -718,7 +718,7 @@ Tensor::printStats(const char *prefix)
 
 
 void
-Tensor::print(const char *prefix)
+Tensor::print(const char *prefix, int elements_per_rank)
 {
   printf("%s: %s\n", prefix, info().c_str());
 
@@ -752,7 +752,7 @@ Tensor::print(const char *prefix)
 
     for(ssize_t j = rank - 1; j >= 0; j--) {
       c[j]++;
-      if(c[j] == dims_[j]) {
+      if(c[j] == dims_[j] || c[j] == elements_per_rank) {
         if(j == 0) {
           printf("%s", lf);
           return;
@@ -858,7 +858,7 @@ public:
   CPUTensorStorage(Tensor::DataType data_type, const Dims &dims, const Dims &strides)
     : TensorStorageAccess(data_type)
   {
-    data_ = calloc(1, dims[0] * strides[0] * datatype_size(data_type));
+    data_ = calloc(1, dims[0] * strides[0] * Tensor::DataTypeSize(data_type));
   }
 
   ~CPUTensorStorage()

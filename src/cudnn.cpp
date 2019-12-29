@@ -105,6 +105,7 @@ class CudaTensorStorage : public TensorStorageAccess {
 public:
   CudaTensorStorage(Tensor::DataType data_type, size_t size)
     : TensorStorageAccess(data_type)
+    , element_size_(Tensor::DataTypeSize(data_type))
   {
     chkCuda(cudaMallocManaged(&data_, size, cudaMemAttachGlobal));
     chkCuda(cudaMemset(data_, 0, size));
@@ -114,6 +115,14 @@ public:
   {
     chkCuda(cudaFree(data_));
   }
+
+  void *deviceMem(int64_t offset)
+  {
+    void *r = (void *)((char *)data_ + offset * element_size_);
+    return r;
+  }
+
+  const size_t element_size_;
 };
 
 
@@ -123,8 +132,10 @@ class CudaTensorAccess : public TensorAccess {
 
 public:
   CudaTensorAccess(std::shared_ptr<CudaTensorStorage> storage,
-                   cudnnTensorDescriptor_t desc)
+                   cudnnTensorDescriptor_t desc,
+                   int64_t offset)
     : storage_(storage)
+    , offset_(offset)
   {
     const int max_rank = 8;
     int dims[max_rank];
@@ -148,8 +159,8 @@ public:
 
   void *data() { return storage_->data_; }
 
-  size_t offsetForElement(const std::vector<int64_t> &element) const {
-    size_t offset = 0;
+  int64_t offsetForElement(const std::vector<int64_t> &element) const {
+    size_t offset = offset_;
     for(size_t i = 0; i < element.size() && i < strides_.size(); i++) {
       offset += element[i] * strides_[i];
     }
@@ -166,6 +177,7 @@ public:
 
   Dims strides_;
   const std::shared_ptr<CudaTensorStorage> storage_;
+  const int64_t offset_;
 };
 
 
@@ -209,6 +221,7 @@ public:
              cudnnTensorFormat_t format)
     : Tensor(name, data_type, dims)
     , type_(cudnnDataType_from_dataType(data_type))
+    , offset_(0)
   {
     chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
     assert(dims.size() >= 0 && dims.size() <= 4);
@@ -230,6 +243,7 @@ public:
              Dims dims, cudnnTensorFormat_t format)
     : Tensor(name, storage->data_type_, dims)
     , type_(cudnnDataType_from_dataType(storage->data_type_))
+    , offset_(0)
   {
     chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
     assert(dims.size() >= 0 && dims.size() <= 4);
@@ -241,8 +255,40 @@ public:
     storage_ = storage;
   }
 
+
+  CudaTensor(const std::string &name, std::shared_ptr<CudaTensor> alias,
+             Dims dims, std::vector<int64_t> offset_element)
+    : Tensor(name, alias->storage_->data_type_, dims)
+    , type_(cudnnDataType_from_dataType(alias->storage_->data_type_))
+    , offset_(alias->offset_)
+    , storage_(alias->storage_)
+  {
+    const int max_rank = 8;
+    int dimsA[max_rank];
+    int stridesA[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
+
+    chkCUDNN(cudnnGetTensorNdDescriptor(alias->desc_, max_rank, &data_type,
+                                        &rank, dimsA, stridesA));
+
+    assert(data_type == type_);
+    assert((size_t)rank == dims.size());
+
+    for(int i = 0; i < rank; i++) {
+      dimsA[i] = dims[i];
+    }
+    chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
+    chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank,
+                                        dimsA, stridesA));
+
+    for(int i = 0; i < rank && i < (ssize_t)offset_element.size(); i++) {
+      offset_ += offset_element[i] * stridesA[i];
+    }
+  }
+
   std::unique_ptr<TensorAccess> access() {
-    return std::make_unique<CudaTensorAccess>(storage_, desc_);
+    return std::make_unique<CudaTensorAccess>(storage_, desc_, offset_);
   }
 
   cudnnTensorDescriptor_t desc() const {
@@ -250,14 +296,15 @@ public:
   }
 
   void *deviceMem() const {
-    return storage_->data_;
+    return storage_->deviceMem(offset_);
   };
 
   virtual std::string info() const;
 
   const cudnnDataType_t type_;
-  cudnnTensorDescriptor_t desc_;
+  int64_t offset_;
   std::shared_ptr<CudaTensorStorage> storage_;
+  cudnnTensorDescriptor_t desc_;
 };
 
 
@@ -415,7 +462,7 @@ struct CudnnConvolutionFwd : public CudnnOperation {
     : ctx_(p.ctx_)
     , x_(lower_tensor(p, n.inputs_.get("x")))
     , w_(lower_tensor(p, n.inputs_.get("w")))
-    , b_(lower_tensor(p, n.inputs_.get("b")))
+    , b_(lower_tensor(p, n.inputs_.get("b"), 1))
     , y_(lower_tensor(p, n.outputs_.get("y")))
   {
     chkCUDNN(cudnnCreateFilterDescriptor(&filter_desc_));
@@ -466,7 +513,13 @@ struct CudnnConvolutionFwd : public CudnnOperation {
 
   void exec(CudnnProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
-
+#if 0
+    printf("x: %s\n", x_->info().c_str());
+    printf("w: %s\n", w_->info().c_str());
+    if(b_)
+      printf("b: %s\n", b_->info().c_str());
+    printf("y: %s\n", y_->info().c_str());
+#endif
 
     chkCUDNN(cudnnConvolutionForward(ctx_->cudnn_, &alpha,
                                      x_->desc(),
@@ -738,6 +791,92 @@ struct CudnnSoftmaxFwd : public CudnnOperation {
   }
 };
 
+//------------------------------------------------------------------------
+
+struct CudnnTransform : public CudnnOperation {
+
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> x_, y_;
+
+  CudnnTransform(CudnnProgram &p,
+                 std::shared_ptr<CudaTensor> x,
+                 std::shared_ptr<CudaTensor> y)
+    : ctx_(p.ctx_)
+    , x_(x)
+    , y_(y)
+  {
+  }
+
+  void exec(CudnnProgram &p) {
+
+    float alpha = 1.0f, beta = 0.0f;
+#if 0
+    printf("x: %s\n", x_->info().c_str());
+    printf("y: %s\n", y_->info().c_str());
+#endif
+    chkCUDNN(cudnnTransformTensor(ctx_->cudnn_,
+                                  &alpha,
+                                  x_->desc(),
+                                  x_->deviceMem(),
+                                  &beta,
+                                  y_->desc(),
+                                  y_->deviceMem()));
+  }
+};
+
+
+
+
+struct CudnnPrintTensor : public CudnnOperation {
+
+  const std::string prefix_;
+  const std::shared_ptr<Tensor> x_;
+
+  CudnnPrintTensor(const std::string &prefix, std::shared_ptr<Tensor> x)
+    : prefix_(prefix)
+    , x_(x)
+  {
+  }
+
+  void exec(CudnnProgram &p) {
+    x_->print(prefix_.c_str(), 4);
+  }
+};
+
+
+struct CudnnPrintStatsTensor : public CudnnOperation {
+
+  const std::string prefix_;
+  const std::shared_ptr<Tensor> x_;
+
+  CudnnPrintStatsTensor(const std::string &prefix, std::shared_ptr<Tensor> x)
+    : prefix_(prefix)
+    , x_(x)
+  {
+  }
+
+  void exec(CudnnProgram &p) {
+    printf("%s: %s\n", prefix_.c_str(), x_->info().c_str());
+    x_->printStats(prefix_.c_str());
+  }
+};
+
+
+
+
+struct CudnnStop : public CudnnOperation {
+
+  CudnnStop()
+  {
+  }
+
+  void exec(CudnnProgram &p) {
+    fprintf(stderr, "Stopped by CudnnStop\n");
+    exit(1);
+  }
+};
+
+
 
 
 
@@ -765,20 +904,41 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
     o = std::make_shared<CudnnSumFwd>(p, n);
   } else if(n.type_ == "softmax") {
     o = std::make_shared<CudnnSoftmaxFwd>(p, n);
-  } else if(n.type_ == "reshape") {
+  } else if(n.type_ == "concat") {
+
+    auto y = lower_tensor(p, n.outputs_.get("y"));
+    auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
+    const int axis = 1;
+    for(const auto &xh : n.inputs_.getv("x")) {
+      auto x = lower_tensor(p, xh);
+      auto y2 = std::make_shared<CudaTensor>("concat.alias." + y->name_,
+                                             y, x->dims_, element_offset);
+      p.operations_.push_back(std::make_shared<CudnnTransform>(p, x, y2));
+
+      element_offset[axis] += xh->dims_[axis];
+    }
+  } else if(n.type_ == "reshape" ||
+            n.type_ == "dropout") {
 
     auto x = lower_tensor(p, n.inputs_.get("x"));
     auto y = n.outputs_.get("y");
     const std::string name(y->name_ + ".alias." + x->name_);
 
-    p.tensors_[y] = std::make_shared<CudaTensor>(name, x->storage_, y->dims_,
-                                                 CUDNN_TENSOR_NHWC);
-    return;
+    p.tensors_[y] = std::make_shared<CudaTensor>(name, x->storage_,
+                                                 y->dims_, CUDNN_TENSOR_NHWC);
+
   } else {
     printf("Cant emit forward operation for node type %s\n", n.type_.c_str());
     abort();
   }
-  p.operations_.push_back(o);
+
+  if(o)
+    p.operations_.push_back(o);
+
+  return;
+
+  p.operations_.push_back(std::make_shared<CudnnPrintStatsTensor>(n.type_,
+                                                                  lower_tensor(p, n.outputs_.get("y"))));
 }
 
 
@@ -800,14 +960,16 @@ cudnn_inference(std::shared_ptr<Graph> g,
     p->inputs_.insert(lower_tensor(*p, n));
   }
 
-  for(const auto &n : g->outputs_) {
-    p->outputs_.insert(lower_tensor(*p, n));
-  }
-
   for(const auto &n : g->nodes_) {
     generate_forward_operation(*p, *n);
   }
 
+  for(const auto &n : g->outputs_) {
+    p->outputs_.insert(lower_tensor(*p, n));
+  }
+
+
+#if 0
   for(const auto &n : g->nodes_) {
     printf(" == %s ======\n", n->type_.c_str());
 
@@ -829,6 +991,7 @@ cudnn_inference(std::shared_ptr<Graph> g,
              it.second->info().c_str());
     }
   }
+#endif
   return p;
 }
 

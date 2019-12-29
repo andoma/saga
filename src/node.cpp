@@ -114,6 +114,29 @@ makeReshapeOutputTensor(const std::string &name, const Node &n)
   return std::make_shared<Tensor>(name, x->data_type_, dims);
 }
 
+
+std::shared_ptr<Tensor>
+makeConcatOutputTensor(const std::string &name, const Node &n)
+{
+  int i = 0;
+  int axis = 1;
+  Dims dims;
+  Tensor::DataType data_type = Tensor::DataType::U8;
+  while(1) {
+    auto x = n.inputs_.get("x" + std::to_string(i));
+    if(x == nullptr)
+      break;
+    if(i == 0) {
+      dims = x->dims_;
+      data_type = x->data_type_;
+    } else {
+      dims[axis] += x->dims_[axis];
+    }
+    i++;
+  }
+  return std::make_shared<Tensor>(name, data_type, dims);
+}
+
 std::shared_ptr<Tensor>
 makeFCOutputTensor(const std::string &name, const Node &n)
 {
@@ -157,6 +180,8 @@ Node::inferTensor_y(const std::string &name)
     y = makeOutputTensorFromBlueprint(name, "x", *this);
   } else if(type_ == "sum") {
     y = makeOutputTensorFromBlueprint(name, "x0", *this);
+  } else if(type_ == "concat") {
+    y = makeConcatOutputTensor(name, *this);
   }
   if(y == nullptr) {
     fprintf(stderr, "Failed to compute output tensor for type %s\n",

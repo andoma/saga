@@ -99,6 +99,9 @@ public:
     INT64,
   };
 
+  static size_t DataTypeSize(DataType dt);
+
+
   Tensor(const std::string &name, DataType data_type, const Dims &dims);
 
   virtual ~Tensor() {};
@@ -114,7 +117,7 @@ public:
   static std::shared_ptr<Tensor> load(const char *path);
 
   // Info / Debug / etc
-  void print(const char *prefix);
+  void print(const char *prefix, int elements_per_rank = 0);
   Stats stats();
   void printStats(const char *prefix);
   std::string statsString(void);
@@ -138,6 +141,17 @@ public:
   std::shared_ptr<Tensor> get(const std::string &n) const {
     auto it = find(n);
     return it == end() ? nullptr : it->second;
+  }
+
+  std::vector<std::shared_ptr<Tensor>> getv(const std::string &n) const {
+    std::vector<std::shared_ptr<Tensor>> v;
+    for(int i = 0; ; i++) {
+      auto it = find(n + std::to_string(i));
+      if(it == end())
+        break;
+      v.push_back(it->second);
+    }
+    return v;
   }
 };
 
