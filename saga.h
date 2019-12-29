@@ -175,20 +175,11 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-class Operation {
-public:
-  virtual ~Operation() {}
-  virtual void exec() {}
-};
-
-
 class Program {
 public:
-  std::vector<std::shared_ptr<Operation>> operations_;
   std::unordered_set<std::shared_ptr<Tensor>> inputs_;
   std::unordered_set<std::shared_ptr<Tensor>> outputs_;
   virtual void exec() {}
-
 };
 
 

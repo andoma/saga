@@ -60,14 +60,16 @@ namespace saga {
 
 class CudnnContext {
 public:
+  CudnnContext()
+    : cudnn_(NULL)
+    , cublas_(NULL)
+  {}
+
   void init();
+
 
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
-
-
-  void *workspace_;
-  size_t workspace_size_;
 };
 
 
@@ -311,22 +313,59 @@ CudaTensor::info() const
 
 //------------------------------------------------------------------------
 
+class CudnnOperation;
+
 class CudnnProgram : public Program {
 public:
 
   CudnnProgram()
-    : workspace_size_(0)
-  {}
+    : workspace_(NULL)
+    , workspace_size_(0)
+    , workspace_requested_(0)
+  {
+  }
+
+  ~CudnnProgram()
+  {
+    chkCuda(cudaFree(workspace_));
+  }
+
 
   void exec();
+
+  void requetstWorkspace(size_t size) {
+    workspace_requested_ = std::max(workspace_requested_, size);
+  }
+
+  void allocWorkspace() {
+    if(workspace_requested_ <= workspace_size_)
+      return;
+    workspace_size_ = workspace_requested_;
+    chkCuda(cudaFree(workspace_));
+    chkCuda(cudaMalloc(&workspace_, workspace_size_));
+  }
 
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
 
   std::shared_ptr<CudnnContext> ctx_;
-  size_t workspace_size_;
 
+  std::vector<std::shared_ptr<CudnnOperation>> operations_;
+
+  void *workspace_;
+  size_t workspace_size_;
+  size_t workspace_requested_;
 };
+
+
+
+
+class CudnnOperation {
+public:
+  virtual ~CudnnOperation() {}
+  virtual void exec(CudnnProgram &p) = 0;
+};
+
 
 
 
@@ -354,9 +393,10 @@ lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
 }
 
 
+
 //------------------------------------------------------------------------
 
-struct CudnnConvolutionFwd : public Operation {
+struct CudnnConvolutionFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, w_, b_, y_;
@@ -412,19 +452,19 @@ struct CudnnConvolutionFwd : public Operation {
                                                  0,
                                                  &conv_fwd_algo_));
 
-    size_t workspace_bytes;
+    size_t workspace;
     chkCUDNN(cudnnGetConvolutionForwardWorkspaceSize(ctx_->cudnn_,
                                                      x_->desc_,
                                                      filter_desc_,
                                                      conv_desc_,
                                                      y_->desc_,
                                                      conv_fwd_algo_,
-                                                     &workspace_bytes));
+                                                     &workspace));
 
-    p.workspace_size_ = std::max(p.workspace_size_, workspace_bytes);
+    p.requetstWorkspace(workspace);
   }
 
-  void exec() {
+  void exec(CudnnProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
 
 
@@ -435,7 +475,7 @@ struct CudnnConvolutionFwd : public Operation {
                                      w_->deviceMem(),
                                      conv_desc_,
                                      conv_fwd_algo_,
-                                     ctx_->workspace_, ctx_->workspace_size_,
+                                     p.workspace_, p.workspace_size_,
                                      &beta,
                                      y_->desc(),
                                      y_->deviceMem()));
@@ -452,7 +492,7 @@ struct CudnnConvolutionFwd : public Operation {
 
 //------------------------------------------------------------------------
 
-struct CudnnBatchNormFwd : public Operation {
+struct CudnnBatchNormFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_;
@@ -470,7 +510,7 @@ struct CudnnBatchNormFwd : public Operation {
   {
   }
 
-  void exec() {
+  void exec(CudnnProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
     chkCUDNN(cudnnBatchNormalizationForwardInference(ctx_->cudnn_,
                                                      CUDNN_BATCHNORM_SPATIAL,
@@ -491,7 +531,7 @@ struct CudnnBatchNormFwd : public Operation {
 
 //------------------------------------------------------------------------
 
-struct CudnnReluFwd : public Operation {
+struct CudnnReluFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, y_;
@@ -512,7 +552,7 @@ struct CudnnReluFwd : public Operation {
     chkCUDNN(cudnnDestroyActivationDescriptor(desc_));
   }
 
-  void exec() {
+  void exec(CudnnProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnActivationForward(ctx_->cudnn_, desc_,
@@ -526,7 +566,7 @@ struct CudnnReluFwd : public Operation {
 
 //------------------------------------------------------------------------
 
-struct CudnnPoolingFwd : public Operation {
+struct CudnnPoolingFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, y_;
@@ -556,7 +596,7 @@ struct CudnnPoolingFwd : public Operation {
     chkCUDNN(cudnnDestroyPoolingDescriptor(desc_));
   }
 
-  void exec() {
+  void exec(CudnnProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
 
     chkCUDNN(cudnnPoolingForward(ctx_->cudnn_, desc_,
@@ -570,7 +610,7 @@ struct CudnnPoolingFwd : public Operation {
 
 //------------------------------------------------------------------------
 
-struct CudnnSumFwd : public Operation {
+struct CudnnSumFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x0_, x1_, y_;
@@ -594,7 +634,7 @@ struct CudnnSumFwd : public Operation {
     cudnnDestroyOpTensorDescriptor(desc_);
   }
 
-  void exec() {
+  void exec(CudnnProgram &p) {
 
     float alpha = 1.0f;
     float beta = 0.0f;
@@ -614,7 +654,7 @@ struct CudnnSumFwd : public Operation {
 
 //------------------------------------------------------------------------
 
-struct CudnnFcFwd : public Operation {
+struct CudnnFcFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, w_, b_, y_;
@@ -635,7 +675,7 @@ struct CudnnFcFwd : public Operation {
   {
   }
 
-  void exec() {
+  void exec(CudnnProgram &p) {
 
     float alpha = 1.0f, beta = 0.0f;
     __half halpha = 1.0f, hbeta = 0.0f;
@@ -672,7 +712,7 @@ struct CudnnFcFwd : public Operation {
 
 //------------------------------------------------------------------------
 
-struct CudnnSoftmaxFwd : public Operation {
+struct CudnnSoftmaxFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, y_;
@@ -684,7 +724,7 @@ struct CudnnSoftmaxFwd : public Operation {
   {
   }
 
-  void exec() {
+  void exec(CudnnProgram &p) {
 
     float alpha = 1.0f, beta = 0.0f;
 
@@ -707,7 +747,7 @@ struct CudnnSoftmaxFwd : public Operation {
 static void
 generate_forward_operation(CudnnProgram &p, const Node &n)
 {
-  std::shared_ptr<Operation> o;
+  std::shared_ptr<CudnnOperation> o;
 
   if(n.type_ == "conv") {
     o = std::make_shared<CudnnConvolutionFwd>(p, n);
@@ -788,15 +828,7 @@ cudnn_inference(std::shared_ptr<Graph> g,
              it2->second->info().c_str() :
              it.second->info().c_str());
     }
-
   }
-
-  printf("workspace needed: %zd\n", p->workspace_size_);
-
-  p->ctx_->workspace_size_ = p->workspace_size_;
-
-  chkCuda(cudaMalloc(&p->ctx_->workspace_, p->ctx_->workspace_size_));
-
   return p;
 }
 
@@ -804,8 +836,9 @@ cudnn_inference(std::shared_ptr<Graph> g,
 void
 CudnnProgram::exec()
 {
+  allocWorkspace();
   for(const auto &op : operations_) {
-    op->exec();
+    op->exec(*this);
   }
 }
 
