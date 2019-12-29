@@ -339,8 +339,6 @@ lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
 
   auto it = p.tensors_.find(src);
   if(it != p.tensors_.end()) {
-    printf("Tensor %s %p already lowered to %p\n",
-           src->name_.c_str(), src.get(), it->second.get());
     return it->second;
   }
 
@@ -352,8 +350,6 @@ lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
 
   t->copyFrom(*src);
   p.tensors_[src] = t;
-  printf("Tensor %s (%s) %p lowered to %p\n",
-         src->name_.c_str(), src->info().c_str(),src.get(), t.get());
   return t;
 }
 
@@ -449,15 +445,6 @@ struct CudnnConvolutionFwd : public Operation {
                               &alpha, b_->desc(), b_->deviceMem(),
                               &alpha, y_->desc(), y_->deviceMem()));
     }
-
-
-    printf("conv x: %s\n", x_->statsString().c_str());
-    printf("conv w: %s\n", w_->statsString().c_str());
-    if(b_)
-      printf("conv b: %s\n", b_->statsString().c_str());
-    printf("conv y: %s\n", y_->statsString().c_str());
-
-
   }
 
 };
@@ -485,21 +472,6 @@ struct CudnnBatchNormFwd : public Operation {
 
   void exec() {
     float alpha = 1.0f, beta = 0.0f;
-#if 0
-    x_->print("x");
-    s_->print("s");
-    b_->print("b");
-    rm_->print("rm");
-    riv_->print("riv");
-    y_->print("y");
-    printf("x: %s\n", x_->info().c_str());
-    printf("s: %s\n", s_->info().c_str());
-    printf("b: %s\n", b_->info().c_str());
-    printf("m: %s\n", m_->info().c_str());
-    printf("v: %s\n", v_->info().c_str());
-    printf("y: %s\n", y_->info().c_str());
-#endif
-
     chkCUDNN(cudnnBatchNormalizationForwardInference(ctx_->cudnn_,
                                                      CUDNN_BATCHNORM_SPATIAL,
                                                      &alpha, &beta,
@@ -723,10 +695,6 @@ struct CudnnSoftmaxFwd : public Operation {
                                  x_->desc(), x_->deviceMem(),
                                  &beta,
                                  y_->desc(), y_->deviceMem()));
-
-    printf("softmax x: %s\n", x_->statsString().c_str());
-    printf("softmax y: %s %s\n", y_->statsString().c_str(),
-           y_->info().c_str());
   }
 };
 
@@ -829,7 +797,6 @@ cudnn_inference(std::shared_ptr<Graph> g,
 
   chkCuda(cudaMalloc(&p->ctx_->workspace_, p->ctx_->workspace_size_));
 
-
   return p;
 }
 
@@ -837,7 +804,6 @@ cudnn_inference(std::shared_ptr<Graph> g,
 void
 CudnnProgram::exec()
 {
-  printf("exec!\n");
   for(const auto &op : operations_) {
     op->exec();
   }

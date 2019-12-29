@@ -1012,7 +1012,6 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
 
   for(const auto &vip : gp.output()) {
     auto t = make_tensor(vip);
-    printf("Made output tensor %s\n", t->info().c_str());
     g.tensors_[vip.name()] = t;
     g.outputs_.insert(t);
   }

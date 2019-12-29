@@ -603,11 +603,11 @@ TensorStorageAccess::TensorStorageAccess(Tensor::DataType data_type)
 //------------------------------------------------------------------------
 
 
-static int64_t
-elements_form_dims(const Dims &dims)
+int64_t
+elements_from_dims(const Dims &dims)
 {
   int64_t elements = 1;
-  for(auto d : dims)
+  for(auto &d : dims)
     elements *= d;
   return elements;
 }
@@ -618,7 +618,7 @@ Tensor::Tensor(const std::string &name, DataType data_type, const Dims &dims)
   : name_(name)
   , data_type_(data_type)
   , dims_(dims)
-  , elements_(elements_form_dims(dims))
+  , elements_(elements_from_dims(dims))
 {};
 
 
@@ -801,11 +801,51 @@ Tensor::copyFrom(Tensor &t)
         break;
       }
     }
-
-
   }
+}
 
 
+double
+Tensor::sse(Tensor &t)
+{
+  auto a = t.access();
+  auto b = access();
+  if(a == nullptr && b == nullptr)
+    return 0.0;
+
+  if(a == nullptr || b == nullptr)
+    return INFINITY;
+
+  assert(t.elements_ == elements_);
+
+  std::vector<int64_t> c_a(t.dims_.size(), 0);
+  std::vector<int64_t> c_b(dims_.size(), 0);
+
+  double r = 0;
+  for(int64_t i = 0; i < elements_; i++) {
+
+    double v = a->get(c_a) - b->get(c_b);
+    r += v * v;
+
+    for(ssize_t j = c_a.size() - 1; j >= 0; j--) {
+      c_a[j]++;
+      if(c_a[j] == dims_[j]) {
+        c_a[j] = 0;
+      } else {
+        break;
+      }
+    }
+
+    for(ssize_t j = c_b.size() - 1; j >= 0; j--) {
+      c_b[j]++;
+      if(c_b[j] == t.dims_[j]) {
+        c_b[j] = 0;
+      } else {
+        break;
+      }
+    }
+  }
+  return r;
 }
 
 

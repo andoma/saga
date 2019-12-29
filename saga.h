@@ -109,6 +109,7 @@ public:
   virtual std::unique_ptr<TensorAccess> access() { return nullptr; }
 
   void copyFrom(Tensor &t);
+  double sse(Tensor &t);
 
   static std::shared_ptr<Tensor> load(const char *path);
 

@@ -59,10 +59,11 @@ test_one(const char *base_path,
 
     p->exec();
 
-    output->print("OUTPUT");
-    loaded_output->print("   REF");
-    exit(0);
-
+    const double sse = loaded_output->sse(*output);
+    if(sse > 0.001) {
+      fprintf(stderr, "%s test %d failed sse=%f\n", base_path, i, sse);
+      return 1;
+    }
   }
 
   return 0;
