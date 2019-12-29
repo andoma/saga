@@ -35,23 +35,29 @@
 
 namespace saga {
 
-class CudnnContext {
+class CudnnContext : public Context,
+                     public std::enable_shared_from_this<CudnnContext> {
 public:
   CudnnContext()
     : cudnn_(NULL)
     , cublas_(NULL)
   {}
 
-  void init();
+  ~CudnnContext()
+  {}
 
+  int init();
+
+  std::shared_ptr<Program> createProgram(const Graph &graph,
+                                         ProgramType type,
+                                         int batch_size);
 
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
 };
 
 
-
-void
+int
 CudnnContext::init()
 {
   int device;
@@ -73,10 +79,20 @@ CudnnContext::init()
   chkCuda(cublasCreate(&cublas_));
 
   chkCuda(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+  return 0;
 }
 
 
 
+std::shared_ptr<Context> createContext()
+{
+  auto ctx = std::make_shared<CudnnContext>();
+
+  if(ctx->init())
+    return nullptr;
+
+  return ctx;
+}
 
 
 //------------------------------------------------------------------------
@@ -667,25 +683,22 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
 
 
 std::shared_ptr<Program>
-cudnn_inference(std::shared_ptr<Graph> g,
-                int batch_size)
+cudnn_inference(const Graph &g, int batch_size,
+                std::shared_ptr<CudnnContext> ctx)
 {
-  printf("Generating program\n");
-
   auto p = std::make_shared<CudnnProgram>();
 
-  p->ctx_ = std::make_shared<CudnnContext>();
-  p->ctx_->init();
+  p->ctx_ = ctx;
 
-  for(const auto &n : g->inputs_) {
+  for(const auto &n : g.inputs_) {
     p->inputs_.insert(lower_tensor(*p, n));
   }
 
-  for(const auto &n : g->nodes_) {
+  for(const auto &n : g.nodes_) {
     generate_forward_operation(*p, *n);
   }
 
-  for(const auto &n : g->outputs_) {
+  for(const auto &n : g.outputs_) {
     p->outputs_.insert(lower_tensor(*p, n));
   }
 
@@ -716,7 +729,6 @@ cudnn_inference(std::shared_ptr<Graph> g,
   return p;
 }
 
-
 void
 CudnnProgram::exec()
 {
@@ -725,6 +737,16 @@ CudnnProgram::exec()
     op->exec(*this);
   }
 }
+
+
+std::shared_ptr<Program>
+CudnnContext::createProgram(const Graph &graph,
+                            ProgramType type,
+                            int batch_size)
+{
+  return cudnn_inference(graph, batch_size, shared_from_this());
+}
+
 
 
 

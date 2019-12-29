@@ -33,6 +33,7 @@ namespace saga {
 
 class CudaTensorStorage;
 
+
 class CudaTensor : public Tensor {
 
 public:

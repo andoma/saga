@@ -189,17 +189,35 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-class Program {
-public:
-  std::unordered_set<std::shared_ptr<Tensor>> inputs_;
-  std::unordered_set<std::shared_ptr<Tensor>> outputs_;
-  virtual void exec() {}
+
+enum class ProgramType {
+  INFERENCE,
+  TRAINING
 };
 
 
+class Program {
+public:
+  virtual ~Program() {}
+  virtual void exec() = 0;
 
-std::shared_ptr<Program> cudnn_inference(std::shared_ptr<Graph> g,
-                                         int batch_size);
+  std::unordered_set<std::shared_ptr<Tensor>> inputs_;
+  std::unordered_set<std::shared_ptr<Tensor>> outputs_;
+};
 
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
+
+
+class Context {
+public:
+  virtual ~Context() {}
+  virtual std::shared_ptr<Program> createProgram(const Graph &graph,
+                                                 ProgramType type,
+                                                 int batch_size) = 0;
+};
+
+
+std::shared_ptr<Context> createContext();
 
 }
