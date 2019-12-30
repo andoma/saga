@@ -279,6 +279,9 @@ make_tensor(const onnx::ValueInfoProto &vip)
     case onnx::TensorShapeProto_Dimension::kDimValue:
       d = dim.dim_value();
       break;
+    case onnx::TensorShapeProto_Dimension::kDimParam:
+      d = 1;
+      break;
     default:
       return nullptr;
     }
