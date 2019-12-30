@@ -102,8 +102,9 @@ class CudnnOperation;
 class CudnnProgram : public Program {
 public:
 
-  CudnnProgram()
-    : workspace_(NULL)
+  CudnnProgram(std::shared_ptr<CudnnContext> ctx)
+    : ctx_(ctx)
+    , workspace_(NULL)
     , workspace_size_(0)
     , workspace_requested_(0)
   {
@@ -129,10 +130,10 @@ public:
     chkCuda(cudaMalloc(&workspace_, workspace_size_));
   }
 
+  const std::shared_ptr<CudnnContext> ctx_;
+
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
-
-  std::shared_ptr<CudnnContext> ctx_;
 
   std::vector<std::shared_ptr<CudnnOperation>> operations_;
 
@@ -686,9 +687,7 @@ std::shared_ptr<Program>
 cudnn_inference(const Graph &g, int batch_size,
                 std::shared_ptr<CudnnContext> ctx)
 {
-  auto p = std::make_shared<CudnnProgram>();
-
-  p->ctx_ = ctx;
+  auto p = std::make_shared<CudnnProgram>(ctx);
 
   for(const auto &n : g.inputs_) {
     p->inputs_.insert(lower_tensor(*p, n));
