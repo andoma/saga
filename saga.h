@@ -175,6 +175,7 @@ public:
   const std::string type_;
 
   std::shared_ptr<Tensor> inferTensor_y(const std::string &name);
+  void print() const;
 };
 
 

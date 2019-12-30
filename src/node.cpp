@@ -188,9 +188,27 @@ Node::inferTensor_y(const std::string &name)
   if(y == nullptr) {
     fprintf(stderr, "Failed to compute output tensor for type %s\n",
             type_.c_str());
+    print();
     abort();
   }
   return y;
 }
+
+void
+Node::print() const
+{
+  printf("%s:\n", type_.c_str());
+
+  for(const auto &t : inputs_) {
+    printf("\t Input: %s: %s\n",
+           t.first.c_str(), t.second->info().c_str());
+  }
+
+  for(const auto &t : outputs_) {
+    printf("\tOutput: %s: %s\n",
+           t.first.c_str(), t.second->info().c_str());
+  }
+}
+
 
 }
