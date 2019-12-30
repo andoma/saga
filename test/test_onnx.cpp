@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <libgen.h>
 
 #include "saga.h"
 
@@ -10,15 +11,14 @@ using namespace saga;
 
 
 static int
-test_one(const char *base_path, const char *model_name, int num_tests,
-         std::shared_ptr<Context> ctx)
+test_one(const char *model_path, std::shared_ptr<Context> ctx)
 {
+  char dirtmp[PATH_MAX];
+  snprintf(dirtmp, sizeof(dirtmp), "%s", model_path);
+
+  char *base_path = dirname(dirtmp);
   char input_path[PATH_MAX];
   char output_path[PATH_MAX];
-  char model_path[PATH_MAX];
-
-
-  snprintf(model_path, sizeof(model_path), "%s/%s", base_path, model_name);
 
   auto g = Graph::load(model_path);
   if(g == NULL) {
@@ -35,9 +35,12 @@ test_one(const char *base_path, const char *model_name, int num_tests,
   printf("  INPUT: %s\n", input->info().c_str());
   printf("  OUTPUT: %s\n", output->info().c_str());
 
-  for(int i = 0; i < num_tests; i++) {
+  for(int i = 0; ; i++) {
     snprintf(input_path, sizeof(input_path), "%s/test_data_set_%d/input_0.pb",
              base_path, i);
+
+    if(access(input_path, R_OK))
+      break;
 
     auto loaded_input = Tensor::load(input_path);
     if(!loaded_input) {
@@ -81,20 +84,20 @@ test_onnx_main(int argc, char **argv)
 {
   auto ctx = createContext();
 
-  if(argc == 3) {
-    return test_one(argv[0], argv[1], atoi(argv[2]), ctx);
+  if(argc == 1) {
+    return test_one(argv[0], ctx);
   }
 
   if(argc != 0) {
-    fprintf(stderr, "Usage: onnx <basepath> <modelname> <num_test_datas>\n");
+    fprintf(stderr, "Usage: onnx <modelpath>\n");
     exit(1);
   }
 
-  if(test_one("models/squeezenet1.1", "squeezenet1.1.onnx", 3, ctx)) {
+  if(test_one("models/squeezenet1.1/squeezenet1.1.onnx", ctx)) {
     exit(1);
   }
 
-  if(test_one("models/resnet50", "model.onnx", 9, ctx)) {
+  if(test_one("models/resnet50/model.onnx", ctx)) {
     exit(1);
   }
 
