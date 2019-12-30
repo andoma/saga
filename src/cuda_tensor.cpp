@@ -135,19 +135,19 @@ cudnnDataType_from_dataType(Tensor::DataType data_type)
 }
 
 
-CudaTensor::CudaTensor(const std::string &name, DataType data_type, Dims dims,
+CudaTensor::CudaTensor(const std::string &name, DataType data_type, const Dims &size,
                        cudnnTensorFormat_t format)
-  : Tensor(name, data_type, dims)
+  : Tensor(name, data_type, size)
   , type_(cudnnDataType_from_dataType(data_type))
   , offset_(0)
 {
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  assert(dims.size() >= 0 && dims.size() <= 4);
+  assert(size.size() >= 0 && size.size() <= 4);
   chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, type_,
-                                      dims[0],
-                                      dims.size() > 1 ? dims[1] : 1,
-                                      dims.size() > 2 ? dims[2] : 1,
-                                      dims.size() > 3 ? dims[3] : 1));
+                                      size[0],
+                                      size.size() > 1 ? size[1] : 1,
+                                      size.size() > 2 ? size[2] : 1,
+                                      size.size() > 3 ? size[3] : 1));
 
   size_t bytes;
   chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes));
@@ -158,26 +158,26 @@ CudaTensor::CudaTensor(const std::string &name, DataType data_type, Dims dims,
 
 CudaTensor::CudaTensor(const std::string &name,
                        std::shared_ptr<CudaTensorStorage> storage,
-                       Dims dims, cudnnTensorFormat_t format)
-  : Tensor(name, storage->data_type_, dims)
+                       const Dims &size, cudnnTensorFormat_t format)
+  : Tensor(name, storage->data_type_, size)
   , type_(cudnnDataType_from_dataType(storage->data_type_))
   , offset_(0)
 {
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  assert(dims.size() >= 0 && dims.size() <= 4);
+  assert(size.size() >= 0 && size.size() <= 4);
   chkCUDNN(cudnnSetTensor4dDescriptor(desc_, format, type_,
-                                      dims[0],
-                                      dims.size() > 1 ? dims[1] : 1,
-                                      dims.size() > 2 ? dims[2] : 1,
-                                      dims.size() > 3 ? dims[3] : 1));
+                                      size[0],
+                                      size.size() > 1 ? size[1] : 1,
+                                      size.size() > 2 ? size[2] : 1,
+                                      size.size() > 3 ? size[3] : 1));
   storage_ = storage;
 }
 
 
 CudaTensor::CudaTensor(const std::string &name,
                        std::shared_ptr<CudaTensor> alias,
-                       Dims dims, std::vector<int64_t> offset_element)
-  : Tensor(name, alias->storage_->data_type_, dims)
+                       const Dims &size, std::vector<int64_t> offset_element)
+  : Tensor(name, alias->storage_->data_type_, size)
   , type_(cudnnDataType_from_dataType(alias->storage_->data_type_))
   , offset_(alias->offset_)
   , storage_(alias->storage_)
@@ -192,19 +192,39 @@ CudaTensor::CudaTensor(const std::string &name,
                                       &rank, dimsA, stridesA));
 
   assert(data_type == type_);
-  assert((size_t)rank == dims.size());
+  assert((size_t)rank == size.size());
 
   for(int i = 0; i < rank; i++) {
-    dimsA[i] = dims[i];
+    dimsA[i] = size[i];
   }
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank,
-                                      dimsA, stridesA));
+  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank, dimsA, stridesA));
 
   for(int i = 0; i < rank && i < (ssize_t)offset_element.size(); i++) {
     offset_ += offset_element[i] * stridesA[i];
   }
 }
+
+CudaTensor::CudaTensor(const std::string &name,
+                       std::shared_ptr<CudaTensorStorage> storage,
+                       const Dims &size,
+                       int64_t offset,
+                       const int *strides)
+  : Tensor(name, storage->data_type_, size)
+  , type_(cudnnDataType_from_dataType(storage->data_type_))
+  , offset_(offset)
+  , storage_(storage)
+{
+  const size_t rank = size.size();
+  int dimsA[rank];
+  for(size_t i = 0; i < rank; i++)
+    dimsA[i] = size[i];
+
+  chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
+  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank,
+                                      dimsA, strides));
+}
+
 
 CudaTensor::~CudaTensor()
 {
@@ -216,6 +236,31 @@ CudaTensor::access()
 {
   return std::make_unique<CudaTensorAccess>(storage_, desc_, offset_);
 }
+
+std::shared_ptr<Tensor>
+CudaTensor::slice(const Dims &offset, const Dims &size)
+{
+  const int max_rank = 8;
+  int dimsA[max_rank];
+  int stridesA[max_rank];
+  int rank;
+  cudnnDataType_t data_type;
+
+  chkCUDNN(cudnnGetTensorNdDescriptor(desc_, max_rank, &data_type,
+                                      &rank, dimsA, stridesA));
+
+  int64_t o = offset_;
+
+  for(int i = 0; i < rank && i < (ssize_t)offset.size(); i++) {
+    o += offset[i] * stridesA[i];
+  }
+
+  return std::make_shared<CudaTensor>(name_ + ".slice", storage_, size, o,
+                                      stridesA);
+}
+
+
+
 
 
 void *

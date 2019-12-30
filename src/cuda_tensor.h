@@ -37,16 +37,22 @@ class CudaTensorStorage;
 class CudaTensor : public Tensor {
 
 public:
-  CudaTensor(const std::string &name, DataType data_type, Dims dims,
+  CudaTensor(const std::string &name, DataType data_type, const Dims &size,
              cudnnTensorFormat_t format);
 
   CudaTensor(const std::string &name,
              std::shared_ptr<CudaTensorStorage> storage,
-             Dims dims, cudnnTensorFormat_t format);
+             const Dims &size, cudnnTensorFormat_t format);
 
 
   CudaTensor(const std::string &name, std::shared_ptr<CudaTensor> alias,
-             Dims dims, std::vector<int64_t> offset_element);
+             const Dims &size, std::vector<int64_t> offset_element);
+
+  CudaTensor(const std::string &name,
+             std::shared_ptr<CudaTensorStorage> storage,
+             const Dims &size,
+             int64_t offset,
+             const int *strides);
 
 
   ~CudaTensor();
@@ -60,6 +66,8 @@ public:
   void *deviceMem() const;
 
   virtual std::string info() const;
+
+  std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size);
 
   const cudnnDataType_t type_;
   int64_t offset_;

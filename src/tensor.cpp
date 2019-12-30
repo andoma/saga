@@ -855,10 +855,10 @@ Tensor::sse(Tensor &t)
 class CPUTensorStorage : public TensorStorageAccess {
 
 public:
-  CPUTensorStorage(Tensor::DataType data_type, const Dims &dims, const Dims &strides)
+  CPUTensorStorage(Tensor::DataType data_type, const Dims &size, const Dims &strides)
     : TensorStorageAccess(data_type)
   {
-    data_ = calloc(1, dims[0] * strides[0] * Tensor::DataTypeSize(data_type));
+    data_ = calloc(1, size[0] * strides[0] * Tensor::DataTypeSize(data_type));
   }
 
   ~CPUTensorStorage()
@@ -874,19 +874,24 @@ public:
 class CPUTensorAccess : public TensorAccess {
 
 public:
-  CPUTensorAccess(const Dims &strides, std::shared_ptr<CPUTensorStorage> storage)
+  CPUTensorAccess(const Dims &strides, std::shared_ptr<CPUTensorStorage> storage,
+                  int64_t offset)
     : strides_(strides)
     , storage_(storage)
+    , offset_(offset)
   {}
 
   ~CPUTensorAccess() {}
 
   Dims strides() { return strides_; }
 
-  void *data() { return storage_->data_; }
+  void *data() {
+    assert(offset_ == 0);
+    return storage_->data_;
+  }
 
   size_t offsetForElement(const std::vector<int64_t> &element) const {
-    size_t offset = 0;
+    size_t offset = offset_;
     for(size_t i = 0; i < element.size() && i < strides_.size(); i++) {
       offset += element[i] * strides_[i];
     }
@@ -903,6 +908,7 @@ public:
 
   const Dims strides_;
   const std::shared_ptr<CPUTensorStorage> storage_;
+  int64_t offset_;
 };
 
 
@@ -927,22 +933,48 @@ computeCPUStrides(const Dims &dims)
 
 class CPUTensor : public Tensor {
 public:
-  CPUTensor(const std::string &name, DataType data_type, Dims dims)
-    : Tensor(name, data_type, dims)
-    , strides_(computeCPUStrides(dims))
-    , storage_(std::make_shared<CPUTensorStorage>(data_type, dims, strides_))
+  CPUTensor(const std::string &name, DataType data_type, const Dims &size)
+    : Tensor(name, data_type, size)
+    , strides_(computeCPUStrides(size))
+    , storage_(std::make_shared<CPUTensorStorage>(data_type, size, strides_))
+    , offset_(0)
+  {}
+
+  CPUTensor(const std::string &name, const Dims &size,
+            const Dims &strides, std::shared_ptr<CPUTensorStorage> storage,
+            int64_t offset)
+    : Tensor(name, storage->data_type_, size)
+    , strides_(strides)
+    , storage_(storage)
+    , offset_(offset)
   {}
 
   std::unique_ptr<TensorAccess> access() {
-    return std::make_unique<CPUTensorAccess>(strides_, storage_);
+    return std::make_unique<CPUTensorAccess>(strides_, storage_, offset_);
   }
+
+  std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size);
 
   virtual std::string info() const;
 
   const Dims strides_;
   const std::shared_ptr<CPUTensorStorage> storage_;
+  const int64_t offset_;
 };
 
+
+std::shared_ptr<Tensor>
+CPUTensor::slice(const Dims &offset, const Dims &size)
+{
+  int64_t o = offset_;
+
+  for(size_t i = 0; i < strides_.size() && i < offset.size(); i++) {
+    o += offset[i] * strides_[i];
+  }
+
+  return std::make_shared<CPUTensor>(name_ + ".slice", size, strides_,
+                                     storage_, o);
+}
 
 std::string
 CPUTensor::info() const
@@ -962,9 +994,9 @@ CPUTensor::info() const
 
 
 std::shared_ptr<Tensor>
-makeCPUTensor(const std::string &name, Tensor::DataType data_type, Dims dims)
+makeCPUTensor(const std::string &name, Tensor::DataType data_type, const Dims &size)
 {
-  return std::make_shared<CPUTensor>(name, data_type, dims);
+  return std::make_shared<CPUTensor>(name, data_type, size);
 }
 
 

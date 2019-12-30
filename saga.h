@@ -102,7 +102,7 @@ public:
   static size_t DataTypeSize(DataType dt);
 
 
-  Tensor(const std::string &name, DataType data_type, const Dims &dims);
+  Tensor(const std::string &name, DataType data_type, const Dims &size);
 
   virtual ~Tensor() {};
 
@@ -111,10 +111,15 @@ public:
   // Make this const?
   virtual std::unique_ptr<TensorAccess> access() { return nullptr; }
 
+  virtual std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size) {
+    return nullptr;
+  }
+
   void copyFrom(Tensor &t);
   double sse(Tensor &t);
 
   static std::shared_ptr<Tensor> load(const char *path);
+
 
   // Info / Debug / etc
   void print(const char *prefix, int elements_per_rank = 0);
@@ -133,7 +138,7 @@ public:
 
 std::shared_ptr<Tensor> makeCPUTensor(const std::string &name,
                                       Tensor::DataType data_type,
-                                      Dims dims);
+                                      const Dims &size);
 
 class Tensors : public std::unordered_map<std::string,
                                           std::shared_ptr<Tensor>> {
