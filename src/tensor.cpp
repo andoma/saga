@@ -766,6 +766,44 @@ Tensor::print(const char *prefix, int elements_per_rank)
 }
 
 
+
+void
+Tensor::printRGB(const char *prefix)
+{
+  printf("%s: %s\n", prefix, info().c_str());
+
+  auto ta = access();
+  if(ta == nullptr) {
+    printf("%s: Abstract (no data)\n", prefix);
+    return;
+  }
+
+  if(dims_.size() < 3) {
+    // We format 1d tensor vertically instead of a long horizontal line
+    printf("%s: Too few dimensions\n", prefix);
+    return;
+  }
+
+  size_t dim_offset = dims_.size() - 3;
+
+  if(dims_[dim_offset] < 3) {
+    printf("%s: C-axis too narrow\n", prefix);
+    return;
+  }
+
+  for(int y = 0; y < dims_[dim_offset + 1]; y++) {
+    printf("%s: ", prefix);
+    for(int x = 0; x < dims_[dim_offset + 2]; x++) {
+      const int r = ta->get({0,0,y,x});
+      const int g = ta->get({0,1,y,x});
+      const int b = ta->get({0,2,y,x});
+      printf("\033[48;2;%d;%d;%dm ", r, g, b);
+    }
+    printf("\033[0m\n");
+  }
+}
+
+
 void
 Tensor::copyFrom(Tensor &t)
 {
