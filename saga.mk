@@ -7,7 +7,7 @@ SAGA_SRCS += \
 	src/onnx.proto3.pb.cpp \
 
 SAGA_SRCS += \
-	src/cudnn.cpp \
+	src/cuda_dnn.cpp \
 	src/cuda_tensor.cpp \
 
 
