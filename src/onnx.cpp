@@ -141,8 +141,24 @@ NodeProto_print(const onnx::NodeProto &np)
   for(int j = 0; j < np.attribute_size(); j++) {
     const auto &a = np.attribute(j);
     assert(a.ref_attr_name()[0] == 0);
-    printf("    Attribute %d: [Type:%s] %s\n", j,
+    printf("    Attribute %d: [Type:%s] %s = ", j,
            AttributeType_str(a.type()), a.name().c_str());
+    switch(a.type()) {
+    case onnx::AttributeProto_AttributeType_INT:
+      printf("%d\n", (int)a.i());
+      break;
+    case onnx::AttributeProto_AttributeType_FLOAT:
+      printf("%f\n", a.f());
+      break;
+    case onnx::AttributeProto_AttributeType_INTS:
+      for(const auto &i : a.ints()) {
+        printf("%d ", (int)i);
+      }
+      printf("\n");
+      break;
+    default:
+      printf("?\n");
+    }
   }
 }
 
