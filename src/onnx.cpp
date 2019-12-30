@@ -481,6 +481,18 @@ make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
 }
 
 static shared_ptr<Node>
+make_add(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() == 2);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>("add");
+  n->inputs_["x"] = find_tensor(g, np.input(0));
+  n->inputs_["b"] = find_tensor(g, np.input(1));
+  make_tensor_y(g, *n, np.output(0));
+  return n;
+}
+
+static shared_ptr<Node>
 make_sum(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() >= 1);
@@ -530,10 +542,24 @@ make_gemm(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() == 3);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>("fc");
+  auto n = std::make_shared<Node>("gemm");
   n->inputs_["x"] = find_tensor(g, np.input(0));
   n->inputs_["w"] = find_tensor(g, np.input(1));
   n->inputs_["b"] = find_tensor(g, np.input(2));
+  // Confusing but transB maps to second tensor which is Weight for us
+  n->attributes_["transW"] = attribs.get("transB", 0);
+  make_tensor_y(g, *n, np.output(0));
+  return n;
+}
+
+static shared_ptr<Node>
+make_matmul(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() == 2);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>("gemm");
+  n->inputs_["x"] = find_tensor(g, np.input(0));
+  n->inputs_["w"] = find_tensor(g, np.input(1));
   make_tensor_y(g, *n, np.output(0));
   return n;
 }
@@ -588,7 +614,6 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
 
   for(const auto &np : gp.node()) {
 
-    //    NodeProto_print(np);
     assert(np.output_size() == 1);
 
     Attributes attribs;
@@ -621,6 +646,10 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
       n = make_pooling(g, np, attribs, "maxpool");
     } else if(node_type == "AveragePool") {
       n = make_pooling(g, np, attribs, "avgpool");
+    } else if(node_type == "Add") {
+      n = make_add(g, np, attribs);
+    } else if(node_type == "MatMul") {
+      n = make_matmul(g, np, attribs);
     } else if(node_type == "Sum") {
       n = make_sum(g, np, attribs);
     } else if(node_type == "Concat") {
@@ -635,29 +664,12 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
       n = make_dropout(g, np, attribs);
     } else {
       fprintf(stderr, "Can't handle node type %s\n", node_type.c_str());
+      NodeProto_print(np);
       abort();
       return false;
     }
     g.nodes_.push_back(n);
-
-#if 0
-    for(const auto &i : n->inputs_) {
-      printf("%15s: %s\n", i.first.c_str(), i.second->info().c_str());
-    }
-    for(const auto &i : n->outputs_) {
-      printf("%15s: %s\n", i.first.c_str(), i.second->info().c_str());
-    }
-#endif
   }
-#if 0
-  for(const auto &i : g.inputs_) {
-    printf("Input: %s\n", i->info().c_str());
-  }
-  for(const auto &i : g.outputs_) {
-    printf("Output: %s\n", i->info().c_str());
-  }
-#endif
-
   return true;
 }
 
