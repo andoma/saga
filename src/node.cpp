@@ -138,14 +138,15 @@ makeConcatOutputTensor(const std::string &name, const Node &n)
 }
 
 std::shared_ptr<Tensor>
-makeFCOutputTensor(const std::string &name, const Node &n)
+makeGemmOutputTensor(const std::string &name, const Node &n)
 {
   auto w = n.inputs_.get("w");
   if(w == nullptr)
     return nullptr;
+  const int transW = n.attributes_.get("transW", 0);
 
   return std::make_shared<Tensor>(name, w->data_type_,
-                                  Dims({1, w->dims_[0]}));
+                                  Dims({1, w->dims_[transW ? 0 : 1]}));
 }
 
 
@@ -166,14 +167,15 @@ Node::inferTensor_y(const std::string &name)
 
   if(type_ == "conv") {
     y = makeConvOutputTensor(name, *this);
-  } else if(type_ == "fc") {
-    y = makeFCOutputTensor(name, *this);
+  } else if(type_ == "gemm") {
+    y = makeGemmOutputTensor(name, *this);
   } else if(type_ == "maxpool" ||
             type_ == "avgpool") {
     y = makePoolingOutputTensor(name, *this);
   } else if(type_ == "reshape") {
     y = makeReshapeOutputTensor(name, *this);
-  } else if(type_ == "batchnorm" ||
+  } else if(type_ == "add" ||
+            type_ == "batchnorm" ||
             type_ == "softmax" ||
             type_ == "relu" ||
             type_ == "dropout") {

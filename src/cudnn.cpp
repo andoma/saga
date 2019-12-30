@@ -33,6 +33,8 @@
 
 
 
+#define TENSOR_FORMAT CUDNN_TENSOR_NHWC
+
 namespace saga {
 
 class CudnnContext : public Context,
@@ -156,7 +158,7 @@ public:
 
 static std::shared_ptr<CudaTensor>
 lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
-             size_t leading_dimensions = 0)
+             size_t dimensions = 0)
 {
   if(src == nullptr)
     return nullptr;
@@ -166,11 +168,15 @@ lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
     return it->second;
   }
 
-  std::vector<int64_t> dims(leading_dimensions, 1);
-  dims.insert(dims.end(),  src->dims_.begin(),  src->dims_.end());
+  std::vector<int64_t> dims = src->dims_;
+
+  if(dimensions) {
+    while(dims.size() < dimensions)
+      dims.insert(dims.begin(), 1);
+  }
 
   auto t = std::make_shared<CudaTensor>(src->name_, src->data_type_,
-                                        dims, CUDNN_TENSOR_NHWC);
+                                        dims, TENSOR_FORMAT);
 
   t->copyFrom(*src);
   p.tensors_[src] = t;
@@ -200,7 +206,7 @@ struct CudnnConvolutionFwd : public CudnnOperation {
     : ctx_(p.ctx_)
     , x_(lower_tensor(p, n.inputs_.get("x")))
     , w_(lower_tensor(p, n.inputs_.get("w")))
-    , b_(lower_tensor(p, n.inputs_.get("b"), 1))
+    , b_(lower_tensor(p, n.inputs_.get("b"), 2))
     , y_(lower_tensor(p, n.outputs_.get("y")))
   {
     chkCUDNN(cudnnCreateFilterDescriptor(&filter_desc_));
@@ -209,7 +215,7 @@ struct CudnnConvolutionFwd : public CudnnOperation {
 
     chkCUDNN(cudnnSetFilter4dDescriptor(filter_desc_,
                                         x_->type_,
-                                        CUDNN_TENSOR_NHWC,
+                                        TENSOR_FORMAT,
                                         w_->dims_[0],
                                         w_->dims_[1],
                                         w_->dims_[2],
@@ -281,6 +287,47 @@ struct CudnnConvolutionFwd : public CudnnOperation {
 };
 
 
+
+//------------------------------------------------------------------------
+
+struct CudnnAddFwd : public CudnnOperation {
+
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> x_, b_, y_;
+
+  CudnnAddFwd(CudnnProgram &p, const Node &n)
+    : ctx_(p.ctx_)
+    , x_(lower_tensor(p, n.inputs_.get("x")))
+    , b_(lower_tensor(p, n.inputs_.get("b"), x_ ? x_->dims_.size() : 0))
+    , y_(lower_tensor(p, n.outputs_.get("y")))
+  {
+  }
+
+  void exec(CudnnProgram &p) {
+    float alpha = 1.0f, beta = 0.0f;
+#if 0
+    printf("x: %s\n", x_->info().c_str());
+    printf("b: %s\n", b_->info().c_str());
+    printf("y: %s\n", y_->info().c_str());
+#endif
+    // Use cudnnOpTensor
+    chkCUDNN(cudnnTransformTensor(ctx_->cudnn_,
+                                  &alpha,
+                                  x_->desc(),
+                                  x_->deviceMem(),
+                                  &beta,
+                                  y_->desc(),
+                                  y_->deviceMem()));
+
+    chkCUDNN(cudnnAddTensor(ctx_->cudnn_,
+                            &alpha, b_->desc(), b_->deviceMem(),
+                            &alpha, y_->desc(), y_->deviceMem()));
+  }
+
+};
+
+
+
 //------------------------------------------------------------------------
 
 struct CudnnBatchNormFwd : public CudnnOperation {
@@ -292,10 +339,10 @@ struct CudnnBatchNormFwd : public CudnnOperation {
   CudnnBatchNormFwd(CudnnProgram &p, const Node &n)
     : ctx_(p.ctx_)
     , x_(lower_tensor(p, n.inputs_.get("x")))
-    , s_(lower_tensor(p, n.inputs_.get("s"), 1))
-    , b_(lower_tensor(p, n.inputs_.get("b"), 1))
-    , m_(lower_tensor(p, n.inputs_.get("m"), 1))
-    , v_(lower_tensor(p, n.inputs_.get("v"), 1))
+    , s_(lower_tensor(p, n.inputs_.get("s"), 2))
+    , b_(lower_tensor(p, n.inputs_.get("b"), 2))
+    , m_(lower_tensor(p, n.inputs_.get("m"), 2))
+    , v_(lower_tensor(p, n.inputs_.get("v"), 2))
     , y_(lower_tensor(p, n.outputs_.get("y")))
     , epsilon_(n.attributes_.get("epsilon", 1e-5f))
   {
@@ -445,24 +492,26 @@ struct CudnnSumFwd : public CudnnOperation {
 
 //------------------------------------------------------------------------
 
-struct CudnnFcFwd : public CudnnOperation {
+struct CudnnGemmFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, w_, b_, y_;
   const int n_;
   const int num_inputs_;
   const int num_outputs_;
+  const int transW_;
   cudnnOpTensorDescriptor_t desc_;
 
-  CudnnFcFwd(CudnnProgram &p, const Node &n)
+  CudnnGemmFwd(CudnnProgram &p, const Node &n)
     : ctx_(p.ctx_)
     , x_(lower_tensor(p, n.inputs_.get("x")))
     , w_(lower_tensor(p, n.inputs_.get("w")))
-    , b_(lower_tensor(p, n.inputs_.get("b"), 1))
+    , b_(lower_tensor(p, n.inputs_.get("b"), 2))
     , y_(lower_tensor(p, n.outputs_.get("y")))
     , n_(x_->dims_[0])
     , num_inputs_(x_->dims_[1])
     , num_outputs_(y_->dims_[1])
+    , transW_(n.attributes_.get("transW", 0))
   {
   }
 
@@ -470,10 +519,11 @@ struct CudnnFcFwd : public CudnnOperation {
 
     float alpha = 1.0f, beta = 0.0f;
     __half halpha = 1.0f, hbeta = 0.0f;
-
+    cublasOperation_t transA = CUBLAS_OP_T;
+    cublasOperation_t transB = CUBLAS_OP_N;
     switch(x_->type_) {
     case CUDNN_DATA_FLOAT:
-      chkCuda(cublasSgemm(ctx_->cublas_, CUBLAS_OP_T, CUBLAS_OP_N,
+      chkCuda(cublasSgemm(ctx_->cublas_, transA, transB,
                           num_outputs_, n_, num_inputs_,
                           &alpha,
                           (const float *)w_->deviceMem(), num_inputs_,
@@ -482,7 +532,7 @@ struct CudnnFcFwd : public CudnnOperation {
                           (float *)y_->deviceMem(), num_outputs_));
       break;
     case CUDNN_DATA_HALF:
-      chkCuda(cublasHgemm(ctx_->cublas_, CUBLAS_OP_T, CUBLAS_OP_N,
+      chkCuda(cublasHgemm(ctx_->cublas_, transA, transB,
                           num_outputs_, n_, num_inputs_,
                           &halpha,
                           (const __half *)w_->deviceMem(), num_inputs_,
@@ -493,10 +543,11 @@ struct CudnnFcFwd : public CudnnOperation {
     default:
       abort();
     }
-
-    chkCUDNN(cudnnAddTensor(ctx_->cudnn_,
-                            &alpha, b_->desc(), b_->deviceMem(),
-                            &alpha, y_->desc(), y_->deviceMem()));
+    if(b_) {
+      chkCUDNN(cudnnAddTensor(ctx_->cudnn_,
+                              &alpha, b_->desc(), b_->deviceMem(),
+                              &alpha, y_->desc(), y_->deviceMem()));
+    }
   }
 };
 
@@ -628,10 +679,12 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
 
   if(n.type_ == "conv") {
     o = std::make_shared<CudnnConvolutionFwd>(p, n);
+  } else if(n.type_ == "add") {
+    o = std::make_shared<CudnnAddFwd>(p, n);
   } else if(n.type_ == "batchnorm") {
     o = std::make_shared<CudnnBatchNormFwd>(p, n);
-  } else if(n.type_ == "fc") {
-    o = std::make_shared<CudnnFcFwd>(p, n);
+  } else if(n.type_ == "gemm") {
+    o = std::make_shared<CudnnGemmFwd>(p, n);
   } else if(n.type_ == "relu") {
     o = std::make_shared<CudnnReluFwd>(p, n);
   } else if(n.type_ == "maxpool") {
@@ -663,7 +716,7 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
     const std::string name(y->name_ + ".alias." + x->name_);
 
     p.tensors_[y] = std::make_shared<CudaTensor>(name, x->storage_,
-                                                 y->dims_, CUDNN_TENSOR_NHWC);
+                                                 y->dims_, TENSOR_FORMAT);
 
   } else {
     printf("Cant emit forward operation for node type %s\n", n.type_.c_str());
