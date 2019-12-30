@@ -704,16 +704,16 @@ struct CudnnPrintStatsTensor : public CudnnOperation {
 };
 
 
+//------------------------------------------------------------------------
 
+struct CudnnHalt : public CudnnOperation {
 
-struct CudnnStop : public CudnnOperation {
-
-  CudnnStop()
+  CudnnHalt()
   {
   }
 
   void exec(CudnnProgram &p) {
-    fprintf(stderr, "Stopped by CudnnStop\n");
+    fprintf(stderr, "Stopped by CudnnHalt\n");
     exit(1);
   }
 };
