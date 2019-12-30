@@ -28,4 +28,24 @@
 
 namespace saga {
 
+void
+Graph::print() const
+{
+  for(const auto &n : nodes_) {
+
+    printf("%s:\n", n->type_.c_str());
+
+    for(const auto &t : n->inputs_) {
+      printf("\t Input: %s: %s\n",
+             t.first.c_str(), t.second->info().c_str());
+    }
+
+    for(const auto &t : n->outputs_) {
+      printf("\tOutput: %s: %s\n",
+             t.first.c_str(), t.second->info().c_str());
+    }
+  }
+}
+
+
 }

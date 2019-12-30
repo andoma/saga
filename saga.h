@@ -183,6 +183,7 @@ public:
   Tensors tensors_;
 
   static std::shared_ptr<Graph> load(const char *path);
+  void print() const;
 };
 
 
