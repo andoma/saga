@@ -613,8 +613,60 @@ struct CudnnTransform : public CudnnOperation {
   }
 };
 
+//------------------------------------------------------------------------
+
+struct CudnnMathOp : public CudnnOperation {
+
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> a_, b_, c_;
+  cudnnOpTensorDescriptor_t desc_;
+
+  CudnnMathOp(CudnnProgram &p,
+              std::shared_ptr<CudaTensor> a,
+              std::shared_ptr<CudaTensor> b,
+              std::shared_ptr<CudaTensor> c,
+              cudnnOpTensorOp_t op)
+    : ctx_(p.ctx_)
+    , a_(a)
+    , b_(b)
+    , c_(c)
+  {
+    chkCUDNN(cudnnCreateOpTensorDescriptor(&desc_));
+    chkCUDNN(cudnnSetOpTensorDescriptor(desc_,
+                                        op, c->type_,
+                                        CUDNN_PROPAGATE_NAN));
+  }
+
+  ~CudnnMathOp()
+  {
+    chkCUDNN(cudnnDestroyOpTensorDescriptor(desc_));
+  }
+
+  void exec(CudnnProgram &p) {
+
+    float alpha = 1.0f, beta = 0.0f;
+#if 0
+    printf("a: %s\n", a_->info().c_str());
+    printf("b: %s\n", b_->info().c_str());
+    printf("c: %s\n", c_->info().c_str());
+#endif
+
+    chkCUDNN(cudnnOpTensor(ctx_->cudnn_,
+                           desc_,
+                           &alpha,
+                           a_->desc(),
+                           a_->deviceMem(),
+                           &alpha,
+                           b_->desc(),
+                           b_->deviceMem(),
+                           &beta,
+                           c_->desc(),
+                           c_->deviceMem()));
+  }
+};
 
 
+//------------------------------------------------------------------------
 
 struct CudnnPrintTensor : public CudnnOperation {
 
@@ -632,6 +684,7 @@ struct CudnnPrintTensor : public CudnnOperation {
   }
 };
 
+//------------------------------------------------------------------------
 
 struct CudnnPrintStatsTensor : public CudnnOperation {
 
@@ -680,7 +733,17 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
   if(n.type_ == "conv") {
     o = std::make_shared<CudnnConvolutionFwd>(p, n);
   } else if(n.type_ == "add") {
-    o = std::make_shared<CudnnAddFwd>(p, n);
+    o = std::make_shared<CudnnMathOp>(p,
+                                      lower_tensor(p, n.outputs_.get("x")),
+                                      lower_tensor(p, n.outputs_.get("b")),
+                                      lower_tensor(p, n.outputs_.get("y")),
+                                      CUDNN_OP_TENSOR_ADD);
+  } else if(n.type_ == "mul") {
+    o = std::make_shared<CudnnMathOp>(p,
+                                      lower_tensor(p, n.outputs_.get("x")),
+                                      lower_tensor(p, n.outputs_.get("s")),
+                                      lower_tensor(p, n.outputs_.get("y")),
+                                      CUDNN_OP_TENSOR_MUL);
   } else if(n.type_ == "batchnorm") {
     o = std::make_shared<CudnnBatchNormFwd>(p, n);
   } else if(n.type_ == "gemm") {

@@ -175,6 +175,7 @@ Node::inferTensor_y(const std::string &name)
   } else if(type_ == "reshape") {
     y = makeReshapeOutputTensor(name, *this);
   } else if(type_ == "add" ||
+            type_ == "mul" ||
             type_ == "batchnorm" ||
             type_ == "softmax" ||
             type_ == "relu" ||

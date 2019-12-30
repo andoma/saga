@@ -481,11 +481,12 @@ make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
 }
 
 static shared_ptr<Node>
-make_add(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
+make_mathop(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
+            const std::string &type)
 {
   assert(np.input_size() == 2);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>("add");
+  auto n = std::make_shared<Node>(type);
   n->inputs_["x"] = find_tensor(g, np.input(0));
   n->inputs_["b"] = find_tensor(g, np.input(1));
   make_tensor_y(g, *n, np.output(0));
@@ -647,7 +648,9 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
     } else if(node_type == "AveragePool") {
       n = make_pooling(g, np, attribs, "avgpool");
     } else if(node_type == "Add") {
-      n = make_add(g, np, attribs);
+      n = make_mathop(g, np, attribs, "add");
+    } else if(node_type == "Mul") {
+      n = make_mathop(g, np, attribs, "mul");
     } else if(node_type == "MatMul") {
       n = make_matmul(g, np, attribs);
     } else if(node_type == "Sum") {
