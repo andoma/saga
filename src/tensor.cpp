@@ -614,7 +614,8 @@ elements_from_dims(const Dims &dims)
 
 
 
-Tensor::Tensor(const std::string &name, DataType data_type, const Dims &dims)
+Tensor::Tensor(DataType data_type, const Dims &dims,
+               const std::optional<const std::string> &name)
   : name_(name)
   , data_type_(data_type)
   , dims_(dims)
@@ -627,7 +628,9 @@ std::string
 Tensor::info() const
 {
   std::stringstream ss;
-  ss << "\"" << name_ << "\"";
+  if(name_) {
+    ss << "\"" << *name_ << "\"";
+  }
   ss << "<" << datatype_str(data_type_) << ">";
   const char *prefix = "[";
   for(const auto &x : dims_) {
@@ -971,17 +974,18 @@ computeCPUStrides(const Dims &dims)
 
 class CPUTensor : public Tensor {
 public:
-  CPUTensor(const std::string &name, DataType data_type, const Dims &size)
-    : Tensor(name, data_type, size)
+  CPUTensor(DataType data_type, const Dims &size,
+            const std::optional<std::string> &name)
+    : Tensor(data_type, size, name)
     , strides_(computeCPUStrides(size))
     , storage_(std::make_shared<CPUTensorStorage>(data_type, size, strides_))
     , offset_(0)
   {}
 
-  CPUTensor(const std::string &name, const Dims &size,
-            const Dims &strides, std::shared_ptr<CPUTensorStorage> storage,
-            int64_t offset)
-    : Tensor(name, storage->data_type_, size)
+  CPUTensor(const Dims &size, const Dims &strides,
+            std::shared_ptr<CPUTensorStorage> storage, int64_t offset,
+            const std::optional<std::string> &name)
+    : Tensor(storage->data_type_, size, name)
     , strides_(strides)
     , storage_(storage)
     , offset_(offset)
@@ -1010,8 +1014,16 @@ CPUTensor::slice(const Dims &offset, const Dims &size)
     o += offset[i] * strides_[i];
   }
 
-  return std::make_shared<CPUTensor>(name_ + ".slice", size, strides_,
-                                     storage_, o);
+  return std::make_shared<CPUTensor>(size, strides_,
+                                     storage_, o,
+                                     namePostfix("slice"));
+}
+
+
+std::optional<const std::string>
+Tensor::namePostfix(const std::string &postfix)
+{
+  return name_ ? std::make_optional(*name_ + "." + postfix) : std::nullopt;
 }
 
 std::string
@@ -1032,9 +1044,10 @@ CPUTensor::info() const
 
 
 std::shared_ptr<Tensor>
-makeCPUTensor(const std::string &name, Tensor::DataType data_type, const Dims &size)
+makeCPUTensor(Tensor::DataType data_type, const Dims &size,
+              const std::optional<const std::string> &name)
 {
-  return std::make_shared<CPUTensor>(name, data_type, size);
+  return std::make_shared<CPUTensor>(data_type, size, name);
 }
 
 

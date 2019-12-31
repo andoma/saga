@@ -106,7 +106,8 @@ public:
 
   static size_t DataTypeSize(DataType dt);
 
-  Tensor(const std::string &name, DataType data_type, const Dims &size);
+  Tensor(DataType data_type, const Dims &size,
+         const std::optional<const std::string> &name = std::nullopt);
 
   virtual ~Tensor() {};
 
@@ -132,8 +133,9 @@ public:
   void printStats(const char *prefix);
   std::string statsString(void);
 
+  std::optional<const std::string> namePostfix(const std::string &postfix);
 
-  const std::string name_;
+  const std::optional<const std::string> name_;
   const DataType data_type_;
   const Dims dims_;
   const int64_t elements_;
@@ -141,9 +143,9 @@ public:
 };
 
 
-std::shared_ptr<Tensor> makeCPUTensor(const std::string &name,
-                                      Tensor::DataType data_type,
-                                      const Dims &size);
+std::shared_ptr<Tensor> makeCPUTensor(Tensor::DataType data_type,
+                                      const Dims &size,
+                                      const std::optional<const std::string> &name = std::nullopt);
 
 class Tensors : public std::unordered_map<std::string,
                                           std::shared_ptr<Tensor>> {
@@ -190,13 +192,13 @@ public:
   Attributes attributes_;
   Tensors outputs_;
 
-  std::shared_ptr<Tensor> inferTensor_y(const std::string &name);
+  std::shared_ptr<Tensor> inferTensor_y(const std::optional<const std::string> &name);
   void print() const;
 
   static std::vector<std::shared_ptr<Node>> make(const std::string &type,
                                                  const Tensors &inputs,
                                                  const Attributes &attributes,
-                                                 const std::optional<std::string> &name = std::nullopt);
+                                                 const std::optional<const std::string> &name = std::nullopt);
 };
 
 

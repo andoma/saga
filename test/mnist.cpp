@@ -236,8 +236,8 @@ mnist_main(int argc, char **argv)
 
   Graph g;
 
-  auto input = std::make_shared<Tensor>("input", Tensor::DataType::U8,
-                                        Dims({1, 1, 28, 28}));
+  auto input = std::make_shared<Tensor>(Tensor::DataType::U8,
+                                        Dims({1, 1, 28, 28}), "input");
   std::shared_ptr<Tensor> t;
 
   t = g.add(Node::make("conv", {{"x", input}}, {{"size", 5}, {"activations", 64}}));
@@ -247,19 +247,19 @@ mnist_main(int argc, char **argv)
   t = g.add(Node::make("relu", {{"x", t}}, {}));
   t = g.add(Node::make("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}}));
 
-  auto shape = makeCPUTensor("shape", Tensor::DataType::INT64, Dims({2}));
+  auto shape = makeCPUTensor(Tensor::DataType::INT64, Dims({2}));
   auto a = shape->access();
   a->set({0}, 1);
   a->set({1}, 1024);
 
   t = g.add(Node::make("reshape", {{"x", t}, {"shape", shape}}, {}));
 
-  std::shared_ptr<Tensor> w = std::make_shared<Tensor>("w", Tensor::DataType::FLOAT,
+  std::shared_ptr<Tensor> w = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
                                                        Dims({1024, 1024}));
 
   t = g.add(Node::make("gemm", {{"x", t}, {"w", w}}, {{"transB", 1}}));
   t = g.add(Node::make("relu", {{"x", t}}, {}));
-  std::shared_ptr<Tensor> w2 = std::make_shared<Tensor>("w2", Tensor::DataType::FLOAT,
+  std::shared_ptr<Tensor> w2 = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
                                                         Dims({1024, 10}));
 
   t = g.add(Node::make("gemm", {{"x", t}, {"w", w2}}, {{"transB", 1}}));

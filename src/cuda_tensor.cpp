@@ -135,9 +135,10 @@ cudnnDataType_from_dataType(Tensor::DataType data_type)
 }
 
 
-CudaTensor::CudaTensor(const std::string &name, DataType data_type, const Dims &size,
-                       cudnnTensorFormat_t format)
-  : Tensor(name, data_type, size)
+CudaTensor::CudaTensor(DataType data_type, const Dims &size,
+                       cudnnTensorFormat_t format,
+                       const std::optional<const std::string> &name)
+  : Tensor(data_type, size, name)
   , type_(cudnnDataType_from_dataType(data_type))
   , offset_(0)
 {
@@ -156,10 +157,10 @@ CudaTensor::CudaTensor(const std::string &name, DataType data_type, const Dims &
 }
 
 
-CudaTensor::CudaTensor(const std::string &name,
-                       std::shared_ptr<CudaTensorStorage> storage,
-                       const Dims &size, cudnnTensorFormat_t format)
-  : Tensor(name, storage->data_type_, size)
+CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
+                       const Dims &size, cudnnTensorFormat_t format,
+                       const std::optional<const std::string> &name)
+  : Tensor(storage->data_type_, size, name)
   , type_(cudnnDataType_from_dataType(storage->data_type_))
   , offset_(0)
 {
@@ -174,10 +175,10 @@ CudaTensor::CudaTensor(const std::string &name,
 }
 
 
-CudaTensor::CudaTensor(const std::string &name,
-                       std::shared_ptr<CudaTensor> alias,
-                       const Dims &size, std::vector<int64_t> offset_element)
-  : Tensor(name, alias->storage_->data_type_, size)
+CudaTensor::CudaTensor(std::shared_ptr<CudaTensor> alias,
+                       const Dims &size, std::vector<int64_t> offset_element,
+                       const std::optional<const std::string> &name)
+  : Tensor(alias->storage_->data_type_, size, name)
   , type_(cudnnDataType_from_dataType(alias->storage_->data_type_))
   , offset_(alias->offset_)
   , storage_(alias->storage_)
@@ -205,12 +206,12 @@ CudaTensor::CudaTensor(const std::string &name,
   }
 }
 
-CudaTensor::CudaTensor(const std::string &name,
-                       std::shared_ptr<CudaTensorStorage> storage,
+CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
                        const Dims &size,
                        int64_t offset,
-                       const int *strides)
-  : Tensor(name, storage->data_type_, size)
+                       const int *strides,
+                       const std::optional<const std::string> &name)
+  : Tensor(storage->data_type_, size, name)
   , type_(cudnnDataType_from_dataType(storage->data_type_))
   , offset_(offset)
   , storage_(storage)
@@ -255,8 +256,8 @@ CudaTensor::slice(const Dims &offset, const Dims &size)
     o += offset[i] * stridesA[i];
   }
 
-  return std::make_shared<CudaTensor>(name_ + ".slice", storage_, size, o,
-                                      stridesA);
+  return std::make_shared<CudaTensor>(storage_, size, o, stridesA,
+                                      namePostfix("slice"));
 }
 
 
@@ -274,7 +275,9 @@ std::string
 CudaTensor::info() const
 {
   std::stringstream ss;
-  ss << "\"" << name_ << "\"";
+  if(name_) {
+    ss << "\"" << *name_ << "\"";
+  }
 
   const int max_rank = 8;
   int dims[max_rank];

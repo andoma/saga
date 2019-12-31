@@ -37,22 +37,24 @@ class CudaTensorStorage;
 class CudaTensor : public Tensor {
 
 public:
-  CudaTensor(const std::string &name, DataType data_type, const Dims &size,
-             cudnnTensorFormat_t format);
+  CudaTensor(DataType data_type, const Dims &size,
+             cudnnTensorFormat_t format,
+             const std::optional<const std::string> &name = std::nullopt);
 
-  CudaTensor(const std::string &name,
-             std::shared_ptr<CudaTensorStorage> storage,
-             const Dims &size, cudnnTensorFormat_t format);
+  CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
+             const Dims &size, cudnnTensorFormat_t format,
+             const std::optional<const std::string> &name = std::nullopt);
 
 
-  CudaTensor(const std::string &name, std::shared_ptr<CudaTensor> alias,
-             const Dims &size, std::vector<int64_t> offset_element);
+  CudaTensor(std::shared_ptr<CudaTensor> alias,
+             const Dims &size, std::vector<int64_t> offset_element,
+             const std::optional<const std::string> &name = std::nullopt);
 
-  CudaTensor(const std::string &name,
-             std::shared_ptr<CudaTensorStorage> storage,
+  CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
              const Dims &size,
              int64_t offset,
-             const int *strides);
+             const int *strides,
+             const std::optional<const std::string> &name = std::nullopt);
 
 
   ~CudaTensor();

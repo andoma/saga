@@ -33,7 +33,7 @@ namespace saga {
 //------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
-conv_y(const Node &n, const std::string &name)
+conv_y(const Node &n, const std::optional<const std::string> &name)
 {
   // Should make this more generic for n-dimensions
   const int stride = n.attributes_.get("stride", 1);
@@ -68,14 +68,14 @@ conv_y(const Node &n, const std::string &name)
   const int outputdim_h =
     1 + (inputdim_h + 2 * pad - (((filterdim_h - 1) * dilation) + 1))/stride;
 
-  return std::make_shared<Tensor>(name, x->data_type_,
+  return std::make_shared<Tensor>(x->data_type_,
                                   Dims({1, features,
-                                        outputdim_h, outputdim_w}));
+                                        outputdim_h, outputdim_w}), name);
 }
 
 
 static std::shared_ptr<Tensor>
-pooling_y(const Node &n, const std::string &name)
+pooling_y(const Node &n, const std::optional<const std::string> &name)
 {
   // Should make this more generic for n-dimensions
 
@@ -95,13 +95,13 @@ pooling_y(const Node &n, const std::string &name)
   const int outputdim_w =
     1 + (inputdim_w + 2 * pad - size) / stride;
 
-  return std::make_shared<Tensor>(name, x->data_type_,
+  return std::make_shared<Tensor>(x->data_type_,
                                   Dims({1, channels,
-                                        outputdim_h, outputdim_w}));
+                                        outputdim_h, outputdim_w}), name);
 }
 
 static std::shared_ptr<Tensor>
-reshape_y(const Node &n, const std::string &name)
+reshape_y(const Node &n, const std::optional<const std::string> &name)
 {
   auto x = n.inputs_.get("x");
   if(x == nullptr)
@@ -122,12 +122,12 @@ reshape_y(const Node &n, const std::string &name)
     dims.push_back(ta->get({i}));
   }
 
-  return std::make_shared<Tensor>(name, x->data_type_, dims);
+  return std::make_shared<Tensor>(x->data_type_, dims, name);
 }
 
 
 static std::shared_ptr<Tensor>
-concat_y(const Node &n, const std::string &name)
+concat_y(const Node &n, const std::optional<const std::string> &name)
 {
   int i = 0;
   int axis = 1;
@@ -145,39 +145,40 @@ concat_y(const Node &n, const std::string &name)
     }
     i++;
   }
-  return std::make_shared<Tensor>(name, data_type, dims);
+  return std::make_shared<Tensor>(data_type, dims, name);
 }
 
 
 static std::shared_ptr<Tensor>
-gemm_y(const Node &n, const std::string &name)
+gemm_y(const Node &n, const std::optional<const std::string> &name)
 {
   auto w = n.inputs_.get("w");
   if(w == nullptr)
    return nullptr;
   const int transW = n.attributes_.get("transW", 0);
 
-  return std::make_shared<Tensor>(name, w->data_type_,
-                                  Dims({1, w->dims_[transW ? 0 : 1]}));
+  return std::make_shared<Tensor>(w->data_type_,
+                                  Dims({1, w->dims_[transW ? 0 : 1]}),
+                                  name);
 }
 
 
 static std::shared_ptr<Tensor>
-passthru_y(const Node &n, const std::string &name)
+passthru_y(const Node &n, const std::optional<const std::string> &name)
 {
   auto o = n.inputs_.get("x");
   if(o == nullptr)
     return nullptr;
-  return std::make_shared<Tensor>(name, o->data_type_, o->dims_);
+  return std::make_shared<Tensor>(o->data_type_, o->dims_, name);
 }
 
 static std::shared_ptr<Tensor>
-sum_y(const Node &n, const std::string &name)
+sum_y(const Node &n, const std::optional<const std::string> &name)
 {
   auto o = n.inputs_.get("x0");
   if(o == nullptr)
     return nullptr;
-  return std::make_shared<Tensor>(name, o->data_type_, o->dims_);
+  return std::make_shared<Tensor>(o->data_type_, o->dims_, name);
 }
 
 
@@ -188,7 +189,7 @@ static const struct {
   const char *name;
 
   std::shared_ptr<Tensor>(*infer_y)(const Node &n,
-                                    const std::string &name);
+                                    const std::optional<const std::string> &name);
 
   std::vector<std::shared_ptr<Node>>(*setup)(std::shared_ptr<Node> node);
 
@@ -211,7 +212,7 @@ static const struct {
 
 
 std::shared_ptr<Tensor>
-Node::inferTensor_y(const std::string &name)
+Node::inferTensor_y(const std::optional<const std::string> &name)
 {
   for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
     if(type_ == nodetypes[i].name) {
@@ -246,12 +247,12 @@ Node::print() const
 std::vector<std::shared_ptr<Node>>
 Node::make(const std::string &type, const Tensors &inputs,
            const Attributes &attributes,
-           const std::optional<std::string> &yname)
+           const std::optional<const std::string> &yname)
 {
   auto n = std::make_shared<Node>(type);
   n->inputs_ = inputs;
   n->attributes_ = attributes;
-  n->outputs_["y"] = n->inferTensor_y(yname.value_or("y"));
+  n->outputs_["y"] = n->inferTensor_y(yname);
   return {n};
 }
 

@@ -287,7 +287,7 @@ make_tensor(const onnx::ValueInfoProto &vip)
     }
     dims.push_back(d);
   }
-  return make_shared<Tensor>(vip.name(), DataType_map(tp.tensor_type().elem_type()), dims);
+  return make_shared<Tensor>(DataType_map(tp.tensor_type().elem_type()), dims, vip.name());
 }
 
 
@@ -299,7 +299,7 @@ make_tensor(const onnx::TensorProto &tp)
     dims.push_back(dim);
   }
 
-  auto t = makeCPUTensor(tp.name(), DataType_map(tp.data_type()), dims);
+  auto t = makeCPUTensor(DataType_map(tp.data_type()), dims, tp.name());
 
   auto ta = t->access();
 

@@ -175,8 +175,9 @@ lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
       dims.insert(dims.begin(), 1);
   }
 
-  auto t = std::make_shared<CudaTensor>(src->name_, src->data_type_,
-                                        dims, TENSOR_FORMAT);
+  auto t = std::make_shared<CudaTensor>(src->data_type_,
+                                        dims, TENSOR_FORMAT,
+                                        src->name_);
 
   t->copyFrom(*src);
   p.tensors_[src] = t;
@@ -765,8 +766,8 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
     const int axis = 1;
     for(const auto &xh : n.inputs_.getv("x")) {
       auto x = lower_tensor(p, xh);
-      auto y2 = std::make_shared<CudaTensor>("concat.alias." + y->name_,
-                                             y, x->dims_, element_offset);
+      auto y2 = std::make_shared<CudaTensor>(y, x->dims_, element_offset,
+                                             y->namePostfix("concat.alias"));
       p.operations_.push_back(std::make_shared<CudnnTransform>(p, x, y2));
 
       element_offset[axis] += xh->dims_[axis];
@@ -776,10 +777,10 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
 
     auto x = lower_tensor(p, n.inputs_.get("x"));
     auto y = n.outputs_.get("y");
-    const std::string name(y->name_ + ".alias." + x->name_);
 
-    p.tensors_[y] = std::make_shared<CudaTensor>(name, x->storage_,
-                                                 y->dims_, TENSOR_FORMAT);
+    p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
+                                                 y->dims_, TENSOR_FORMAT,
+                                                 x->namePostfix("reshape"));
 
   } else {
     printf("Cant emit forward operation for node type %s\n", n.type_.c_str());
