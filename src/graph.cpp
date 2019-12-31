@@ -36,5 +36,14 @@ Graph::print() const
   }
 }
 
+std::shared_ptr<Tensor>
+Graph::add(const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
+  if(nodes_.size() == 0)
+    return nullptr;
+  return nodes_[nodes_.size() - 1]->outputs_["y"];
+}
+
 
 }

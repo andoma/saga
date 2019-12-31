@@ -28,25 +28,36 @@
 
 namespace saga {
 
-std::shared_ptr<Tensor>
-makeConvOutputTensor(const std::string &name, const Node &n)
+
+
+//------------------------------------------------------------------------
+
+static std::shared_ptr<Tensor>
+conv_y(const Node &n, const std::string &name)
 {
   // Should make this more generic for n-dimensions
-
   const int stride = n.attributes_.get("stride", 1);
   const int pad = n.attributes_.get("pad", 0);
   const int dilation = n.attributes_.get("dilation", 1);
+
+  int features;
+  int filterdim_h;
+  int filterdim_w;
+
   auto w = n.inputs_.get("w");
-  if(w == nullptr)
-    return nullptr;
+  if(w) {
+    features = w->dims_[0];
+    filterdim_h = w->dims_[2];
+    filterdim_w = w->dims_[3];
+  } else {
+    features = n.attributes_.get("activations", 1);
+    filterdim_h = n.attributes_.get("size", 1);
+    filterdim_w = n.attributes_.get("size", 1);
+  }
+
   auto x = n.inputs_.get("x");
   if(x == nullptr)
     return nullptr;
-
-  const int features = w->dims_[0];
-
-  const int filterdim_h = w->dims_[2];
-  const int filterdim_w = w->dims_[3];
 
   const int inputdim_h = x->dims_[2];
   const int inputdim_w = x->dims_[3];
@@ -63,13 +74,13 @@ makeConvOutputTensor(const std::string &name, const Node &n)
 }
 
 
-std::shared_ptr<Tensor>
-makePoolingOutputTensor(const std::string &name, const Node &n)
+static std::shared_ptr<Tensor>
+pooling_y(const Node &n, const std::string &name)
 {
   // Should make this more generic for n-dimensions
 
   const int size = n.attributes_.get("size", 1);
-  const int pad = n.attributes_.get("pad", 1);
+  const int pad = n.attributes_.get("pad", 0);
   const int stride = n.attributes_.get("stride", 1);
   auto x = n.inputs_.get("x");
   if(x == nullptr)
@@ -89,8 +100,8 @@ makePoolingOutputTensor(const std::string &name, const Node &n)
                                         outputdim_h, outputdim_w}));
 }
 
-std::shared_ptr<Tensor>
-makeReshapeOutputTensor(const std::string &name, const Node &n)
+static std::shared_ptr<Tensor>
+reshape_y(const Node &n, const std::string &name)
 {
   auto x = n.inputs_.get("x");
   if(x == nullptr)
@@ -115,8 +126,8 @@ makeReshapeOutputTensor(const std::string &name, const Node &n)
 }
 
 
-std::shared_ptr<Tensor>
-makeConcatOutputTensor(const std::string &name, const Node &n)
+static std::shared_ptr<Tensor>
+concat_y(const Node &n, const std::string &name)
 {
   int i = 0;
   int axis = 1;
@@ -137,12 +148,13 @@ makeConcatOutputTensor(const std::string &name, const Node &n)
   return std::make_shared<Tensor>(name, data_type, dims);
 }
 
-std::shared_ptr<Tensor>
-makeGemmOutputTensor(const std::string &name, const Node &n)
+
+static std::shared_ptr<Tensor>
+gemm_y(const Node &n, const std::string &name)
 {
   auto w = n.inputs_.get("w");
   if(w == nullptr)
-    return nullptr;
+   return nullptr;
   const int transW = n.attributes_.get("transW", 0);
 
   return std::make_shared<Tensor>(name, w->data_type_,
@@ -150,50 +162,69 @@ makeGemmOutputTensor(const std::string &name, const Node &n)
 }
 
 
-std::shared_ptr<Tensor>
-makeOutputTensorFromBlueprint(const std::string &name, const char *blueprint,
-                              const Node &n)
+static std::shared_ptr<Tensor>
+passthru_y(const Node &n, const std::string &name)
 {
-  auto o = n.inputs_.get(blueprint);
+  auto o = n.inputs_.get("x");
   if(o == nullptr)
     return nullptr;
   return std::make_shared<Tensor>(name, o->data_type_, o->dims_);
 }
 
+static std::shared_ptr<Tensor>
+sum_y(const Node &n, const std::string &name)
+{
+  auto o = n.inputs_.get("x0");
+  if(o == nullptr)
+    return nullptr;
+  return std::make_shared<Tensor>(name, o->data_type_, o->dims_);
+}
+
+
+
+//------------------------------------------------------------------------
+
+static const struct {
+  const char *name;
+
+  std::shared_ptr<Tensor>(*infer_y)(const Node &n,
+                                    const std::string &name);
+
+  std::vector<std::shared_ptr<Node>>(*setup)(std::shared_ptr<Node> node);
+
+} nodetypes[] = {
+  { "add",                    passthru_y },
+  { "avgpool",                pooling_y },
+  { "batchnorm",              passthru_y },
+  { "catclassifier",          passthru_y },
+  { "concat",                 concat_y },
+  { "conv",                   conv_y },
+  { "dropout",                passthru_y },
+  { "gemm",                   gemm_y },
+  { "maxpool",                pooling_y },
+  { "mul",                    passthru_y },
+  { "relu",                   passthru_y },
+  { "reshape",                reshape_y },
+  { "softmax",                passthru_y },
+  { "sum",                    sum_y },
+};
+
+
 std::shared_ptr<Tensor>
 Node::inferTensor_y(const std::string &name)
 {
-  std::shared_ptr<Tensor> y;
+  for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
+    if(type_ == nodetypes[i].name) {
+      return nodetypes[i].infer_y(*this, name);
+    }
+  }
 
-  if(type_ == "conv") {
-    y = makeConvOutputTensor(name, *this);
-  } else if(type_ == "gemm") {
-    y = makeGemmOutputTensor(name, *this);
-  } else if(type_ == "maxpool" ||
-            type_ == "avgpool") {
-    y = makePoolingOutputTensor(name, *this);
-  } else if(type_ == "reshape") {
-    y = makeReshapeOutputTensor(name, *this);
-  } else if(type_ == "add" ||
-            type_ == "mul" ||
-            type_ == "batchnorm" ||
-            type_ == "softmax" ||
-            type_ == "relu" ||
-            type_ == "dropout") {
-    y = makeOutputTensorFromBlueprint(name, "x", *this);
-  } else if(type_ == "sum") {
-    y = makeOutputTensorFromBlueprint(name, "x0", *this);
-  } else if(type_ == "concat") {
-    y = makeConcatOutputTensor(name, *this);
-  }
-  if(y == nullptr) {
-    fprintf(stderr, "Failed to compute output tensor for type %s\n",
-            type_.c_str());
-    print();
-    abort();
-  }
-  return y;
+  fprintf(stderr, "Failed to compute output tensor for type %s\n",
+          type_.c_str());
+  print();
+  abort();
 }
+
 
 void
 Node::print() const
@@ -209,6 +240,19 @@ Node::print() const
     printf("\tOutput: %s: %s\n",
            t.first.c_str(), t.second->info().c_str());
   }
+}
+
+
+std::vector<std::shared_ptr<Node>>
+Node::make(const std::string &type, const Tensors &inputs,
+           const Attributes &attributes,
+           const std::optional<std::string> &yname)
+{
+  auto n = std::make_shared<Node>(type);
+  n->inputs_ = inputs;
+  n->attributes_ = attributes;
+  n->outputs_["y"] = n->inferTensor_y(yname.value_or("y"));
+  return {n};
 }
 
 

@@ -34,6 +34,7 @@
 #include <functional>
 #include <variant>
 #include <unordered_set>
+#include <optional>
 
 #include <assert.h>
 
@@ -46,7 +47,11 @@ namespace saga {
 typedef std::variant<float, int, std::vector<int>> Attribute;
 
 class Attributes : public std::unordered_map<std::string, Attribute> {
+
 public:
+
+  using std::unordered_map<std::string, Attribute>::unordered_map;
+
   template< typename T > T get(const std::string &n, T def) const {
     auto it = find(n);
     if(it == end())
@@ -101,7 +106,6 @@ public:
 
   static size_t DataTypeSize(DataType dt);
 
-
   Tensor(const std::string &name, DataType data_type, const Dims &size);
 
   virtual ~Tensor() {};
@@ -144,6 +148,8 @@ std::shared_ptr<Tensor> makeCPUTensor(const std::string &name,
 class Tensors : public std::unordered_map<std::string,
                                           std::shared_ptr<Tensor>> {
 public:
+  using std::unordered_map<std::string, std::shared_ptr<Tensor>>::unordered_map;
+
   std::shared_ptr<Tensor> get(const std::string &n) const {
     auto it = find(n);
     return it == end() ? nullptr : it->second;
@@ -167,15 +173,30 @@ public:
 class Node {
 public:
 
-  Node(const std::string &type) : type_(type) {};
+  Node(const std::string &type)
+    : type_(type)
+  {}
+
+  Node(const std::string &type, const Tensors &inputs,
+       const Attributes &attributes)
+    : type_(type)
+    , inputs_(inputs)
+    , attributes_(attributes)
+  {}
+
+  const std::string type_;
 
   Tensors inputs_;
-  Tensors outputs_;
   Attributes attributes_;
-  const std::string type_;
+  Tensors outputs_;
 
   std::shared_ptr<Tensor> inferTensor_y(const std::string &name);
   void print() const;
+
+  static std::vector<std::shared_ptr<Node>> make(const std::string &type,
+                                                 const Tensors &inputs,
+                                                 const Attributes &attributes,
+                                                 const std::optional<std::string> &name = std::nullopt);
 };
 
 
@@ -188,6 +209,8 @@ public:
   std::unordered_set<std::shared_ptr<Tensor>> inputs_;
   std::unordered_set<std::shared_ptr<Tensor>> outputs_;
   Tensors tensors_;
+
+  std::shared_ptr<Tensor> add(const std::vector<std::shared_ptr<Node>> &nodes);
 
   static std::shared_ptr<Graph> load(const char *path);
   void print() const;

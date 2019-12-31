@@ -13,7 +13,8 @@ NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
 NVCC := /usr/local/cuda-10.1/bin/nvcc
 
 SRCS += main.cpp \
-	test/test_onnx.cpp
+	test/test_onnx.cpp \
+	test/mnist.cpp
 
 SRCS += ${SAGA_SRCS}
 

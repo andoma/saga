@@ -29,6 +29,10 @@ main(int argc, char **argv)
     argv += 2;
     argc -= 2;
     return test_onnx_main(argc, argv);
+  } else if(!strcmp(argv[1], "mnist")) {
+    argv += 1;
+    argc -= 1;
+    return mnist_main(argc, argv);
   } else {
     fprintf(stderr, "Unknown command: %s\n", argv[1]);
     return 1;

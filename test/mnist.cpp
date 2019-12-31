@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <string.h>
 
 #include "saga.h"
 
@@ -20,7 +21,7 @@ stop(int x)
 
 using namespace saga;
 
-static int64_t
+static int64_t __attribute__((unused))
 get_ts(void)
 {
   struct timespec tv;
@@ -93,11 +94,12 @@ makeLabeledImages(const uint8_t *images,
   return lis;
 }
 
+  #if 0
 
 static void
 loadInputTensor(Tensor &t, const LabeledImage *lis)
 {
-  const size_t batch_size = t.n;
+  const size_t batch_size = t.dims_[0];
 
   const uint8_t *images[batch_size];
   for(size_t j = 0; j < batch_size; j++) {
@@ -107,7 +109,7 @@ loadInputTensor(Tensor &t, const LabeledImage *lis)
 }
 
 
-static void
+static void 
 loadOutputTensor(Tensor &t, const LabeledImage *lis)
 {
   const size_t n = t.n;
@@ -119,7 +121,9 @@ loadOutputTensor(Tensor &t, const LabeledImage *lis)
 
   memcpy(t.hostMem(), labels, n);
 }
+#endif
 
+#if 0
 
 // SqueezeNet's fire module: https://arxiv.org/pdf/1602.07360.pdf
 // + batchnorm
@@ -139,7 +143,7 @@ build_fire_module(Network &net, const Layer &input,
 
   return net.addLayer(makeConcat({e1.get(), e3.get()}, net));
 }
-
+#endif
 
 
 extern int
@@ -154,7 +158,7 @@ mnist_main(int argc, char **argv)
 
   std::string mode = "lecun";
 
-  auto dt = Tensor::Type::FLOAT;
+  auto dt = Tensor::DataType::FLOAT;
 
   while((opt = getopt(argc, argv, "ns:l:b:hm:")) != -1) {
     switch(opt) {
@@ -171,7 +175,7 @@ mnist_main(int argc, char **argv)
       batch_size = atoi(optarg);
       break;
     case 'h':
-      dt = Tensor::Type::HALF;
+      dt = Tensor::DataType::HALF;
       break;
     case 'm':
       mode = optarg;
@@ -224,7 +228,51 @@ mnist_main(int argc, char **argv)
                                      cols * rows,
                                      test_inputs);
 
+  printf("learn=%d\n", learn);
+  printf("labels=%d\n", labels);
+  printf("loadpath=%s\n", loadpath);
+  printf("savepath=%s\n", savepath);
+  printf("data_type=%d\n", (int)dt);
 
+  Graph g;
+
+  auto input = std::make_shared<Tensor>("input", Tensor::DataType::U8,
+                                        Dims({1, 1, 28, 28}));
+  std::shared_ptr<Tensor> t;
+
+  t = g.add(Node::make("conv", {{"x", input}}, {{"size", 5}, {"activations", 64}}));
+  t = g.add(Node::make("relu", {{"x", t}}, {}));
+  t = g.add(Node::make("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}}));
+  t = g.add(Node::make("conv", {{"x", t}}, {{"size", 5}, {"activations", 64}}));
+  t = g.add(Node::make("relu", {{"x", t}}, {}));
+  t = g.add(Node::make("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}}));
+
+  auto shape = makeCPUTensor("shape", Tensor::DataType::INT64, Dims({2}));
+  auto a = shape->access();
+  a->set({0}, 1);
+  a->set({1}, 1024);
+
+  t = g.add(Node::make("reshape", {{"x", t}, {"shape", shape}}, {}));
+
+  std::shared_ptr<Tensor> w = std::make_shared<Tensor>("w", Tensor::DataType::FLOAT,
+                                                       Dims({1024, 1024}));
+
+  t = g.add(Node::make("gemm", {{"x", t}, {"w", w}}, {{"transB", 1}}));
+  t = g.add(Node::make("relu", {{"x", t}}, {}));
+  std::shared_ptr<Tensor> w2 = std::make_shared<Tensor>("w2", Tensor::DataType::FLOAT,
+                                                        Dims({1024, 10}));
+
+  t = g.add(Node::make("gemm", {{"x", t}, {"w", w2}}, {{"transB", 1}}));
+
+  t = g.add(Node::make("catclassifier", {{"x", t}}, {}));
+
+  g.print();
+
+  auto ctx = createContext();
+  auto p = ctx->createProgram(g, ProgramType::INFERENCE, 1);
+
+
+#if 0
   Network net(learn);
 
   if(loadpath)
@@ -339,6 +387,7 @@ mnist_main(int argc, char **argv)
 
   if(savepath)
     net.saveTensors(savepath);
+#endif
 
   return 0;
 }
