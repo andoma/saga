@@ -333,11 +333,8 @@ find_tensor(Graph &g, const std::string &name)
 static void
 make_tensor_y(Graph &g, Node &n, const std::string &name)
 {
-  auto t = find_tensor(g, name);
-  if(!t) {
-    t = n.inferTensor_y(name);
-    g.tensors_[name] = t;
-  }
+  auto t = n.inferTensor_y(name);
+  g.tensors_[name] = t;
   n.outputs_["y"] = t;
 }
 
@@ -601,12 +598,6 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
     g.inputs_.insert(t);
   }
 
-  for(const auto &vip : gp.output()) {
-    auto t = make_tensor(vip);
-    g.tensors_[vip.name()] = t;
-    g.outputs_.insert(t);
-  }
-
   for(const auto &tp : gp.initializer()) {
 
     auto it = g.tensors_.find(tp.name());
@@ -676,6 +667,11 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
     }
     g.nodes_.push_back(n);
   }
+
+  for(const auto &vip : gp.output()) {
+    g.outputs_.insert(g.tensors_[vip.name()]);
+  }
+
   return true;
 }
 
