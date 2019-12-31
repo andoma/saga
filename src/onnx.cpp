@@ -538,6 +538,30 @@ make_reshape(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   return n;
 }
 
+
+static shared_ptr<Node>
+make_flatten(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
+{
+  assert(np.input_size() == 1);
+  assert(np.output_size() == 1);
+  auto n = std::make_shared<Node>("reshape");
+  auto x = find_tensor(g, np.input(0));
+  n->inputs_["x"] = x;
+  const int rank = x->dims_.size();
+  int axis = attribs.get("axis", 1);
+  if(axis < 0)
+    axis = rank + axis;
+
+  auto shape = makeCPUTensor(Tensor::DataType::INT64, Dims({rank}));
+
+  auto a = shape->access();
+  a->set({axis}, -1);
+  n->inputs_["shape"] = shape;
+
+  make_tensor_y(g, *n, np.output(0));
+  return n;
+}
+
 static shared_ptr<Node>
 make_gemm(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
@@ -653,6 +677,8 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
       n = make_concat(g, np, attribs);
     } else if(node_type == "Reshape") {
       n = make_reshape(g, np, attribs);
+    } else if(node_type == "Flatten") {
+      n = make_flatten(g, np, attribs);
     } else if(node_type == "Gemm") {
       n = make_gemm(g, np, attribs);
     } else if(node_type == "Softmax") {
