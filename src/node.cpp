@@ -73,6 +73,7 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
                                         outputdim_h, outputdim_w}), name);
 }
 
+//------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
 pooling_y(const Node &n, const std::optional<const std::string> &name)
@@ -100,6 +101,8 @@ pooling_y(const Node &n, const std::optional<const std::string> &name)
                                         outputdim_h, outputdim_w}), name);
 }
 
+//------------------------------------------------------------------------
+
 static std::shared_ptr<Tensor>
 reshape_y(const Node &n, const std::optional<const std::string> &name)
 {
@@ -119,12 +122,27 @@ reshape_y(const Node &n, const std::optional<const std::string> &name)
 
   Dims dims;
   for(int64_t i = 0; i < shape->dims_[0]; i++) {
-    dims.push_back(ta->get({i}));
+    const int64_t v = ta->get({i});
+    if(v == 0) {
+      dims.push_back(x->dims_[i]);
+    } else if(v == -1) {
+      int64_t s = 1;
+      for(; i < (int64_t)x->dims_.size(); i++) {
+        s *= x->dims_[i];
+      }
+      dims.push_back(s);
+      break;
+    } else {
+      assert(v > 0);
+      dims.push_back(v);
+    }
   }
 
   return std::make_shared<Tensor>(x->data_type_, dims, name);
 }
 
+
+//------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
 concat_y(const Node &n, const std::optional<const std::string> &name)
@@ -148,6 +166,7 @@ concat_y(const Node &n, const std::optional<const std::string> &name)
   return std::make_shared<Tensor>(data_type, dims, name);
 }
 
+//------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
 gemm_y(const Node &n, const std::optional<const std::string> &name)
@@ -162,6 +181,7 @@ gemm_y(const Node &n, const std::optional<const std::string> &name)
                                   name);
 }
 
+//------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
 passthru_y(const Node &n, const std::optional<const std::string> &name)
@@ -171,6 +191,8 @@ passthru_y(const Node &n, const std::optional<const std::string> &name)
     return nullptr;
   return std::make_shared<Tensor>(o->data_type_, o->dims_, name);
 }
+
+//------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
 sum_y(const Node &n, const std::optional<const std::string> &name)
@@ -182,7 +204,7 @@ sum_y(const Node &n, const std::optional<const std::string> &name)
 }
 
 
-
+//------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
 static const struct {
