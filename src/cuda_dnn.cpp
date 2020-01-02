@@ -31,10 +31,6 @@
 #include "cuda_common.h"
 #include "cuda_tensor.h"
 
-
-
-#define TENSOR_FORMAT CUDNN_TENSOR_NHWC
-
 namespace saga {
 
 class CudnnContext : public Context,
@@ -104,8 +100,10 @@ class CudnnOperation;
 class CudnnProgram : public Program {
 public:
 
-  CudnnProgram(std::shared_ptr<CudnnContext> ctx)
+  CudnnProgram(std::shared_ptr<CudnnContext> ctx,
+               cudnnTensorFormat_t tensor_format)
     : ctx_(ctx)
+    , tensor_format_(tensor_format)
     , workspace_(NULL)
     , workspace_size_(0)
     , workspace_requested_(0)
@@ -133,6 +131,7 @@ public:
   }
 
   const std::shared_ptr<CudnnContext> ctx_;
+  const cudnnTensorFormat_t tensor_format_;
 
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
@@ -176,7 +175,7 @@ lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
   }
 
   auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                        dims, TENSOR_FORMAT,
+                                        dims, p.tensor_format_,
                                         src->name_);
 
   t->copyFrom(*src);
@@ -216,7 +215,7 @@ struct CudnnConvolutionFwd : public CudnnOperation {
 
     chkCUDNN(cudnnSetFilter4dDescriptor(filter_desc_,
                                         x_->type_,
-                                        TENSOR_FORMAT,
+                                        p.tensor_format_,
                                         w_->dims_[0],
                                         w_->dims_[1],
                                         w_->dims_[2],
@@ -284,8 +283,15 @@ struct CudnnConvolutionFwd : public CudnnOperation {
                               &alpha, y_->desc(), y_->deviceMem()));
     }
   }
-
 };
+
+
+static void
+conv_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnConvolutionFwd>(p, n);
+  p.operations_.push_back(f);
+}
 
 
 
@@ -324,9 +330,7 @@ struct CudnnAddFwd : public CudnnOperation {
                             &alpha, b_->desc(), b_->deviceMem(),
                             &alpha, y_->desc(), y_->deviceMem()));
   }
-
 };
-
 
 
 //------------------------------------------------------------------------
@@ -368,10 +372,17 @@ struct CudnnBatchNormFwd : public CudnnOperation {
   }
 };
 
+static void
+batchnorm_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnBatchNormFwd>(p, n);
+  p.operations_.push_back(f);
+}
+
+
 //------------------------------------------------------------------------
 
 struct CudnnReluFwd : public CudnnOperation {
-
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, y_;
   cudnnActivationDescriptor_t desc_;
@@ -401,6 +412,13 @@ struct CudnnReluFwd : public CudnnOperation {
                                     y_->desc(), y_->deviceMem()));
   }
 };
+
+static void
+relu_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnReluFwd>(p, n);
+  p.operations_.push_back(f);
+}
 
 
 //------------------------------------------------------------------------
@@ -446,6 +464,20 @@ struct CudnnPoolingFwd : public CudnnOperation {
   }
 };
 
+static void
+maxpool_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_MAX);
+  p.operations_.push_back(f);
+}
+
+static void
+avgpool_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
+  p.operations_.push_back(f);
+}
+
 
 //------------------------------------------------------------------------
 
@@ -490,6 +522,14 @@ struct CudnnSumFwd : public CudnnOperation {
                   y_->deviceMem());
   }
 };
+
+static void
+sum_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnSumFwd>(p, n);
+  p.operations_.push_back(f);
+}
+
 
 //------------------------------------------------------------------------
 
@@ -552,6 +592,13 @@ struct CudnnGemmFwd : public CudnnOperation {
   }
 };
 
+static void
+gemm_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnGemmFwd>(p, n);
+  p.operations_.push_back(f);
+}
+
 
 //------------------------------------------------------------------------
 
@@ -580,6 +627,14 @@ struct CudnnSoftmaxFwd : public CudnnOperation {
                                  y_->desc(), y_->deviceMem()));
   }
 };
+
+static void
+softmax_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnSoftmaxFwd>(p, n);
+  p.operations_.push_back(f);
+}
+
 
 //------------------------------------------------------------------------
 
@@ -613,6 +668,23 @@ struct CudnnTransform : public CudnnOperation {
                                   y_->deviceMem()));
   }
 };
+
+static void
+concat_make(CudnnProgram &p, const Node &n)
+{
+  auto y = lower_tensor(p, n.outputs_.get("y"));
+  auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
+  const int axis = 1;
+  for(const auto &xh : n.inputs_.getv("x")) {
+    auto x = lower_tensor(p, xh);
+    auto y2 = std::make_shared<CudaTensor>(y, x->dims_, element_offset,
+                                           y->namePostfix("concat.alias"));
+    p.operations_.push_back(std::make_shared<CudnnTransform>(p, x, y2));
+    element_offset[axis] += xh->dims_[axis];
+  }
+}
+
+
 
 //------------------------------------------------------------------------
 
@@ -667,6 +739,56 @@ struct CudnnMathOp : public CudnnOperation {
 };
 
 
+static void
+add_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnMathOp>(p,
+                                         lower_tensor(p, n.outputs_.get("x")),
+                                         lower_tensor(p, n.outputs_.get("b")),
+                                         lower_tensor(p, n.outputs_.get("y")),
+                                         CUDNN_OP_TENSOR_ADD);
+  p.operations_.push_back(f);
+}
+
+
+static void
+mul_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnMathOp>(p,
+                                         lower_tensor(p, n.outputs_.get("x")),
+                                         lower_tensor(p, n.outputs_.get("s")),
+                                         lower_tensor(p, n.outputs_.get("y")),
+                                         CUDNN_OP_TENSOR_MUL);
+  p.operations_.push_back(f);
+}
+
+
+//------------------------------------------------------------------------
+
+static void
+reshape_make(CudnnProgram &p, const Node &n)
+{
+  auto x = lower_tensor(p, n.inputs_.get("x"));
+  auto y = n.outputs_.get("y");
+
+  p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
+                                               y->dims_, p.tensor_format_,
+                                               x->namePostfix("reshape"));
+}
+
+
+static void
+dropout_make(CudnnProgram &p, const Node &n)
+{
+  auto x = lower_tensor(p, n.inputs_.get("x"));
+  auto y = n.outputs_.get("y");
+
+  p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
+                                               y->dims_, p.tensor_format_,
+                                               x->namePostfix("dropout"));
+}
+
+
 //------------------------------------------------------------------------
 
 struct CudnnPrintTensor : public CudnnOperation {
@@ -677,8 +799,7 @@ struct CudnnPrintTensor : public CudnnOperation {
   CudnnPrintTensor(const std::string &prefix, std::shared_ptr<Tensor> x)
     : prefix_(prefix)
     , x_(x)
-  {
-  }
+  {}
 
   void exec(CudnnProgram &p) {
     x_->print(prefix_.c_str(), 4);
@@ -695,8 +816,7 @@ struct CudnnPrintStatsTensor : public CudnnOperation {
   CudnnPrintStatsTensor(const std::string &prefix, std::shared_ptr<Tensor> x)
     : prefix_(prefix)
     , x_(x)
-  {
-  }
+  {}
 
   void exec(CudnnProgram &p) {
     printf("%s: %s\n", prefix_.c_str(), x_->info().c_str());
@@ -719,84 +839,45 @@ struct CudnnHalt : public CudnnOperation {
   }
 };
 
-
-
-
-
 //------------------------------------------------------------------------
 
+#define DEFNODE(x) { #x, x##_make }
+
+static const struct {
+  const char *name;
+  void (*create_op)(CudnnProgram &p, const Node &n);
+} nodetypes[] = {
+  DEFNODE(add),
+  DEFNODE(avgpool),
+  DEFNODE(batchnorm),
+  DEFNODE(concat),
+  DEFNODE(conv),
+  DEFNODE(dropout),
+  DEFNODE(gemm),
+  DEFNODE(maxpool),
+  DEFNODE(mul),
+  DEFNODE(relu),
+  DEFNODE(reshape),
+  DEFNODE(softmax),
+  DEFNODE(sum),
+};
+
+#undef DEFNODE
+
+//------------------------------------------------------------------------
 
 static void
 generate_forward_operation(CudnnProgram &p, const Node &n)
 {
-  std::shared_ptr<CudnnOperation> o;
-
-  if(n.type_ == "conv") {
-    o = std::make_shared<CudnnConvolutionFwd>(p, n);
-  } else if(n.type_ == "add") {
-    o = std::make_shared<CudnnMathOp>(p,
-                                      lower_tensor(p, n.outputs_.get("x")),
-                                      lower_tensor(p, n.outputs_.get("b")),
-                                      lower_tensor(p, n.outputs_.get("y")),
-                                      CUDNN_OP_TENSOR_ADD);
-  } else if(n.type_ == "mul") {
-    o = std::make_shared<CudnnMathOp>(p,
-                                      lower_tensor(p, n.outputs_.get("x")),
-                                      lower_tensor(p, n.outputs_.get("s")),
-                                      lower_tensor(p, n.outputs_.get("y")),
-                                      CUDNN_OP_TENSOR_MUL);
-  } else if(n.type_ == "batchnorm") {
-    o = std::make_shared<CudnnBatchNormFwd>(p, n);
-  } else if(n.type_ == "gemm") {
-    o = std::make_shared<CudnnGemmFwd>(p, n);
-  } else if(n.type_ == "relu") {
-    o = std::make_shared<CudnnReluFwd>(p, n);
-  } else if(n.type_ == "maxpool") {
-    o = std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_MAX);
-  } else if(n.type_ == "avgpool") {
-    o = std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
-  } else if(n.type_ == "sum") {
-    o = std::make_shared<CudnnSumFwd>(p, n);
-  } else if(n.type_ == "softmax") {
-    o = std::make_shared<CudnnSoftmaxFwd>(p, n);
-  } else if(n.type_ == "concat") {
-
-    auto y = lower_tensor(p, n.outputs_.get("y"));
-    auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
-    const int axis = 1;
-    for(const auto &xh : n.inputs_.getv("x")) {
-      auto x = lower_tensor(p, xh);
-      auto y2 = std::make_shared<CudaTensor>(y, x->dims_, element_offset,
-                                             y->namePostfix("concat.alias"));
-      p.operations_.push_back(std::make_shared<CudnnTransform>(p, x, y2));
-
-      element_offset[axis] += xh->dims_[axis];
+  for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
+    if(n.type_ == nodetypes[i].name) {
+      nodetypes[i].create_op(p, n);
+      return;
     }
-  } else if(n.type_ == "reshape" ||
-            n.type_ == "dropout") {
-
-    auto x = lower_tensor(p, n.inputs_.get("x"));
-    auto y = n.outputs_.get("y");
-
-    p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
-                                                 y->dims_, TENSOR_FORMAT,
-                                                 x->namePostfix("reshape"));
-
-  } else {
-    printf("Cant emit forward operation for node type %s\n", n.type_.c_str());
-    abort();
   }
-
-  if(o)
-    p.operations_.push_back(o);
-
-  return;
-
-  p.operations_.push_back(std::make_shared<CudnnPrintStatsTensor>(n.type_,
-                                                                  lower_tensor(p, n.outputs_.get("y"))));
+  printf("Cant emit forward operation for node type %s\n", n.type_.c_str());
+  abort();
 }
-
-
 
 
 
@@ -804,7 +885,7 @@ std::shared_ptr<Program>
 cudnn_inference(const Graph &g, int batch_size,
                 std::shared_ptr<CudnnContext> ctx)
 {
-  auto p = std::make_shared<CudnnProgram>(ctx);
+  auto p = std::make_shared<CudnnProgram>(ctx, CUDNN_TENSOR_NCHW);
 
   for(const auto &n : g.inputs_) {
     p->inputs_.insert(lower_tensor(*p, n));
