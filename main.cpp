@@ -26,8 +26,8 @@ main(int argc, char **argv)
   }
 
   if(!strcmp(argv[1], "onnx")) {
-    argv += 2;
-    argc -= 2;
+    argv += 1;
+    argc -= 1;
     return test_onnx_main(argc, argv);
   } else if(!strcmp(argv[1], "mnist")) {
     argv += 1;

@@ -233,6 +233,7 @@ class Program {
 public:
   virtual ~Program() {}
   virtual void exec() = 0;
+  virtual void print() const = 0;
 
   std::unordered_set<std::shared_ptr<Tensor>> inputs_;
   std::unordered_set<std::shared_ptr<Tensor>> outputs_;

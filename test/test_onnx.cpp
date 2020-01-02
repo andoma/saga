@@ -11,7 +11,7 @@ using namespace saga;
 
 
 static int
-test_one(const char *model_path, std::shared_ptr<Context> ctx)
+test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
 {
   char dirtmp[PATH_MAX];
   snprintf(dirtmp, sizeof(dirtmp), "%s", model_path);
@@ -25,8 +25,12 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx)
     fprintf(stderr, "Failed to load model graph %s\n", model_path);
     return 1;
   }
+  if(verbose)
+    g->print();
 
   auto p = ctx->createProgram(*g, ProgramType::INFERENCE, 1);
+  if(verbose)
+    p->print();
 
   auto input = *p->inputs_.begin();
   auto output = *p->outputs_.begin();
@@ -63,10 +67,10 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx)
 
     const double sse = loaded_output->sse(*output);
     if(sse > 0.001) {
-      fprintf(stderr, "  Test-%d: Failed sse=%f\n", i, sse);
+      fprintf(stderr, "  Test-%d: FAILED SSE=%f\n", i, sse);
       return 1;
     }
-    printf("  Test-%d: OK\n", i);
+    printf("  Test-%d: Ok SSE:%f\n", i, sse);
   }
 
   return 0;
@@ -82,10 +86,23 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx)
 int
 test_onnx_main(int argc, char **argv)
 {
+  int opt;
+  int verbose = 0;
+  while((opt = getopt(argc, argv, "v")) != -1) {
+    switch(opt) {
+    case 'v':
+      verbose++;
+      break;
+    }
+  }
+
+  argc -= optind;
+  argv += optind;
+
   auto ctx = createContext();
 
   if(argc == 1) {
-    return test_one(argv[0], ctx);
+    return test_one(argv[0], ctx, verbose);
   }
 
   if(argc != 0) {
@@ -93,11 +110,11 @@ test_onnx_main(int argc, char **argv)
     exit(1);
   }
 
-  if(test_one("models/squeezenet1.1/squeezenet1.1.onnx", ctx)) {
+  if(test_one("models/squeezenet1.1/squeezenet1.1.onnx", ctx, verbose)) {
     exit(1);
   }
 
-  if(test_one("models/resnet50/model.onnx", ctx)) {
+  if(test_one("models/resnet50/model.onnx", ctx, verbose)) {
     exit(1);
   }
 

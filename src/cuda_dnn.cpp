@@ -118,6 +118,8 @@ public:
 
   void exec();
 
+  void print() const;
+
   void requetstWorkspace(size_t size) {
     workspace_requested_ = std::max(workspace_requested_, size);
   }
@@ -150,6 +152,7 @@ class CudnnOperation {
 public:
   virtual ~CudnnOperation() {}
   virtual void exec(CudnnProgram &p) = 0;
+  virtual void print() const = 0;
 };
 
 
@@ -186,6 +189,33 @@ lower_tensor(CudnnProgram &p, std::shared_ptr<Tensor> src,
 
 
 //------------------------------------------------------------------------
+
+
+static const char *
+convfwdalgostr(cudnnConvolutionFwdAlgo_t algo)
+{
+  switch(algo) {
+  case CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM:
+    return "ImplicitGemm";
+  case CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM:
+    return "ImplicitPrecompGemm";
+  case CUDNN_CONVOLUTION_FWD_ALGO_GEMM:
+    return "AlogGem";
+  case CUDNN_CONVOLUTION_FWD_ALGO_DIRECT:
+    return "Direct";
+  case CUDNN_CONVOLUTION_FWD_ALGO_FFT:
+    return "FFT";
+  case CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING:
+    return "FFT-Tiling";
+  case CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD:
+    return "Winograd";
+  case CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED:
+    return "Winograd-Nonfused";
+  default:
+    return "?";
+  }
+}
+
 
 struct CudnnConvolutionFwd : public CudnnOperation {
 
@@ -255,15 +285,18 @@ struct CudnnConvolutionFwd : public CudnnOperation {
     p.requetstWorkspace(workspace);
   }
 
+
+  void print() const {
+    printf("ConvFwd %s\n", convfwdalgostr(conv_fwd_algo_));
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\tw: %s\n", w_->info().c_str());
+    if(b_)
+      printf("\tb: %s\n", b_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
+  }
+
   void exec(CudnnProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
-#if 0
-    printf("x: %s\n", x_->info().c_str());
-    printf("w: %s\n", w_->info().c_str());
-    if(b_)
-      printf("b: %s\n", b_->info().c_str());
-    printf("y: %s\n", y_->info().c_str());
-#endif
 
     chkCUDNN(cudnnConvolutionForward(ctx_->cudnn_, &alpha,
                                      x_->desc(),
@@ -294,45 +327,6 @@ conv_make(CudnnProgram &p, const Node &n)
 }
 
 
-
-//------------------------------------------------------------------------
-
-struct CudnnAddFwd : public CudnnOperation {
-
-  const std::shared_ptr<CudnnContext> ctx_;
-  const std::shared_ptr<CudaTensor> x_, b_, y_;
-
-  CudnnAddFwd(CudnnProgram &p, const Node &n)
-    : ctx_(p.ctx_)
-    , x_(lower_tensor(p, n.inputs_.get("x")))
-    , b_(lower_tensor(p, n.inputs_.get("b"), x_ ? x_->dims_.size() : 0))
-    , y_(lower_tensor(p, n.outputs_.get("y")))
-  {
-  }
-
-  void exec(CudnnProgram &p) {
-    float alpha = 1.0f, beta = 0.0f;
-#if 0
-    printf("x: %s\n", x_->info().c_str());
-    printf("b: %s\n", b_->info().c_str());
-    printf("y: %s\n", y_->info().c_str());
-#endif
-    // Use cudnnOpTensor
-    chkCUDNN(cudnnTransformTensor(ctx_->cudnn_,
-                                  &alpha,
-                                  x_->desc(),
-                                  x_->deviceMem(),
-                                  &beta,
-                                  y_->desc(),
-                                  y_->deviceMem()));
-
-    chkCUDNN(cudnnAddTensor(ctx_->cudnn_,
-                            &alpha, b_->desc(), b_->deviceMem(),
-                            &alpha, y_->desc(), y_->deviceMem()));
-  }
-};
-
-
 //------------------------------------------------------------------------
 
 struct CudnnBatchNormFwd : public CudnnOperation {
@@ -350,7 +344,16 @@ struct CudnnBatchNormFwd : public CudnnOperation {
     , v_(lower_tensor(p, n.inputs_.get("v"), 2))
     , y_(lower_tensor(p, n.outputs_.get("y")))
     , epsilon_(n.attributes_.get("epsilon", 1e-5f))
-  {
+  {}
+
+  void print() const {
+    printf("BatchNormFwd\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ts: %s\n", x_->info().c_str());
+    printf("\tb: %s\n", x_->info().c_str());
+    printf("\tm: %s\n", x_->info().c_str());
+    printf("\tv: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
@@ -402,6 +405,12 @@ struct CudnnReluFwd : public CudnnOperation {
     chkCUDNN(cudnnDestroyActivationDescriptor(desc_));
   }
 
+  void print() const {
+    printf("ReluFwd\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
+  }
+
   void exec(CudnnProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
 
@@ -451,6 +460,12 @@ struct CudnnPoolingFwd : public CudnnOperation {
   ~CudnnPoolingFwd()
   {
     chkCUDNN(cudnnDestroyPoolingDescriptor(desc_));
+  }
+
+  void print() const {
+    printf("Pooling\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
@@ -505,6 +520,11 @@ struct CudnnSumFwd : public CudnnOperation {
     cudnnDestroyOpTensorDescriptor(desc_);
   }
 
+  void print() const {
+    printf("Sum\n");
+    printf("\ty: %s\n", y_->info().c_str());
+  }
+
   void exec(CudnnProgram &p) {
 
     float alpha = 1.0f;
@@ -554,6 +574,15 @@ struct CudnnGemmFwd : public CudnnOperation {
     , num_outputs_(y_->dims_[1])
     , transW_(n.attributes_.get("transW", 0))
   {
+  }
+
+  void print() const {
+    printf("Gemm\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\tw: %s\n", w_->info().c_str());
+    if(b_)
+      printf("\tb: %s\n", b_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
@@ -614,6 +643,12 @@ struct CudnnSoftmaxFwd : public CudnnOperation {
   {
   }
 
+  void print() const {
+    printf("SoftmaxFwd\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
+  }
+
   void exec(CudnnProgram &p) {
 
     float alpha = 1.0f, beta = 0.0f;
@@ -649,16 +684,16 @@ struct CudnnTransform : public CudnnOperation {
     : ctx_(p.ctx_)
     , x_(x)
     , y_(y)
-  {
+  {}
+
+  void print() const {
+    printf("Transform\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
-
     float alpha = 1.0f, beta = 0.0f;
-#if 0
-    printf("x: %s\n", x_->info().c_str());
-    printf("y: %s\n", y_->info().c_str());
-#endif
     chkCUDNN(cudnnTransformTensor(ctx_->cudnn_,
                                   &alpha,
                                   x_->desc(),
@@ -715,14 +750,16 @@ struct CudnnMathOp : public CudnnOperation {
     chkCUDNN(cudnnDestroyOpTensorDescriptor(desc_));
   }
 
+  void print() const {
+    printf("MathOp\n");
+    printf("\ta: %s\n", a_->info().c_str());
+    printf("\tb: %s\n", b_->info().c_str());
+    printf("\tc: %s\n", c_->info().c_str());
+  }
+
   void exec(CudnnProgram &p) {
 
     float alpha = 1.0f, beta = 0.0f;
-#if 0
-    printf("a: %s\n", a_->info().c_str());
-    printf("b: %s\n", b_->info().c_str());
-    printf("c: %s\n", c_->info().c_str());
-#endif
 
     chkCUDNN(cudnnOpTensor(ctx_->cudnn_,
                            desc_,
@@ -880,6 +917,33 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
 }
 
 
+void
+CudnnProgram::exec()
+{
+  allocWorkspace();
+  for(const auto &op : operations_) {
+    op->exec(*this);
+  }
+}
+
+void
+CudnnProgram::print() const
+{
+  for(const auto &t : inputs_) {
+    printf("Input: %s\n", t->info().c_str());
+  }
+
+  for(const auto &op : operations_) {
+    op->print();
+  }
+
+  for(const auto &t : outputs_) {
+    printf("Output: %s\n", t->info().c_str());
+  }
+}
+
+
+
 
 std::shared_ptr<Program>
 cudnn_inference(const Graph &g, int batch_size,
@@ -899,40 +963,7 @@ cudnn_inference(const Graph &g, int batch_size,
     p->outputs_.insert(lower_tensor(*p, n));
   }
 
-
-#if 0
-  for(const auto &n : g->nodes_) {
-    printf(" == %s ======\n", n->type_.c_str());
-
-    for(const auto &it : n->inputs_) {
-      auto it2 = p->tensors_.find(it.second);
-
-      printf("%15s: %s\n", it.first.c_str(),
-             it2 != p->tensors_.end() ?
-             it2->second->info().c_str() :
-             it.second->info().c_str());
-    }
-
-    for(const auto &it : n->outputs_) {
-      auto it2 = p->tensors_.find(it.second);
-
-      printf("%15s: %s\n", it.first.c_str(),
-             it2 != p->tensors_.end() ?
-             it2->second->info().c_str() :
-             it.second->info().c_str());
-    }
-  }
-#endif
   return p;
-}
-
-void
-CudnnProgram::exec()
-{
-  allocWorkspace();
-  for(const auto &op : operations_) {
-    op->exec(*this);
-  }
 }
 
 
