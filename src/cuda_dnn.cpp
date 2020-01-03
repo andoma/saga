@@ -101,9 +101,11 @@ class CudnnProgram : public Program {
 public:
 
   CudnnProgram(std::shared_ptr<CudnnContext> ctx,
-               cudnnTensorFormat_t tensor_format)
+               cudnnTensorFormat_t tensor_format,
+               ProgramType type)
     : ctx_(ctx)
     , tensor_format_(tensor_format)
+    , type_(type)
     , workspace_(NULL)
     , workspace_size_(0)
     , workspace_requested_(0)
@@ -134,6 +136,7 @@ public:
 
   const std::shared_ptr<CudnnContext> ctx_;
   const cudnnTensorFormat_t tensor_format_;
+  const ProgramType type_;
 
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
@@ -154,6 +157,36 @@ public:
   virtual void exec(CudnnProgram &p) = 0;
   virtual void print() const = 0;
 };
+
+//------------------------------------------------------------------------
+
+
+void
+CudnnProgram::exec()
+{
+  allocWorkspace();
+  for(const auto &op : operations_) {
+    op->exec(*this);
+  }
+}
+
+void
+CudnnProgram::print() const
+{
+  for(const auto &t : inputs_) {
+    printf("Input: %s\n", t->info().c_str());
+  }
+
+  for(const auto &op : operations_) {
+    op->print();
+  }
+
+  for(const auto &t : outputs_) {
+    printf("Output: %s\n", t->info().c_str());
+  }
+}
+
+
 
 
 
@@ -904,7 +937,7 @@ static const struct {
 //------------------------------------------------------------------------
 
 static void
-generate_forward_operation(CudnnProgram &p, const Node &n)
+generate_operation(CudnnProgram &p, const Node &n)
 {
   for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
     if(n.type_ == nodetypes[i].name) {
@@ -917,62 +950,27 @@ generate_forward_operation(CudnnProgram &p, const Node &n)
 }
 
 
-void
-CudnnProgram::exec()
-{
-  allocWorkspace();
-  for(const auto &op : operations_) {
-    op->exec(*this);
-  }
-}
-
-void
-CudnnProgram::print() const
-{
-  for(const auto &t : inputs_) {
-    printf("Input: %s\n", t->info().c_str());
-  }
-
-  for(const auto &op : operations_) {
-    op->print();
-  }
-
-  for(const auto &t : outputs_) {
-    printf("Output: %s\n", t->info().c_str());
-  }
-}
-
-
-
-
 std::shared_ptr<Program>
-cudnn_inference(const Graph &g, int batch_size,
-                std::shared_ptr<CudnnContext> ctx)
+CudnnContext::createProgram(const Graph &g,
+                            ProgramType type,
+                            int batch_size)
 {
-  auto p = std::make_shared<CudnnProgram>(ctx, CUDNN_TENSOR_NCHW);
+  auto p = std::make_shared<CudnnProgram>(shared_from_this(),
+                                          CUDNN_TENSOR_NCHW,
+                                          type);
 
   for(const auto &n : g.inputs_) {
     p->inputs_.insert(lower_tensor(*p, n));
   }
 
   for(const auto &n : g.nodes_) {
-    generate_forward_operation(*p, *n);
+    generate_operation(*p, *n);
   }
 
   for(const auto &n : g.outputs_) {
     p->outputs_.insert(lower_tensor(*p, n));
   }
-
   return p;
-}
-
-
-std::shared_ptr<Program>
-CudnnContext::createProgram(const Graph &graph,
-                            ProgramType type,
-                            int batch_size)
-{
-  return cudnn_inference(graph, batch_size, shared_from_this());
 }
 
 
