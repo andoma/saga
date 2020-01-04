@@ -44,7 +44,7 @@ namespace saga {
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-typedef std::variant<float, int, std::vector<int>> Attribute;
+typedef std::variant<float, int, std::vector<int>, bool> Attribute;
 
 class Attributes : public std::unordered_map<std::string, Attribute> {
 
@@ -66,6 +66,8 @@ public:
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
+
+class Tensors;
 
 typedef std::vector<int64_t> Dims;
 
@@ -121,10 +123,17 @@ public:
   }
 
   void copyFrom(Tensor &t);
+
   double sse(Tensor &t);
 
   static std::shared_ptr<Tensor> load(const char *path);
 
+  static std::shared_ptr<Tensor> find(const std::string &name,
+                                      Tensors &named_tensors,
+                                      Tensor::DataType data_type,
+                                      const Dims &size,
+                                      double init_mean,
+                                      double init_stddev);
 
   // Info / Debug / etc
   void print(const char *prefix, int elements_per_rank = 0);
@@ -175,29 +184,26 @@ public:
 class Node {
 public:
 
-  Node(const std::string &type)
+  Node(const std::string &type,
+       const std::optional<const std::string> &name = std::nullopt)
     : type_(type)
-  {}
-
-  Node(const std::string &type, const Tensors &inputs,
-       const Attributes &attributes)
-    : type_(type)
-    , inputs_(inputs)
-    , attributes_(attributes)
+    , name_(name)
   {}
 
   const std::string type_;
+  const std::optional<const std::string> name_;
 
   Tensors inputs_;
   Attributes attributes_;
   Tensors outputs_;
 
-  std::shared_ptr<Tensor> inferTensor_y(const std::optional<const std::string> &name);
+  std::shared_ptr<Tensor> inferTensor_y(const std::optional<const std::string> &name = std::nullopt);
   void print() const;
 
   static std::vector<std::shared_ptr<Node>> make(const std::string &type,
                                                  const Tensors &inputs,
                                                  const Attributes &attributes,
+                                                 Tensors &named_tensors,
                                                  const std::optional<const std::string> &name = std::nullopt);
 };
 
@@ -212,9 +218,13 @@ public:
   std::unordered_set<std::shared_ptr<Tensor>> outputs_;
   Tensors tensors_;
 
-  std::shared_ptr<Tensor> add(const std::vector<std::shared_ptr<Node>> &nodes);
+  std::shared_ptr<Tensor> addNode(const std::string &type,
+                                  const Tensors &inputs,
+                                  const Attributes &attributes,
+                                  const std::optional<const std::string> &name = std::nullopt);
 
   static std::shared_ptr<Graph> load(const char *path);
+
   void print() const;
 };
 

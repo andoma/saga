@@ -37,8 +37,12 @@ Graph::print() const
 }
 
 std::shared_ptr<Tensor>
-Graph::add(const std::vector<std::shared_ptr<Node>> &nodes)
+Graph::addNode(const std::string &type,
+               const Tensors &inputs,
+               const Attributes &attributes,
+               const std::optional<const std::string> &name)
 {
+  auto nodes = Node::make(type, inputs, attributes, tensors_, name);
   nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
   if(nodes_.size() == 0)
     return nullptr;

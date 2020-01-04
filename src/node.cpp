@@ -40,20 +40,12 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
   const int pad = n.attributes_.get("pad", 0);
   const int dilation = n.attributes_.get("dilation", 1);
 
-  int features;
-  int filterdim_h;
-  int filterdim_w;
-
   auto w = n.inputs_.get("w");
-  if(w) {
-    features = w->dims_[0];
-    filterdim_h = w->dims_[2];
-    filterdim_w = w->dims_[3];
-  } else {
-    features = n.attributes_.get("activations", 1);
-    filterdim_h = n.attributes_.get("size", 1);
-    filterdim_w = n.attributes_.get("size", 1);
-  }
+  if(w == nullptr)
+    return nullptr;
+  const int features = w->dims_[0];
+  const int filterdim_h = w->dims_[2];
+  const int filterdim_w = w->dims_[3];
 
   auto x = n.inputs_.get("x");
   if(x == nullptr)
@@ -72,6 +64,36 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
                                   Dims({1, features,
                                         outputdim_h, outputdim_w}), name);
 }
+
+static std::vector<std::shared_ptr<Node>>
+conv_setup(std::shared_ptr<Node> n)
+{
+  auto x = n->inputs_.get("x");
+  if(!x)
+    return {};
+
+  auto w = n->inputs_.get("w");
+  auto b = n->inputs_.get("b");
+
+  if(!w) {
+    const int activations = n->attributes_.get("activations", 1);
+    const int size = n->attributes_.get("size", 1);
+
+    n->inputs_["w"] = w =
+      std::make_shared<Tensor>(x->data_type_,
+                               Dims({activations, x->dims_[1],
+                                     size, size}));
+  }
+
+  if(!b && n->attributes_.get("bias", false)) {
+    n->inputs_["b"] =
+      std::make_shared<Tensor>(x->data_type_,
+                               Dims({1, w->dims_[0]}));
+  }
+
+  return {n};
+}
+
 
 //------------------------------------------------------------------------
 
@@ -169,7 +191,7 @@ concat_y(const Node &n, const std::optional<const std::string> &name)
 //------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
-gemm_y(const Node &n, const std::optional<const std::string> &name)
+fc_y(const Node &n, const std::optional<const std::string> &name)
 {
   auto w = n.inputs_.get("w");
   if(w == nullptr)
@@ -180,6 +202,52 @@ gemm_y(const Node &n, const std::optional<const std::string> &name)
                                   Dims({1, w->dims_[transW ? 0 : 1]}),
                                   name);
 }
+
+
+static std::vector<std::shared_ptr<Node>>
+fc_setup(std::shared_ptr<Node> n)
+{
+  std::vector<std::shared_ptr<Node>> nodes;
+
+  auto x = n->inputs_.get("x");
+  if(!x)
+    return nodes;
+
+  if(x->dims_.size() != 2) {
+    // Auto-insert a reshape node
+    auto shape = makeCPUTensor(Tensor::DataType::INT64, Dims({2}));
+    auto a = shape->access();
+    a->set({0}, 1);
+    a->set({1}, x->elements_);
+
+    auto r = std::make_shared<Node>("reshape");
+    r->inputs_["x"] = x;
+    r->inputs_["shape"] = shape;
+    r->outputs_["y"] = x  = r->inferTensor_y();
+    nodes.push_back(r);
+  }
+
+  auto w = n->inputs_.get("w");
+  auto b = n->inputs_.get("b");
+
+  if(!w) {
+    const int outputs = n->attributes_.get("outputs", 1);
+    n->attributes_["transB"] = 1;
+    n->inputs_["w"] = w =
+      std::make_shared<Tensor>(x->data_type_,
+                               Dims({x->dims_[1], outputs}));
+  }
+
+  if(!b && n->attributes_.get("bias", false)) {
+    n->inputs_["b"] =
+      std::make_shared<Tensor>(x->data_type_,
+                               Dims({1, w->dims_[1]}));
+  }
+  nodes.push_back(n);
+  return nodes;
+}
+
+
 
 //------------------------------------------------------------------------
 
@@ -216,20 +284,20 @@ static const struct {
   std::vector<std::shared_ptr<Node>>(*setup)(std::shared_ptr<Node> node);
 
 } nodetypes[] = {
-  { "add",                    passthru_y },
-  { "avgpool",                pooling_y },
-  { "batchnorm",              passthru_y },
-  { "catclassifier",          passthru_y },
-  { "concat",                 concat_y },
-  { "conv",                   conv_y },
-  { "dropout",                passthru_y },
-  { "gemm",                   gemm_y },
-  { "maxpool",                pooling_y },
-  { "mul",                    passthru_y },
-  { "relu",                   passthru_y },
-  { "reshape",                reshape_y },
-  { "softmax",                passthru_y },
-  { "sum",                    sum_y },
+  { "add",               passthru_y },
+  { "avgpool",           pooling_y },
+  { "batchnorm",         passthru_y },
+  { "catclassifier",     passthru_y },
+  { "concat",            concat_y },
+  { "conv",              conv_y, conv_setup },
+  { "dropout",           passthru_y },
+  { "fc",                fc_y, fc_setup },
+  { "maxpool",           pooling_y },
+  { "mul",               passthru_y },
+  { "relu",              passthru_y },
+  { "reshape",           reshape_y },
+  { "softmax",           passthru_y },
+  { "sum",               sum_y },
 };
 
 
@@ -267,15 +335,29 @@ Node::print() const
 
 
 std::vector<std::shared_ptr<Node>>
-Node::make(const std::string &type, const Tensors &inputs,
+Node::make(const std::string &type,
+           const Tensors &inputs,
            const Attributes &attributes,
-           const std::optional<const std::string> &yname)
+           Tensors &named_tensors,
+           const std::optional<const std::string> &name)
 {
-  auto n = std::make_shared<Node>(type);
+  auto n = std::make_shared<Node>(type, name);
   n->inputs_ = inputs;
   n->attributes_ = attributes;
-  n->outputs_["y"] = n->inferTensor_y(yname);
-  return {n};
+
+  std::vector<std::shared_ptr<Node>> nodes({n});
+
+  for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
+    if(type == nodetypes[i].name && nodetypes[i].setup) {
+      nodes = nodetypes[i].setup(n);
+    }
+  }
+
+  if(!nodes.empty()) {
+    auto &last = nodes.back();
+    last->outputs_["y"] = last->inferTensor_y();
+  }
+  return nodes;
 }
 
 

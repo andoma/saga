@@ -236,35 +236,33 @@ mnist_main(int argc, char **argv)
 
   Graph g;
 
-  auto input = std::make_shared<Tensor>(Tensor::DataType::U8,
+  auto input = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
                                         Dims({1, 1, 28, 28}), "input");
   std::shared_ptr<Tensor> t;
 
-  t = g.add(Node::make("conv", {{"x", input}}, {{"size", 5}, {"activations", 64}}));
-  t = g.add(Node::make("relu", {{"x", t}}, {}));
-  t = g.add(Node::make("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}}));
-  t = g.add(Node::make("conv", {{"x", t}}, {{"size", 5}, {"activations", 64}}));
-  t = g.add(Node::make("relu", {{"x", t}}, {}));
-  t = g.add(Node::make("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}}));
+  t = g.addNode("conv", {{"x", input}},
+                {{"size", 5}, {"activations", 32}, {"bias", true}},
+                "conv1");
 
-  auto shape = makeCPUTensor(Tensor::DataType::INT64, Dims({2}));
-  auto a = shape->access();
-  a->set({0}, 1);
-  a->set({1}, 1024);
+  t = g.addNode("relu", {{"x", t}}, {});
+  t = g.addNode("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}});
+  t = g.addNode("conv", {{"x", t}},
+                {{"size", 5}, {"activations", 64}, {"bias", true}},
+                "conv2");
+  t = g.addNode("relu", {{"x", t}}, {});
+  t = g.addNode("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}});
 
-  t = g.add(Node::make("reshape", {{"x", t}, {"shape", shape}}, {}));
+  t = g.addNode("fc", {{"x", t}},
+                {{"outputs", 1024}, {"bias", true}},
+                "fc1");
 
-  std::shared_ptr<Tensor> w = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
-                                                       Dims({1024, 1024}));
+  t = g.addNode("relu", {{"x", t}}, {});
 
-  t = g.add(Node::make("gemm", {{"x", t}, {"w", w}}, {{"transB", 1}}));
-  t = g.add(Node::make("relu", {{"x", t}}, {}));
-  std::shared_ptr<Tensor> w2 = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
-                                                        Dims({1024, 10}));
+  t = g.addNode("fc", {{"x", t}},
+                {{"outputs", 10}, {"bias", true}},
+                "fc2");
 
-  t = g.add(Node::make("gemm", {{"x", t}, {"w", w2}}, {{"transB", 1}}));
-
-  t = g.add(Node::make("catclassifier", {{"x", t}}, {}));
+  t = g.addNode("catclassifier", {{"x", t}}, {});
 
   g.print();
 

@@ -479,7 +479,10 @@ printDesc(cudnnTensorDescriptor_t desc)
 
 #endif
 
+#include <random>
 #include <sstream>
+
+#include <inttypes.h>
 #include <x86intrin.h>
 #include <math.h>
 
@@ -746,7 +749,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
     if(c[rank - 1] == 0) {
       printf("%s%s: [", lf, prefix);
       for(size_t j = 0; j < c.size(); j++) {
-        printf("%s%3ld", j ? "," : "", c[j]);
+        printf("%s%3" PRId64, j ? "," : "", c[j]);
       }
       printf("]");
       lf = "\n";
@@ -890,6 +893,106 @@ Tensor::sse(Tensor &t)
 }
 
 
+std::optional<const std::string>
+Tensor::namePostfix(const std::string &postfix)
+{
+  return name_ ? std::make_optional(*name_ + "." + postfix) : std::nullopt;
+}
+
+
+
+
+class GenTensorAccess : public TensorAccess {
+
+public:
+  GenTensorAccess(size_t rank, double mean, double stddev)
+    : rank_(rank)
+    , distribution_(mean, stddev)
+  {}
+
+  Dims strides() { return Dims(rank_, 0); }
+
+  void *data() {
+    return NULL;
+  }
+
+  virtual double get(const std::vector<int64_t> &element) const {
+    return distribution_(generator_);
+  };
+
+  virtual void set(const std::vector<int64_t> &element, double value) {
+
+  }
+
+  const size_t rank_;
+
+  mutable std::normal_distribution<double> distribution_;
+  mutable std::default_random_engine generator_;
+};
+
+
+
+
+class GenTensor : public Tensor {
+public:
+  GenTensor(DataType data_type, const Dims &size,
+            const std::optional<std::string> &name,
+            double mean, double stddev)
+    : Tensor(data_type, size, name)
+    , mean_(mean)
+    , stddev_(stddev)
+  {}
+
+  std::unique_ptr<TensorAccess> access() {
+    return std::make_unique<GenTensorAccess>(dims_.size(), mean_, stddev_);
+  }
+
+  std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size) {
+    return std::make_shared<GenTensor>(data_type_, size, name_,
+                                       mean_, stddev_);
+  }
+
+  std::string info() const {
+    std::stringstream ss;
+    ss << Tensor::info();
+    ss << "(mean:" << mean_ << ", stddev:" << stddev_ << ")";
+    return ss.str();
+  }
+
+  const double mean_;
+  const double stddev_;
+};
+
+
+
+
+
+std::shared_ptr<Tensor>
+Tensor::find(const std::string &name,
+             Tensors &named_tensors,
+             Tensor::DataType data_type,
+             const Dims &size,
+             double init_mean,
+             double init_stddev)
+{
+  auto it = named_tensors.find(name);
+  if(it != named_tensors.end()) {
+    auto t = it->second;
+    assert(t->data_type_ == data_type);
+    assert(t->dims_ == size);
+    return t;
+  }
+
+  auto t = std::make_shared<GenTensor>(data_type, size, name,
+                                       init_mean, init_stddev);
+  return nullptr;
+}
+
+
+
+
+
+
 //------------------------------------------------------------------------
 
 
@@ -1020,12 +1123,6 @@ CPUTensor::slice(const Dims &offset, const Dims &size)
 }
 
 
-std::optional<const std::string>
-Tensor::namePostfix(const std::string &postfix)
-{
-  return name_ ? std::make_optional(*name_ + "." + postfix) : std::nullopt;
-}
-
 std::string
 CPUTensor::info() const
 {
@@ -1048,6 +1145,11 @@ makeCPUTensor(Tensor::DataType data_type, const Dims &size,
               const std::optional<const std::string> &name)
 {
   return std::make_shared<CPUTensor>(data_type, size, name);
+}
+
+std::shared_ptr<Context> createContext()
+{
+  return nullptr;
 }
 
 
