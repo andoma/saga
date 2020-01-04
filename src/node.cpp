@@ -24,9 +24,22 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <math.h>
 #include "saga.h"
 
 namespace saga {
+
+
+static std::optional<const std::string>
+node_tensor_name(const std::optional<const std::string> &node_name,
+                 const std::string &tensor_name)
+{
+  if(!node_name)
+    return std::nullopt;
+
+  return *node_name + "-" + tensor_name;
+}
+
 
 
 
@@ -66,7 +79,7 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
 }
 
 static std::vector<std::shared_ptr<Node>>
-conv_setup(std::shared_ptr<Node> n)
+conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 {
   auto x = n->inputs_.get("x");
   if(!x)
@@ -80,15 +93,16 @@ conv_setup(std::shared_ptr<Node> n)
     const int size = n->attributes_.get("size", 1);
 
     n->inputs_["w"] = w =
-      std::make_shared<Tensor>(x->data_type_,
-                               Dims({activations, x->dims_[1],
-                                     size, size}));
+      Tensor::find(x->data_type_, {activations, x->dims_[1], size, size},
+                   0, sqrt(2.0 / (x->dims_[1] * size * size)),
+                   named_tensors, node_tensor_name(n->name_, "w"));
   }
 
   if(!b && n->attributes_.get("bias", false)) {
     n->inputs_["b"] =
-      std::make_shared<Tensor>(x->data_type_,
-                               Dims({1, w->dims_[0]}));
+      Tensor::find(x->data_type_, {1, w->dims_[0]},
+                   0, 0,
+                   named_tensors, node_tensor_name(n->name_, "b"));
   }
 
   return {n};
@@ -205,7 +219,8 @@ fc_y(const Node &n, const std::optional<const std::string> &name)
 
 
 static std::vector<std::shared_ptr<Node>>
-fc_setup(std::shared_ptr<Node> n)
+fc_setup(std::shared_ptr<Node> n,
+         Tensors &named_tensors)
 {
   std::vector<std::shared_ptr<Node>> nodes;
 
@@ -223,7 +238,7 @@ fc_setup(std::shared_ptr<Node> n)
     auto r = std::make_shared<Node>("reshape");
     r->inputs_["x"] = x;
     r->inputs_["shape"] = shape;
-    r->outputs_["y"] = x  = r->inferTensor_y();
+    r->outputs_["y"] = x = r->inferTensor_y();
     nodes.push_back(r);
   }
 
@@ -233,15 +248,19 @@ fc_setup(std::shared_ptr<Node> n)
   if(!w) {
     const int outputs = n->attributes_.get("outputs", 1);
     n->attributes_["transB"] = 1;
+
+
     n->inputs_["w"] = w =
-      std::make_shared<Tensor>(x->data_type_,
-                               Dims({x->dims_[1], outputs}));
+      Tensor::find(x->data_type_, {x->dims_[1], outputs},
+                   0, sqrt(2.0 / x->dims_[1]),
+                   named_tensors, node_tensor_name(n->name_, "w"));
   }
 
   if(!b && n->attributes_.get("bias", false)) {
     n->inputs_["b"] =
-      std::make_shared<Tensor>(x->data_type_,
-                               Dims({1, w->dims_[1]}));
+      Tensor::find(x->data_type_, {1, w->dims_[1]},
+                   0, 0,
+                   named_tensors, node_tensor_name(n->name_, "b"));
   }
   nodes.push_back(n);
   return nodes;
@@ -281,7 +300,8 @@ static const struct {
   std::shared_ptr<Tensor>(*infer_y)(const Node &n,
                                     const std::optional<const std::string> &name);
 
-  std::vector<std::shared_ptr<Node>>(*setup)(std::shared_ptr<Node> node);
+  std::vector<std::shared_ptr<Node>>(*setup)(std::shared_ptr<Node> node,
+                                             Tensors &named_tensors);
 
 } nodetypes[] = {
   { "add",               passthru_y },
@@ -349,7 +369,7 @@ Node::make(const std::string &type,
 
   for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
     if(type == nodetypes[i].name && nodetypes[i].setup) {
-      nodes = nodetypes[i].setup(n);
+      nodes = nodetypes[i].setup(n, named_tensors);
     }
   }
 

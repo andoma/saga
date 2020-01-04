@@ -128,12 +128,12 @@ public:
 
   static std::shared_ptr<Tensor> load(const char *path);
 
-  static std::shared_ptr<Tensor> find(const std::string &name,
-                                      Tensors &named_tensors,
-                                      Tensor::DataType data_type,
+  static std::shared_ptr<Tensor> find(Tensor::DataType data_type,
                                       const Dims &size,
                                       double init_mean,
-                                      double init_stddev);
+                                      double init_stddev,
+                                      Tensors &named_tensors,
+                                      const std::optional<const std::string> &name = std::nullopt);
 
   // Info / Debug / etc
   void print(const char *prefix, int elements_per_rank = 0);

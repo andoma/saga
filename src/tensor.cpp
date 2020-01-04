@@ -514,24 +514,25 @@ public:
 
 
 std::shared_ptr<Tensor>
-Tensor::find(const std::string &name,
-             Tensors &named_tensors,
-             Tensor::DataType data_type,
+Tensor::find(Tensor::DataType data_type,
              const Dims &size,
              double init_mean,
-             double init_stddev)
+             double init_stddev,
+             Tensors &named_tensors,
+             const std::optional<const std::string> &name)
 {
-  auto it = named_tensors.find(name);
-  if(it != named_tensors.end()) {
-    auto t = it->second;
-    assert(t->data_type_ == data_type);
-    assert(t->dims_ == size);
-    return t;
+  if(name) {
+    auto it = named_tensors.find(*name);
+    if(it != named_tensors.end()) {
+      auto t = it->second;
+      assert(t->data_type_ == data_type);
+      assert(t->dims_ == size);
+      return t;
+    }
   }
 
-  auto t = std::make_shared<GenTensor>(data_type, size, name,
-                                       init_mean, init_stddev);
-  return nullptr;
+  return std::make_shared<GenTensor>(data_type, size, name,
+                                     init_mean, init_stddev);
 }
 
 
