@@ -144,7 +144,7 @@ public:
   void printStats(const char *prefix);
   std::string statsString(void);
 
-  std::optional<const std::string> namePostfix(const std::string &postfix);
+  std::optional<const std::string> namePostfix(const std::string &postfix) const;
 
   const std::optional<const std::string> name_;
   const DataType data_type_;

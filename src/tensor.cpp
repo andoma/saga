@@ -440,7 +440,7 @@ Tensor::sse(Tensor &t)
 
 
 std::optional<const std::string>
-Tensor::namePostfix(const std::string &postfix)
+Tensor::namePostfix(const std::string &postfix) const
 {
   return name_ ? std::make_optional(*name_ + "." + postfix) : std::nullopt;
 }
