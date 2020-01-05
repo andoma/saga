@@ -227,6 +227,14 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
 }
 
 
+CudaTensor::CudaTensor(const CudaTensor &o,
+                       cudnnTensorFormat_t format,
+                       const std::string &postfix)
+  : CudaTensor(o.data_type_, o.dims_, format, o.namePostfix(postfix))
+{
+}
+
+
 CudaTensor::~CudaTensor()
 {
   chkCUDNN(cudnnDestroyTensorDescriptor(desc_));

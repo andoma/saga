@@ -149,6 +149,11 @@ public:
 
   std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
                                            size_t dimensions = 0);
+
+  std::shared_ptr<CudaTensor> grad(std::shared_ptr<CudaTensor> src) {
+    return std::make_shared<CudaTensor>(*src, tensor_format_, "gradient");
+  }
+
 };
 
 
