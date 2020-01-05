@@ -91,6 +91,8 @@ public:
 class Tensor {
 
 public:
+  Tensor& operator=(Tensor const&) = delete;
+  Tensor(Tensor const&) = delete;
 
   struct Stats {
     double min;
