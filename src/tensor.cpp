@@ -694,12 +694,6 @@ makeCPUTensor(Tensor::DataType data_type, const Dims &size,
   return std::make_shared<CPUTensor>(data_type, size, name);
 }
 
-std::shared_ptr<Context> createContext()
-{
-  return nullptr;
-}
-
-
 }
 
 
