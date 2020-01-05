@@ -655,7 +655,7 @@ struct CudnnGemmFwd : public CudnnOperation {
 };
 
 static void
-gemm_make(CudnnProgram &p, const Node &n)
+fc_make(CudnnProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnGemmFwd>(p, n);
   p.operations_.push_back(f);
@@ -923,7 +923,7 @@ static const struct {
   DEFNODE(concat),
   DEFNODE(conv),
   DEFNODE(dropout),
-  DEFNODE(gemm),
+  DEFNODE(fc),
   DEFNODE(maxpool),
   DEFNODE(mul),
   DEFNODE(relu),

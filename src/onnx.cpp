@@ -567,7 +567,7 @@ make_gemm(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() == 3);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>("gemm");
+  auto n = std::make_shared<Node>("fc");
   n->inputs_["x"] = find_tensor(g, np.input(0));
   n->inputs_["w"] = find_tensor(g, np.input(1));
   n->inputs_["b"] = find_tensor(g, np.input(2));
@@ -582,7 +582,7 @@ make_matmul(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 {
   assert(np.input_size() == 2);
   assert(np.output_size() == 1);
-  auto n = std::make_shared<Node>("gemm");
+  auto n = std::make_shared<Node>("fc");
   n->inputs_["x"] = find_tensor(g, np.input(0));
   n->inputs_["w"] = find_tensor(g, np.input(1));
   make_tensor_y(g, *n, np.output(0));
