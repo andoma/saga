@@ -50,4 +50,42 @@ Graph::addNode(const std::string &type,
 }
 
 
+
+std::pair<TensorMapping, TensorMapping>
+Graph::tensorMappings()
+{
+  std::unordered_map<std::shared_ptr<Tensor>,
+                     std::vector<std::shared_ptr<Node>>> input_usage;
+  std::unordered_map<std::shared_ptr<Tensor>,
+                     std::vector<std::shared_ptr<Node>>> output_usage;
+
+  for(const auto &n : nodes_) {
+    for(const auto &t : n->inputs_) {
+      input_usage[t.second].push_back(n);
+    }
+    for(const auto &t : n->outputs_) {
+      output_usage[t.second].push_back(n);
+    }
+  }
+  return {input_usage, output_usage};
+}
+
+void
+Graph::createGradients()
+{
+  auto mappings = tensorMappings();
+
+  for(const auto &n : nodes_) {
+    auto y = n->outputs_["y"];
+    auto dy = std::make_shared<Tensor>(y->data_type_,
+                                       y->dims_,
+                                       y->namePostfix("grad"));
+    n->inputs_["dy"] = dy;
+
+    for(const auto &u : mappings.first[y]) {
+      u->outputs_["dx"] = dy;
+    }
+  }
+}
+
 }

@@ -264,6 +264,8 @@ mnist_main(int argc, char **argv)
 
   t = g.addNode("catclassifier", {{"x", t}}, {});
 
+  g.createGradients();
+
   g.print();
 
   auto ctx = createContext();

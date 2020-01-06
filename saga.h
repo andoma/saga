@@ -213,6 +213,9 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
+typedef std::unordered_map<std::shared_ptr<Tensor>,
+                           std::vector<std::shared_ptr<Node>>> TensorMapping;
+
 class Graph {
 public:
   std::vector<std::shared_ptr<Node>> nodes_;
@@ -228,6 +231,11 @@ public:
   static std::shared_ptr<Graph> load(const char *path);
 
   void print() const;
+
+  std::pair<TensorMapping, TensorMapping> tensorMappings();
+
+  void createGradients();
+
 };
 
 
