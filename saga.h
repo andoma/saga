@@ -106,6 +106,7 @@ public:
     HALF,
     FLOAT,
     INT64,
+    I32,
   };
 
   static size_t DataTypeSize(DataType dt);

@@ -64,6 +64,12 @@ get_i64(const void *base, size_t offset)
   return ((const int64_t *)base)[offset];
 }
 
+static double
+get_i32(const void *base, size_t offset)
+{
+  return ((const int32_t *)base)[offset];
+}
+
 static void
 set_float(void *base, size_t offset, double v)
 {
@@ -88,6 +94,11 @@ set_i64(void *base, size_t offset, double v)
   ((int64_t *)base)[offset] = v;
 }
 
+static void
+set_i32(void *base, size_t offset, double v)
+{
+  ((int32_t *)base)[offset] = v;
+}
 
 const TensorStorageAccess::getfn_t *
 datatype_get(Tensor::DataType dt)
@@ -97,6 +108,7 @@ datatype_get(Tensor::DataType dt)
   case Tensor::DataType::HALF:  return &get_half;
   case Tensor::DataType::FLOAT: return &get_float;
   case Tensor::DataType::INT64: return &get_i64;
+  case Tensor::DataType::I32:   return &get_i32;
   default: abort();
   }
 }
@@ -109,6 +121,7 @@ datatype_set(Tensor::DataType dt)
   case Tensor::DataType::HALF:  return &set_half;
   case Tensor::DataType::FLOAT: return &set_float;
   case Tensor::DataType::INT64: return &set_i64;
+  case Tensor::DataType::I32:   return &set_i32;
   default: abort();
   }
 }
@@ -122,6 +135,7 @@ datatype_str(Tensor::DataType dt)
   case Tensor::DataType::HALF:  return "half";
   case Tensor::DataType::FLOAT: return "float";
   case Tensor::DataType::INT64: return "i64";
+  case Tensor::DataType::I32:   return "i32";
   default: return "?";
   }
 }
@@ -134,6 +148,7 @@ Tensor::DataTypeSize(DataType dt)
   case Tensor::DataType::HALF:  return 2;
   case Tensor::DataType::FLOAT: return 4;
   case Tensor::DataType::INT64: return 8;
+  case Tensor::DataType::I32:   return 4;
   default: abort();
   }
 }

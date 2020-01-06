@@ -127,6 +127,8 @@ cudnnDataType_from_dataType(Tensor::DataType data_type)
     return CUDNN_DATA_HALF;
   case Tensor::DataType::U8:
     return CUDNN_DATA_UINT8;
+  case Tensor::DataType::I32:
+    return CUDNN_DATA_INT32;
   default:
     fprintf(stderr, "Unsupported data_type %d for cuda tensor\n",
             (int)data_type);
