@@ -269,8 +269,9 @@ mnist_main(int argc, char **argv)
   g.print();
 
   auto ctx = createContext();
-  auto p = ctx->createProgram(g, ProgramType::INFERENCE, 1);
+  auto p = ctx->createProgram(g, ProgramType::TRAINING, 1);
 
+  p->print();
 
 #if 0
   Network net(learn);

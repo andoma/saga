@@ -9,6 +9,7 @@ SAGA_SRCS += \
 SAGA_SRCS += \
 	src/cuda_dnn.cpp \
 	src/cuda_tensor.cpp \
+	src/cuda_kernels.cu \
 
 
 OLDS_SRCS += \
