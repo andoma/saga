@@ -307,6 +307,9 @@ CudaTensor::info() const
   case CUDNN_DATA_UINT8:
     ss << "<u8>";
     break;
+  case CUDNN_DATA_INT32:
+    ss << "<i32>";
+    break;
   default:
     ss << "<?>";
     break;
