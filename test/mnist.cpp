@@ -269,7 +269,7 @@ mnist_main(int argc, char **argv)
   g.print();
 
   auto ctx = createContext();
-  auto p = ctx->createProgram(g, ProgramType::TRAINING, 1);
+  auto p = ctx->createProgram(g, ProgramType::TRAINING, batch_size);
 
   p->print();
 
