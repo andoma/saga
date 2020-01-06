@@ -535,6 +535,16 @@ Tensor::find(Tensor::DataType data_type,
                                      init_mean, init_stddev);
 }
 
+std::shared_ptr<Tensor>
+Tensor::make(Tensor::DataType data_type,
+             const Dims &size,
+             double init_mean,
+             double init_stddev)
+{
+  return std::make_shared<GenTensor>(data_type, size, std::nullopt,
+                                     init_mean, init_stddev);
+}
+
 
 
 

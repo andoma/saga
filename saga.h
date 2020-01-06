@@ -137,6 +137,11 @@ public:
                                       Tensors &named_tensors,
                                       const std::optional<const std::string> &name = std::nullopt);
 
+  static std::shared_ptr<Tensor> make(Tensor::DataType data_type,
+                                      const Dims &size,
+                                      double init_mean,
+                                      double init_stddev);
+
   // Info / Debug / etc
   void print(const char *prefix, int elements_per_rank = 0);
   void printRGB(const char *prefix);
