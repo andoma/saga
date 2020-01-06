@@ -266,6 +266,13 @@ fc_setup(std::shared_ptr<Node> n,
   return nodes;
 }
 
+//------------------------------------------------------------------------
+
+static std::shared_ptr<Tensor>
+catclassifier_y(const Node &n, const std::optional<const std::string> &name)
+{
+  return std::make_shared<Tensor>(Tensor::DataType::I32, Dims({1, 1}), name);
+}
 
 
 //------------------------------------------------------------------------
@@ -307,7 +314,7 @@ static const struct {
   { "add",               passthru_y },
   { "avgpool",           pooling_y },
   { "batchnorm",         passthru_y },
-  { "catclassifier",     passthru_y },
+  { "catclassifier",     catclassifier_y },
   { "concat",            concat_y },
   { "conv",              conv_y, conv_setup },
   { "dropout",           passthru_y },
