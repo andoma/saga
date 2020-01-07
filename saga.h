@@ -145,7 +145,7 @@ public:
 
   // Info / Debug / etc
   void print(const char *prefix, int elements_per_rank = 0);
-  void printRGB(const char *prefix);
+  void printRGB(const char *prefix, float scale = 1);
   Stats stats();
   void printStats(const char *prefix);
   std::string statsString(void);

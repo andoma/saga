@@ -335,7 +335,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
 
 
 void
-Tensor::printRGB(const char *prefix)
+Tensor::printRGB(const char *prefix, float scale)
 {
   printf("%s: %s\n", prefix, info().c_str());
 
@@ -353,20 +353,26 @@ Tensor::printRGB(const char *prefix)
 
   size_t dim_offset = dims_.size() - 3;
 
-  if(dims_[dim_offset] < 3) {
-    printf("%s: C-axis too narrow\n", prefix);
-    return;
-  }
+  for(int n = 0; n < dims_[0]; n++) {
 
-  for(int y = 0; y < dims_[dim_offset + 1]; y++) {
-    printf("%s: ", prefix);
-    for(int x = 0; x < dims_[dim_offset + 2]; x++) {
-      const int r = ta->get({0,0,y,x});
-      const int g = ta->get({0,1,y,x});
-      const int b = ta->get({0,2,y,x});
-      printf("\033[48;2;%d;%d;%dm ", r, g, b);
+    for(int y = 0; y < dims_[dim_offset + 1]; y++) {
+      printf("%s: [%d]", prefix, n);
+
+      if(dims_[dim_offset] == 1) {
+        for(int x = 0; x < dims_[dim_offset + 2]; x++) {
+          const int v = ta->get({n,0,y,x}) * scale;
+          printf("\033[48;2;%d;%d;%dm ", v, v, v);
+        }
+      } else {
+        for(int x = 0; x < dims_[dim_offset + 2]; x++) {
+          const int r = ta->get({n,0,y,x}) * scale;
+          const int g = ta->get({n,1,y,x}) * scale;
+          const int b = ta->get({n,2,y,x}) * scale;
+          printf("\033[48;2;%d;%d;%dm ", r, g, b);
+        }
+      }
+      printf("\033[0m\n");
     }
-    printf("\033[0m\n");
   }
 }
 
