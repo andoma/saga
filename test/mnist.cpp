@@ -94,34 +94,36 @@ makeLabeledImages(const uint8_t *images,
   return lis;
 }
 
-  #if 0
 
 static void
 loadInputTensor(Tensor &t, const LabeledImage *lis)
 {
-  const size_t batch_size = t.dims_[0];
+  const int batch_size = t.dims_[0];
+  auto ta = t.access();
 
-  const uint8_t *images[batch_size];
-  for(size_t j = 0; j < batch_size; j++) {
-    images[j] = lis[j].image;
+  for(int n = 0; n < batch_size; n++) {
+    const uint8_t *src = lis[n].image;
+
+    for(int y = 0; y < t.dims_[2]; y++) {
+      for(int x = 0; x < t.dims_[3]; x++) {
+        float v = src[y * 28 + x] / 255.0;
+        ta->set({n, 0, y, x}, v);
+      }
+    }
   }
-  t.load(images);
 }
 
 
-static void 
+static void
 loadOutputTensor(Tensor &t, const LabeledImage *lis)
 {
-  const size_t n = t.n;
+  const int batch_size = t.dims_[0];
+  auto ta = t.access();
 
-  uint8_t labels[n];
-  for(size_t j = 0; j < n; j++) {
-    labels[j] = lis[j].label;
+  for(int n = 0; n < batch_size; n++) {
+    ta->set({n, 0}, lis[n].label);
   }
-
-  memcpy(t.hostMem(), labels, n);
 }
-#endif
 
 #if 0
 
@@ -149,18 +151,18 @@ build_fire_module(Network &net, const Layer &input,
 extern int
 mnist_main(int argc, char **argv)
 {
-  size_t batch_size = 64;
+  int batch_size = 64;
   bool learn = true;
 
   const char *loadpath = NULL;
   const char *savepath = NULL;
   int opt;
-
+  float learning_rate = 1e-4;
   std::string mode = "lecun";
 
   auto dt = Tensor::DataType::FLOAT;
 
-  while((opt = getopt(argc, argv, "ns:l:b:hm:")) != -1) {
+  while((opt = getopt(argc, argv, "ns:l:b:hm:r:")) != -1) {
     switch(opt) {
     case 's':
       savepath = optarg;
@@ -179,6 +181,9 @@ mnist_main(int argc, char **argv)
       break;
     case 'm':
       mode = optarg;
+      break;
+    case 'r':
+      learning_rate = strtod(optarg, NULL);
       break;
     }
   }
@@ -236,11 +241,11 @@ mnist_main(int argc, char **argv)
 
   Graph g;
 
-  auto input = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
-                                        Dims({1, 1, 28, 28}), "input");
+  auto x = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
+                                    Dims({1, 1, 28, 28}), "input");
   std::shared_ptr<Tensor> t;
 
-  t = g.addNode("conv", {{"x", input}},
+  t = g.addNode("conv", {{"x", x}},
                 {{"size", 5}, {"activations", 32}, {"bias", true}},
                 "conv1");
 
@@ -262,16 +267,78 @@ mnist_main(int argc, char **argv)
                 {{"outputs", 10}, {"bias", true}},
                 "fc2");
 
-  t = g.addNode("catclassifier", {{"x", t}}, {});
+  auto y = g.addNode("catclassifier", {{"x", t}}, {});
 
-  g.createGradients();
+  auto dy = g.createGradients();
 
   g.print();
 
   auto ctx = createContext();
-  auto p = ctx->createProgram(g, ProgramType::TRAINING, batch_size);
+  auto p = ctx->createProgram(g, ProgramType::TRAINING, batch_size,
+                              learning_rate);
 
   p->print();
+
+  x = p->resolveTensor(x);
+  y = p->resolveTensor(y);
+  dy = p->resolveTensor(dy);
+
+  printf("x: %s\n", x->info().c_str());
+  printf("y: %s\n", y->info().c_str());
+  printf("dy: %s\n", dy->info().c_str());
+
+  while(g_run) {
+    std::random_shuffle(train_data.begin(), train_data.end());
+
+    // Train
+
+    const int64_t t0 = get_ts();
+
+    double loss_sum = 0;
+
+    for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
+      loadInputTensor(*x, &train_data[i]);
+      loadOutputTensor(*dy, &train_data[i]);
+      p->exec(true);
+      y->print("y");
+    }
+
+    if(!g_run)
+      break;
+
+    // Test
+    const int64_t t1 = get_ts();
+    int correct = 0;
+    for(size_t i = 0; i < test_inputs; i += batch_size) {
+      loadInputTensor(*x, &test_data[i]);
+      p->exec(false);
+
+      y->print("y");
+      auto ta = y->access();
+
+      for(int j = 0; j < batch_size; j++) {
+        if(ta->get({j}) == test_data[i + j].label)
+          correct++;
+      }
+    }
+    const int64_t t2 = get_ts();
+    float percentage = 100.0 * correct / test_inputs;
+    printf("%3.3f%% Train:%.3fs Test:%.3fs Loss:%f\n",
+           percentage,
+           (t1 - t0) / 1e6,
+           (t2 - t1) / 1e6,
+           loss_sum / test_inputs);
+    if(percentage > 99)
+      break;
+  }
+
+
+
+
+  return 0;
+
+
+
 
 #if 0
   Network net(learn);

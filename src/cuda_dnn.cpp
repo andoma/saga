@@ -49,7 +49,8 @@ public:
 
   std::shared_ptr<Program> createProgram(const Graph &graph,
                                          ProgramType type,
-                                         int batch_size);
+                                         int batch_size,
+                                         float learning_rate);
 
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
@@ -104,11 +105,13 @@ public:
   CudnnProgram(std::shared_ptr<CudnnContext> ctx,
                cudnnTensorFormat_t tensor_format,
                ProgramType type,
-               int batch_size)
+               int batch_size,
+               float learning_rate)
     : ctx_(ctx)
     , tensor_format_(tensor_format)
     , type_(type)
     , batch_size_(batch_size)
+    , learning_rate_(learning_rate)
     , workspace_(NULL)
     , workspace_size_(0)
     , workspace_requested_(0)
@@ -121,9 +124,11 @@ public:
   }
 
 
-  void exec();
+  void exec(bool learn);
 
   void print() const;
+
+  std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t);
 
   void requetstWorkspace(size_t size) {
     workspace_requested_ = std::max(workspace_requested_, size);
@@ -141,6 +146,7 @@ public:
   const cudnnTensorFormat_t tensor_format_;
   const ProgramType type_;
   const int batch_size_;
+  const float learning_rate_;
 
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
@@ -173,7 +179,26 @@ public:
   {
     bwd_operations_.insert(bwd_operations_.begin(), op);
   }
+
+  void upd(const std::shared_ptr<CudnnOperation> &op)
+  {
+    upd_operations_.push_back(op);
+  }
+
 };
+
+std::shared_ptr<Tensor>
+CudnnProgram::resolveTensor(std::shared_ptr<Tensor> src)
+{
+  if(src == nullptr)
+    return nullptr;
+
+  auto it = tensors_.find(src);
+  if(it != tensors_.end()) {
+    return it->second;
+  }
+  return nullptr;
+}
 
 
 std::shared_ptr<CudaTensor>
@@ -234,6 +259,7 @@ CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
 
 
 
+
 class CudnnOperation {
 public:
   virtual ~CudnnOperation() {}
@@ -245,27 +271,26 @@ public:
 
 
 void
-CudnnProgram::exec()
+CudnnProgram::exec(bool learn)
 {
   allocWorkspace();
   for(const auto &op : fwd_operations_) {
     op->exec(*this);
   }
-  for(const auto &op : bwd_operations_) {
-    op->exec(*this);
-  }
-  for(const auto &op : upd_operations_) {
-    op->exec(*this);
+  if(learn) {
+    for(const auto &op : bwd_operations_) {
+      op->exec(*this);
+    }
+    for(const auto &op : upd_operations_) {
+      op->exec(*this);
+    }
   }
 }
+
 
 void
 CudnnProgram::print() const
 {
-  for(const auto &t : inputs_) {
-    printf("Input: %s\n", t->info().c_str());
-  }
-
   printf("Forward:\n");
   for(const auto &op : fwd_operations_) {
     op->print();
@@ -276,11 +301,75 @@ CudnnProgram::print() const
     op->print();
   }
 
-
-  for(const auto &t : outputs_) {
-    printf("Output: %s\n", t->info().c_str());
+  printf("Update:\n");
+  for(const auto &op : upd_operations_) {
+    op->print();
   }
 }
+
+//------------------------------------------------------------------------
+struct CudnnAdam : public CudnnOperation {
+
+  const std::shared_ptr<CudaTensor> weights_, gradient_;
+  float learning_rate_;
+  float *temp_;
+  int iter_;
+
+  CudnnAdam(CudnnProgram &p,
+            std::shared_ptr<CudaTensor> weights,
+            std::shared_ptr<CudaTensor> gradient)
+    : weights_(weights)
+    , gradient_(gradient)
+    , learning_rate_(p.learning_rate_)
+    , iter_(0)
+  {
+    assert(weights->dims_ == gradient->dims_);
+
+    size_t bytes;
+    switch(weights->data_type_) {
+    case Tensor::DataType::FLOAT:
+      // Allocate 2x floats for each weight (m and v)
+      bytes = weights_->elements_ * 2 * sizeof(float);
+      chkCuda(cudaMalloc(&temp_, bytes));
+      chkCuda(cudaMemset(temp_, 0, bytes));
+      break;
+    default:
+      abort();
+    }
+  }
+
+  ~CudnnAdam()
+  {
+    chkCuda(cudaFree(temp_));
+  }
+
+  void print() const {
+    printf("Adam\n");
+    printf("\tweights:  %s\n", weights_->info().c_str());
+    printf("\tgradient: %s\n", gradient_->info().c_str());
+  }
+
+  void exec(CudnnProgram &p) {
+    const int i = ++iter_;
+
+#define ADAM_B1      0.9
+#define ADAM_B2      0.999
+
+    const float b1t = 1.0 / (1.0 - pow(ADAM_B1, i));
+    const float b2t = 1.0 / (1.0 - pow(ADAM_B2, i));
+
+    switch(weights_->data_type_) {
+    case Tensor::DataType::FLOAT:
+      adam_float(weights_->elements_, learning_rate_,
+                 (float *)weights_->deviceMem(),
+                 (const float *)gradient_->deviceMem(),
+                 (float *)temp_, b1t, b2t);
+      break;
+    default:
+      abort();
+    }
+  }
+};
 
 
 //------------------------------------------------------------------------
@@ -539,8 +628,12 @@ conv_make(CudnnProgram &p, const Node &n)
   p.fwd(f);
   if(p.type_ == ProgramType::INFERENCE)
     return;
-  p.bwd(std::make_shared<CudnnConvolutionBwd>(p, n, f));
+  auto b = std::make_shared<CudnnConvolutionBwd>(p, n, f);
+  p.bwd(b);
 
+  p.upd(std::make_shared<CudnnAdam>(p, f->w_, b->dw_));
+  if(f->b_)
+    p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
 }
 
 
@@ -963,7 +1056,8 @@ struct CudnnGemmBwd : public CudnnOperation {
 
   void print() const {
     printf("Gemm Bwd\n");
-    printf("\tdx: %s\n", dx_->info().c_str());
+    if(dx_)
+      printf("\tdx: %s\n", dx_->info().c_str());
     printf("\tdw: %s\n", dw_->info().c_str());
     printf("\tdb: %s\n", db_->info().c_str());
     printf("\tdy: %s\n", dy_->info().c_str());
@@ -984,14 +1078,12 @@ struct CudnnGemmBwd : public CudnnOperation {
                           &beta,
                           (float *)dw_->deviceMem(), num_inputs_));
 
-
       chkCuda(cublasSgemv(ctx_->cublas_, CUBLAS_OP_N, num_outputs_, n_,
                           &alpha,
                           (const float *)dy_->deviceMem(), num_outputs_,
                           (const float *)ones_->deviceMem(), 1,
                           &beta,
                           (float *)db_->deviceMem(), 1));
-
 
       if(dx_ != NULL) {
         chkCuda(cublasSgemm(ctx_->cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
@@ -1052,8 +1144,12 @@ fc_make(CudnnProgram &p, const Node &n)
 
   if(p.type_ == ProgramType::INFERENCE)
     return;
-  p.bwd(std::make_shared<CudnnGemmBwd>(p, n, f));
+  auto b = std::make_shared<CudnnGemmBwd>(p, n, f);
+  p.bwd(b);
 
+  p.upd(std::make_shared<CudnnAdam>(p, f->w_, b->dw_));
+  if(f->b_)
+    p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
 }
 
 
@@ -1123,7 +1219,6 @@ struct CudnnCatClassifierFwd : public CudnnOperation {
   void exec(CudnnProgram &p) {
 
     float alpha = 1.0f, beta = 0.0f;
-
     chkCUDNN(cudnnSoftmaxForward(ctx_->cudnn_,
                                  CUDNN_SOFTMAX_ACCURATE,
                                  CUDNN_SOFTMAX_MODE_CHANNEL,
@@ -1178,7 +1273,7 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
                                        (const float *)fwd_->p_->deviceMem(),
                                        (float *)dx_->deviceMem(),
                                        (const int32_t *)dy_->deviceMem(),
-                                       (float *)loss_->deviceMem(),
+                                       loss_ ? (float *)loss_->deviceMem() : NULL,
                                        c, scale);
       break;
     default:
@@ -1454,23 +1549,17 @@ generate_operation(CudnnProgram &p, const Node &n)
 std::shared_ptr<Program>
 CudnnContext::createProgram(const Graph &g,
                             ProgramType type,
-                            int batch_size)
+                            int batch_size,
+                            float learning_rate)
 {
   auto p = std::make_shared<CudnnProgram>(shared_from_this(),
                                           CUDNN_TENSOR_NCHW,
-                                          type, batch_size);
-
-  for(const auto &n : g.inputs_) {
-    p->inputs_.insert(p->lower_tensor_batch(n));
-  }
-
+                                          type, batch_size,
+                                          learning_rate);
   for(const auto &n : g.nodes_) {
     generate_operation(*p, *n);
   }
 
-  for(const auto &n : g.outputs_) {
-    p->outputs_.insert(p->lower_tensor_batch(n));
-  }
   return p;
 }
 

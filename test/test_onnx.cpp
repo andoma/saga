@@ -28,12 +28,12 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
   if(verbose)
     g->print();
 
-  auto p = ctx->createProgram(*g, ProgramType::INFERENCE, 1);
+  auto p = ctx->createProgram(*g, ProgramType::INFERENCE, 1, 0);
   if(verbose)
     p->print();
 
-  auto input = *p->inputs_.begin();
-  auto output = *p->outputs_.begin();
+  auto input = p->resolveTensor(*g->inputs_.begin());
+  auto output = p->resolveTensor(*g->outputs_.begin());
 
   printf("Test: %s\n", base_path);
   printf("  INPUT: %s\n", input->info().c_str());

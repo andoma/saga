@@ -70,22 +70,23 @@ Graph::tensorMappings()
   return {input_usage, output_usage};
 }
 
-void
+std::shared_ptr<Tensor>
 Graph::createGradients()
 {
   auto mappings = tensorMappings();
-
+  std::shared_ptr<Tensor> dy;
   for(const auto &n : nodes_) {
     auto y = n->outputs_["y"];
-    auto dy = std::make_shared<Tensor>(y->data_type_,
-                                       y->dims_,
-                                       y->namePostfix("grad"));
+    dy = std::make_shared<Tensor>(y->data_type_,
+                                  y->dims_,
+                                  y->namePostfix("grad"));
     n->inputs_["dy"] = dy;
 
     for(const auto &u : mappings.first[y]) {
       u->outputs_["dx"] = dy;
     }
   }
+  return dy;
 }
 
 }

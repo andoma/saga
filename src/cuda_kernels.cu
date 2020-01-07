@@ -1,5 +1,11 @@
 #include "cuda_kernels.h"
 
+namespace saga {
+
+//------------------------------------------------------------------------
+// Category Classifier
+//------------------------------------------------------------------------
+
 template< typename T, typename L > __global__ static void
 catclassifier_pred(int n, const T *input, L *output, unsigned int channels)
 {
@@ -42,7 +48,6 @@ catclassifier_backprop(int n, const T *prob, T *grad, const L *labels, float *lo
 }
 
 
-namespace saga {
 
 
 void
@@ -57,6 +62,49 @@ catclassifier_backprop_float_i32(int n, const float *p, float *dx,
                                  unsigned int c, float scale)
 {
   catclassifier_backprop<<<(n+255)/256, 256>>>(n, p, dx, dy, loss, c, scale);
+}
+
+
+
+//------------------------------------------------------------------------
+// Adam weight update
+//------------------------------------------------------------------------
+
+#define ADAM_EPSILON 1e-8
+#define ADAM_B1      0.9
+#define ADAM_B2      0.999
+
+__global__ static void
+adam_kernel(int n, float alpha, float *weights, const float *dweights, float *t,
+            float b1t, float b2t)
+{
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+  if(i >= n)
+    return;
+
+  weights[i] -= alpha * dweights[i];
+  return;
+
+  t += i * 2; // mt and vt are stored next to each other in RAM
+
+  const float b1 = ADAM_B1;
+  const float b2 = ADAM_B2;
+  const float e = ADAM_EPSILON;
+  const float dw = dweights[i];
+
+  const float m = t[0] = b1 * t[0] + (1.0f - b1) * dw;
+  const float v = t[1] = b2 * t[1] + (1.0f - b2) * dw * dw;
+  const float m_hat = m * b1t;
+  const float v_hat = v * b2t;
+
+  weights[i] -= alpha * m_hat / (sqrtf(v_hat) + e);
+}
+
+void
+adam_float(int n, float alpha, float *weights, const float *dweights, float *t,
+           float b1t, float b2t)
+{
+  adam_kernel<<<(n+255)/256, 256>>>(n, alpha, weights, dweights, t, b1t, b2t);
 }
 
 

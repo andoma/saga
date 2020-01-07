@@ -240,7 +240,7 @@ public:
 
   std::pair<TensorMapping, TensorMapping> tensorMappings();
 
-  void createGradients();
+  std::shared_ptr<Tensor> createGradients();
 
 };
 
@@ -258,11 +258,9 @@ enum class ProgramType {
 class Program {
 public:
   virtual ~Program() {}
-  virtual void exec() = 0;
+  virtual void exec(bool learn = false) = 0;
   virtual void print() const = 0;
-
-  std::unordered_set<std::shared_ptr<Tensor>> inputs_;
-  std::unordered_set<std::shared_ptr<Tensor>> outputs_;
+  virtual std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) = 0;
 };
 
 //------------------------------------------------------------------------
@@ -274,7 +272,8 @@ public:
   virtual ~Context() {}
   virtual std::shared_ptr<Program> createProgram(const Graph &graph,
                                                  ProgramType type,
-                                                 int batch_size) = 0;
+                                                 int batch_size,
+                                                 float learning_rate) = 0;
 };
 
 
