@@ -258,9 +258,10 @@ enum class ProgramType {
 class Program {
 public:
   virtual ~Program() {}
+  virtual std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) = 0;
   virtual void exec(bool learn = false) = 0;
   virtual void print() const = 0;
-  virtual std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) = 0;
+  virtual void debug(bool on) = 0;
 };
 
 //------------------------------------------------------------------------

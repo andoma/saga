@@ -112,6 +112,7 @@ public:
     , type_(type)
     , batch_size_(batch_size)
     , learning_rate_(learning_rate)
+    , debug_(false)
     , workspace_(NULL)
     , workspace_size_(0)
     , workspace_requested_(0)
@@ -127,6 +128,7 @@ public:
   void exec(bool learn);
 
   void print() const;
+  void debug(bool);
 
   std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t);
 
@@ -147,6 +149,7 @@ public:
   const ProgramType type_;
   const int batch_size_;
   const float learning_rate_;
+  bool debug_;
 
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
@@ -306,6 +309,13 @@ CudnnProgram::print() const
     op->print();
   }
 }
+
+void
+CudnnProgram::debug(bool on)
+{
+  debug_ = on;
+}
+
 
 //------------------------------------------------------------------------
 struct CudnnAdam : public CudnnOperation {
@@ -499,6 +509,16 @@ struct CudnnConvolutionFwd : public CudnnOperation {
                               &alpha, b_->desc(), b_->deviceMem(),
                               &alpha, y_->desc(), y_->deviceMem()));
     }
+
+    if(p.debug_) {
+      x_->printStats("conv.x");
+      w_->printStats("conv.w");
+      if(b_)
+        b_->printStats("conv.b");
+      y_->printStats("conv.y");
+
+    }
+
   }
 };
 
@@ -616,6 +636,11 @@ struct CudnnConvolutionBwd : public CudnnOperation {
                                             &beta,
                                             dx_->desc(),
                                             dx_->deviceMem()));
+    }
+
+    if(p.debug_) {
+      dw_->printStats("conv.dw");
+      db_->printStats("conv.db");
     }
   }
 };
@@ -768,8 +793,7 @@ struct CudnnActivationBwd : public CudnnOperation {
                                      dy_->desc(), dy_->deviceMem(),
                                      fwd_->x_->desc(), fwd_->x_->deviceMem(),
                                      &beta,
-                                     dx_->desc(),
-                                     dx_->deviceMem()));
+                                     dx_->desc(), dx_->deviceMem()));
   }
 };
 
@@ -985,7 +1009,8 @@ struct CudnnGemmFwd : public CudnnOperation {
   }
 
   void print() const {
-    printf("Gemm Fwd\n");
+    printf("Gemm Fwd (%d inputs, %d outputs)\n",
+           num_inputs_, num_outputs_);
     printf("\tx: %s\n", x_->info().c_str());
     printf("\tw: %s\n", w_->info().c_str());
     if(b_)
@@ -1026,6 +1051,15 @@ struct CudnnGemmFwd : public CudnnOperation {
                               &alpha, b_->desc(), b_->deviceMem(),
                               &alpha, y_->desc(), y_->deviceMem()));
     }
+
+    if(p.debug_) {
+      x_->printStats("gemm.x");
+      w_->printStats("gemm.w");
+      b_->printStats("gemm.b");
+      y_->printStats("gemm.y");
+    }
+
+
   }
 };
 
@@ -1096,6 +1130,18 @@ struct CudnnGemmBwd : public CudnnOperation {
                             &beta,
                             (float *)dx_->deviceMem(), num_inputs_));
       }
+
+      if(p.debug_) {
+        x_->print("gemm.x", 4);
+        w_->print("gemm.w", 4);
+        dy_->print("gemm.dy", 4);
+        dw_->print("gemm.dw", 4);
+        db_->print("gemm.db", 4);
+        if(dx_)
+          dx_->print("gemm.dx", 4);
+      }
+
+
       break;
 #if 0
     case CUDNN_DATA_HALF:
@@ -1280,6 +1326,14 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
     default:
       abort();
     }
+
+    if(p.debug_) {
+      fwd_->x_->print("catclassifier.x");
+      fwd_->p_->print("catclassifier.p");
+      dy_->print("catclassifier.dy");
+      dx_->print("catclassifier.dx");
+    }
+
   }
 
 };
@@ -1468,6 +1522,8 @@ struct CudnnPrintTensor : public CudnnOperation {
   {}
 
   void exec(CudnnProgram &p) {
+    if(!p.debug_)
+      return;
     x_->print(prefix_.c_str(), 4);
   }
 };
@@ -1484,7 +1540,12 @@ struct CudnnPrintStatsTensor : public CudnnOperation {
     , x_(x)
   {}
 
+  void print() const {
+  }
+
   void exec(CudnnProgram &p) {
+    if(!p.debug_)
+      return;
     printf("%s: %s\n", prefix_.c_str(), x_->info().c_str());
     x_->printStats(prefix_.c_str());
   }
@@ -1542,7 +1603,7 @@ generate_operation(CudnnProgram &p, const Node &n)
       return;
     }
   }
-  printf("Cant emit forward operation for node type %s\n", n.type_.c_str());
+  printf("Cant emit operation for node type %s\n", n.type_.c_str());
   abort();
 }
 
