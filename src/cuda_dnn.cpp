@@ -978,7 +978,7 @@ struct CudnnGemmFwd : public CudnnOperation {
     , b_(p.lower_tensor(n.inputs_.get("b"), 2))
     , y_(p.lower_tensor_batch(n.outputs_.get("y")))
     , n_(x_->dims_[0])
-    , num_inputs_(x_->dims_[1])
+    , num_inputs_(w_->dims_[0])
     , num_outputs_(y_->dims_[1])
     , transW_(n.attributes_.get("transW", 0))
   {
@@ -1033,7 +1033,7 @@ struct CudnnGemmFwd : public CudnnOperation {
 struct CudnnGemmBwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
-  const std::shared_ptr<CudaTensor> dx_, dw_, db_, dy_, x_;
+  const std::shared_ptr<CudaTensor> dx_, dw_, db_, dy_, x_, w_;
   const int n_;
   const int num_inputs_;
   const int num_outputs_;
@@ -1047,9 +1047,10 @@ struct CudnnGemmBwd : public CudnnOperation {
     , db_(p.grad(fwd->b_))
     , dy_(p.lower_tensor_batch(n.inputs_.get("dy")))
     , x_(fwd->x_)
-    , n_(x_->dims_[0])
-    , num_inputs_(x_->dims_[1])
-    , num_outputs_(fwd->y_->dims_[1])
+    , w_(fwd->w_)
+    , n_(fwd->n_)
+    , num_inputs_(fwd->num_inputs_)
+    , num_outputs_(fwd->num_outputs_)
     , ones_(p.lower_tensor(Tensor::make(x_->data_type_, {n_,1}, 1, 0)))
   {
   }
@@ -1089,7 +1090,7 @@ struct CudnnGemmBwd : public CudnnOperation {
         chkCuda(cublasSgemm(ctx_->cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
                             num_inputs_, n_, num_outputs_,
                             &alpha,
-                            (const float *)dw_->deviceMem(), num_inputs_,
+                            (const float *)w_->deviceMem(), num_inputs_,
                             (const float *)dy_->deviceMem(),
                             num_outputs_,
                             &beta,
