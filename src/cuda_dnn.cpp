@@ -1012,7 +1012,7 @@ struct CudnnGemmFwd : public CudnnOperation {
     , b_(p.lower_tensor(n.inputs_.get("b"), 2))
     , y_(p.lower_tensor_batch(n.outputs_.get("y")))
     , n_(x_->dims_[0])
-    , num_inputs_(w_->dims_[0])
+    , num_inputs_(w_->dims_[1])
     , num_outputs_(y_->dims_[1])
     , transW_(n.attributes_.get("transW", 0))
   {
