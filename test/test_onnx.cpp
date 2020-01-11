@@ -9,34 +9,23 @@
 using namespace saga;
 
 
-
 static int
-test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
+test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
+                int verbose, const Graph &g, TensorLayout layout)
 {
-  char dirtmp[PATH_MAX];
-  snprintf(dirtmp, sizeof(dirtmp), "%s", model_path);
-
-  char *base_path = dirname(dirtmp);
   char input_path[PATH_MAX];
   char output_path[PATH_MAX];
 
-  auto g = Graph::load(model_path);
-  if(g == NULL) {
-    fprintf(stderr, "Failed to load model graph %s\n", model_path);
-    return 1;
-  }
-  if(verbose)
-    g->print();
-
-  auto p = ctx->createProgram(*g, ProgramType::INFERENCE, 1, 0,
-                              TensorLayout::NCHW);
+  auto p = ctx->createProgram(g, ProgramType::INFERENCE, 1, 0,
+                              TensorLayout::NHWC);
   if(verbose)
     p->print();
 
-  auto input = p->resolveTensor(*g->inputs_.begin());
-  auto output = p->resolveTensor(*g->outputs_.begin());
+  auto input = p->resolveTensor(*g.inputs_.begin());
+  auto output = p->resolveTensor(*g.outputs_.begin());
 
-  printf("Test: %s\n", base_path);
+  printf("Test: %s (Internal Tensor Layout: %s)\n", base_path,
+         layout == TensorLayout::NCHW ? "NCHW" : "NHWC");
   printf("  INPUT: %s\n", input->info().c_str());
   printf("  OUTPUT: %s\n", output->info().c_str());
 
@@ -73,6 +62,29 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
     }
     printf("  Test-%d: Ok SSE:%f\n", i, sse);
   }
+  return 0;
+}
+
+static int
+test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
+{
+  char dirtmp[PATH_MAX];
+  snprintf(dirtmp, sizeof(dirtmp), "%s", model_path);
+
+  char *base_path = dirname(dirtmp);
+
+  auto g = Graph::load(model_path);
+  if(g == NULL) {
+    fprintf(stderr, "Failed to load model graph %s\n", model_path);
+    return 1;
+  }
+  if(verbose)
+    g->print();
+
+  if(test_one_layout(base_path, ctx, verbose, *g, TensorLayout::NCHW))
+    return 1;
+  if(test_one_layout(base_path, ctx, verbose, *g, TensorLayout::NHWC))
+    return 1;
 
   return 0;
 }
