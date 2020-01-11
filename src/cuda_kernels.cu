@@ -82,9 +82,6 @@ adam_kernel(int n, float alpha, float *weights, const float *dweights, float *t,
   if(i >= n)
     return;
 
-  weights[i] -= alpha * dweights[i];
-  return;
-
   t += i * 2; // mt and vt are stored next to each other in RAM
 
   const float b1 = ADAM_B1;
