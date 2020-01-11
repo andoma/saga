@@ -99,13 +99,17 @@ static void
 loadInputTensor(Tensor &t, const LabeledImage *lis)
 {
   const int batch_size = t.dims_[0];
-  auto ta = t.access();
   const size_t size = 28 * 28;
-  uint8_t *dst = (uint8_t *)ta->data();
+
+  uint8_t prep[size * batch_size];
+  uint8_t *dst = prep;
   for(int n = 0; n < batch_size; n++) {
     memcpy(dst, lis[n].image, size);
     dst += size;
   }
+
+  auto ta = t.access();
+  ta->copyBytesFrom({}, prep, size * batch_size);
 }
 
 

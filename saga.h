@@ -80,7 +80,10 @@ public:
   virtual Dims strides() = 0;
   virtual void *data() = 0;
 
-  virtual double get(const std::vector<int64_t> &element) const = 0;
+  virtual void copyBytesFrom(const std::vector<int64_t> &element,
+                             const void *data, size_t size) = 0;
+
+  virtual double get(const std::vector<int64_t> &element) = 0;
   virtual void set(const std::vector<int64_t> &element, double value) = 0;
 
   TensorAccess(TensorAccess const&) = delete;

@@ -71,6 +71,7 @@ public:
                    int64_t offset)
     : storage_(storage)
     , offset_(offset)
+    , sync_(false)
   {
     const int max_rank = 8;
     int dims[max_rank];
@@ -85,7 +86,6 @@ public:
       strides_.push_back(strides[i]);
     }
 
-    cudaDeviceSynchronize();
   }
 
   ~CudaTensorAccess() {}
@@ -102,7 +102,11 @@ public:
     return offset;
   }
 
-  virtual double get(const std::vector<int64_t> &element) const {
+  virtual double get(const std::vector<int64_t> &element) {
+    if(!sync_) {
+      cudaDeviceSynchronize();
+      sync_ = true;
+    }
     return storage_->get(offsetForElement(element));
   };
 
@@ -110,9 +114,17 @@ public:
     storage_->set(offsetForElement(element), value);
   }
 
+  virtual void copyBytesFrom(const std::vector<int64_t> &element,
+                             const void *data, size_t size) {
+    const size_t o = offsetForElement(element) * storage_->element_size_;
+    char *dst = (char *)storage_->data_;
+    cudaMemcpyAsync(dst + o, data, size, cudaMemcpyHostToDevice, 0);
+  }
+
   Dims strides_;
   const std::shared_ptr<CudaTensorStorage> storage_;
   const int64_t offset_;
+  bool sync_;
 };
 
 

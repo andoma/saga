@@ -24,6 +24,7 @@ public:
   const getfn_t *get_;
   const setfn_t *set_;
   const Tensor::DataType data_type_;
+  const size_t element_size_;
   void *data_;
 };
 

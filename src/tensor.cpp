@@ -165,6 +165,7 @@ TensorStorageAccess::TensorStorageAccess(Tensor::DataType data_type)
   : get_(datatype_get(data_type))
   , set_(datatype_set(data_type))
   , data_type_(data_type)
+  , element_size_(Tensor::DataTypeSize(data_type))
   , data_(NULL)
 {}
 
@@ -488,11 +489,17 @@ public:
     return NULL;
   }
 
-  virtual double get(const std::vector<int64_t> &element) const {
+  virtual double get(const std::vector<int64_t> &element) {
     return distribution_(generator_);
   };
 
   virtual void set(const std::vector<int64_t> &element, double value) {
+
+  }
+
+  virtual void copyBytesFrom(const std::vector<int64_t> &element,
+                             const void *data, size_t size)
+  {
 
   }
 
@@ -601,7 +608,8 @@ public:
 class CPUTensorAccess : public TensorAccess {
 
 public:
-  CPUTensorAccess(const Dims &strides, std::shared_ptr<CPUTensorStorage> storage,
+  CPUTensorAccess(const Dims &strides,
+                  std::shared_ptr<CPUTensorStorage> storage,
                   int64_t offset)
     : strides_(strides)
     , storage_(storage)
@@ -625,12 +633,20 @@ public:
     return offset;
   }
 
-  virtual double get(const std::vector<int64_t> &element) const {
+  virtual double get(const std::vector<int64_t> &element) {
     return storage_->get(offsetForElement(element));
   };
 
   virtual void set(const std::vector<int64_t> &element, double value) {
     storage_->set(offsetForElement(element), value);
+  }
+
+  virtual void copyBytesFrom(const std::vector<int64_t> &element,
+                             const void *data, size_t size)
+  {
+    const size_t o = offsetForElement(element) * storage_->element_size_;
+    char *dst = (char *)storage_->data_;
+    memcpy(dst + o, data, size);
   }
 
   const Dims strides_;
