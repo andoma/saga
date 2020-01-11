@@ -166,6 +166,9 @@ public:
   std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
                                            size_t dimensions = 0);
 
+  std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src,
+                                                 cudnnTensorFormat_t format);
+
   std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src);
 
   std::shared_ptr<CudaTensor> grad(std::shared_ptr<CudaTensor> src) {
@@ -235,7 +238,8 @@ CudnnProgram::lower_tensor(std::shared_ptr<Tensor> src,
 
 
 std::shared_ptr<CudaTensor>
-CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
+CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
+                                 cudnnTensorFormat_t tensor_format)
 {
   if(src == nullptr)
     return nullptr;
@@ -250,12 +254,19 @@ CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
   dims[0] = batch_size_;
 
   auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                        dims, tensor_format_,
+                                        dims, tensor_format,
                                         src->name_);
 
   t->copyFrom(*src);
   tensors_[src] = t;
   return t;
+}
+
+
+std::shared_ptr<CudaTensor>
+CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
+{
+  return lower_tensor_batch(src, tensor_format_);
 }
 
 
@@ -1542,21 +1553,22 @@ mul_make(CudnnProgram &p, const Node &n)
 
 //------------------------------------------------------------------------
 
-static void
-reshape_make(CudnnProgram &p, const Node &n)
+static std::vector<std::shared_ptr<Node>>
+reshape_transform(CudnnProgram &p, const Node &n)
 {
-  auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+  auto x = p.lower_tensor_batch(n.inputs_.get("x"),
+                                CUDNN_TENSOR_NCHW);
   auto y = n.outputs_.get("y");
 
   Dims dims(y->dims_);
   dims[0] = p.batch_size_;
 
   p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
-                                               dims, p.tensor_format_,
+                                               dims, CUDNN_TENSOR_NCHW,
                                                x->namePostfix("reshape"));
 
-
-  auto dx = p.lower_tensor_batch(n.outputs_.get("dx"));
+  auto dx = p.lower_tensor_batch(n.outputs_.get("dx"),
+                                 CUDNN_TENSOR_NCHW);
   if(dx) {
     auto dy = n.inputs_.get("dy");
 
@@ -1564,22 +1576,27 @@ reshape_make(CudnnProgram &p, const Node &n)
     dims[0] = p.batch_size_;
 
     p.tensors_[dy] = std::make_shared<CudaTensor>(dx->storage_,
-                                                  dims, p.tensor_format_,
+                                                  dims, CUDNN_TENSOR_NCHW,
                                                   dx->namePostfix("reshape"));
   }
+
+
+  return {};
 }
 
 //------------------------------------------------------------------------
 
-static void
-dropout_make(CudnnProgram &p, const Node &n)
+static std::vector<std::shared_ptr<Node>>
+dropout_transform(CudnnProgram &p, const Node &n)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
   auto y = n.outputs_.get("y");
 
+
   p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
                                                x->dims_, p.tensor_format_,
                                                x->namePostfix("dropout"));
+  return {};
 }
 
 
@@ -1642,32 +1659,29 @@ struct CudnnHalt : public CudnnOperation {
 
 //------------------------------------------------------------------------
 
-#define DEFNODE(x) { #x, x##_make }
-
 static const struct {
   const char *name;
   void (*create_op)(CudnnProgram &p, const Node &n);
+  std::vector<std::shared_ptr<Node>> (*transform_op)(CudnnProgram &p,
+                                                     const Node &n);
 } nodetypes[] = {
-  DEFNODE(add),
-  DEFNODE(avgpool),
-  DEFNODE(batchnorm),
-  DEFNODE(catclassifier),
-  DEFNODE(concat),
-  DEFNODE(conv),
-  DEFNODE(convert),
-  DEFNODE(dropout),
-  DEFNODE(fc),
-  DEFNODE(maxpool),
-  DEFNODE(mul),
-  DEFNODE(relu),
-  DEFNODE(reshape),
-  DEFNODE(softmax),
-  DEFNODE(sum),
+  { "add",           add_make },
+  { "avgpool",       avgpool_make },
+  { "batchnorm",     batchnorm_make },
+  { "catclassifier", catclassifier_make },
+  { "concat",        concat_make },
+  { "conv",          conv_make },
+  { "convert",       convert_make },
+  { "dropout",       NULL, dropout_transform },
+  { "fc",            fc_make },
+  { "maxpool",       maxpool_make },
+  { "mul",           mul_make },
+  { "relu",          relu_make },
+  { "reshape",       NULL, reshape_transform },
+  { "softmax",       softmax_make },
+  { "sum",           sum_make }
 };
 
-#undef DEFNODE
-
-//------------------------------------------------------------------------
 
 static void
 generate_operation(CudnnProgram &p, const Node &n)
@@ -1680,6 +1694,19 @@ generate_operation(CudnnProgram &p, const Node &n)
   }
   printf("Cant emit operation for node type %s\n", n.type_.c_str());
   abort();
+}
+
+static std::vector<std::shared_ptr<Node>>
+transform_node(CudnnProgram &p, std::shared_ptr<Node> n)
+{
+  for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
+    if(n->type_ == nodetypes[i].name) {
+      if(nodetypes[i].transform_op)
+        return nodetypes[i].transform_op(p, *n);
+      break;
+    }
+  }
+  return {n};
 }
 
 
@@ -1699,7 +1726,15 @@ CudnnContext::createProgram(const Graph &g,
                                           tensor_format,
                                           type, batch_size,
                                           learning_rate);
+
+  std::vector<std::shared_ptr<Node>> nodes;
+
   for(const auto &n : g.nodes_) {
+    auto r = transform_node(*p, n);
+    nodes.insert(nodes.end(), r.begin(), r.end());
+  }
+
+  for(const auto &n : nodes) {
     generate_operation(*p, *n);
   }
 
