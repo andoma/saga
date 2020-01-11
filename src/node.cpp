@@ -276,7 +276,13 @@ catclassifier_y(const Node &n, const std::optional<const std::string> &name)
   return std::make_shared<Tensor>(Tensor::DataType::I32, Dims({1, 1}), name);
 }
 
-
+static std::vector<std::shared_ptr<Node>>
+catclassifier_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+{
+  n->outputs_["loss"] =
+    std::make_shared<Tensor>(Tensor::DataType::FLOAT, Dims({1, 1}), "loss");
+  return {n};
+}
 //------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
@@ -316,7 +322,7 @@ static const struct {
   { "add",               passthru_y },
   { "avgpool",           pooling_y },
   { "batchnorm",         passthru_y },
-  { "catclassifier",     catclassifier_y },
+  { "catclassifier",     catclassifier_y, catclassifier_setup },
   { "concat",            concat_y },
   { "conv",              conv_y, conv_setup },
   { "dropout",           passthru_y },
