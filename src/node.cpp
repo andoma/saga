@@ -238,7 +238,9 @@ fc_setup(std::shared_ptr<Node> n,
     auto r = std::make_shared<Node>("reshape");
     r->inputs_["x"] = x;
     r->inputs_["shape"] = shape;
-    r->outputs_["y"] = x = r->inferTensor_y();
+    x = r->inferTensor_y();
+    r->outputs_["y"] = x;
+    n->inputs_["x"] = x;
     nodes.push_back(r);
   }
 
