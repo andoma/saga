@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include "cuda_kernels.h"
 
 namespace saga {
@@ -64,6 +65,27 @@ catclassifier_backprop_float_i32(int n, const float *p, float *dx,
   catclassifier_backprop<<<(n+255)/256, 256>>>(n, p, dx, dy, loss, c, scale);
 }
 
+
+//------------------------------------------------------------------------
+// Datatype conversion
+//------------------------------------------------------------------------
+
+template< typename S, typename D > __global__ static void
+convert_float(int n, const S *src, D *dst, float scale)
+{
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+  if(i >= n)
+    return;
+
+  dst[i] = src[i] * scale;
+}
+
+
+void
+convert_u8_float(const void *src, void *dst, int elements, float scale)
+{
+  convert_float<<<(elements+255)/256, 256>>>(elements, (const uint8_t *)src, (float *)dst, scale);
+}
 
 
 //------------------------------------------------------------------------

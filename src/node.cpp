@@ -305,6 +305,22 @@ sum_y(const Node &n, const std::optional<const std::string> &name)
   return std::make_shared<Tensor>(o->data_type_, o->dims_, name);
 }
 
+//------------------------------------------------------------------------
+
+static std::shared_ptr<Tensor>
+convert_y(const Node &n, const std::optional<const std::string> &name)
+{
+  auto x = n.inputs_.get("x");
+  if(x == nullptr)
+    return nullptr;
+
+  auto datatype = n.attributes_.get("datatype", -1);
+  if(datatype == -1)
+    return nullptr;
+
+  return std::make_shared<Tensor>((Tensor::DataType)datatype, x->dims_, name);
+}
+
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
@@ -333,6 +349,7 @@ static const struct {
   { "reshape",           reshape_y },
   { "softmax",           passthru_y },
   { "sum",               sum_y },
+  { "convert",           convert_y },
 };
 
 

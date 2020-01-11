@@ -100,16 +100,11 @@ loadInputTensor(Tensor &t, const LabeledImage *lis)
 {
   const int batch_size = t.dims_[0];
   auto ta = t.access();
-
+  const size_t size = 28 * 28;
+  uint8_t *dst = (uint8_t *)ta->data();
   for(int n = 0; n < batch_size; n++) {
-    const uint8_t *src = lis[n].image;
-
-    for(int y = 0; y < t.dims_[2]; y++) {
-      for(int x = 0; x < t.dims_[3]; x++) {
-        float v = src[y * 28 + x] / 255.0;
-        ta->set({n, 0, y, x}, v);
-      }
-    }
+    memcpy(dst, lis[n].image, size);
+    dst += size;
   }
 }
 
@@ -244,11 +239,15 @@ mnist_main(int argc, char **argv)
   if(loadpath)
     g.loadRawTensors(loadpath);
 
-  auto x = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
+  auto x = std::make_shared<Tensor>(Tensor::DataType::U8,
                                     Dims({1, 1, 28, 28}), "input");
   std::shared_ptr<Node> n;
 
-  n = g.addNode("conv", {{"x", x}},
+  n = g.addNode("convert", {{"x", x}},
+                {{"scale", 1.0f / 255.0f},
+                    {"datatype", (int)Tensor::DataType::FLOAT}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
                 {{"size", 5}, {"activations", 32}, {"bias", true}},
                 "conv1");
 

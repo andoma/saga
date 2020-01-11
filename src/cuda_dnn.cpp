@@ -1406,7 +1406,57 @@ concat_make(CudnnProgram &p, const Node &n)
   }
 }
 
+//------------------------------------------------------------------------
 
+
+
+struct CudnnConvert : public CudnnOperation {
+
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> x_, y_;
+  const float scale_;
+  void (*algo_)(const void *src, void *dst, int elements, float scale);
+
+  CudnnConvert(CudnnProgram &p,
+               std::shared_ptr<CudaTensor> x,
+               std::shared_ptr<CudaTensor> y,
+               float scale)
+    : ctx_(p.ctx_)
+    , x_(x)
+    , y_(y)
+    , scale_(scale)
+  {
+    if(x_->data_type_ == Tensor::DataType::U8 &&
+       y_->data_type_ == Tensor::DataType::FLOAT) {
+      algo_ = convert_u8_float;
+    } else {
+      abort();
+    }
+  }
+
+  void print() const {
+    printf("Convert %zd elements\n", (size_t)x_->elements_);
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
+  }
+
+  void exec(CudnnProgram &p) {
+    algo_(x_->deviceMem(), y_->deviceMem(), x_->elements_, scale_);
+  }
+
+};
+
+
+static void
+convert_make(CudnnProgram &p, const Node &n)
+{
+  auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+  auto scale = n.attributes_.get("scale", 1.0f);
+
+  p.fwd(std::make_shared<CudnnConvert>(p, x, y, scale));
+
+}
 
 //------------------------------------------------------------------------
 
@@ -1603,6 +1653,7 @@ static const struct {
   DEFNODE(catclassifier),
   DEFNODE(concat),
   DEFNODE(conv),
+  DEFNODE(convert),
   DEFNODE(dropout),
   DEFNODE(fc),
   DEFNODE(maxpool),
