@@ -342,6 +342,9 @@ CudaTensor::info() const
     prefix = ", ";
   }
   ss << "}@cuda:" << storage_->data_;
+  if(offset_) {
+    ss << " + " << offset_;
+  }
   return ss.str();
 }
 
