@@ -639,8 +639,11 @@ struct CudnnConvolutionBwd : public CudnnOperation {
     }
 
     if(p.debug_) {
+      dy_->printStats("conv.dy");
       dw_->printStats("conv.dw");
       db_->printStats("conv.db");
+      if(dx_)
+        dx_->printStats("conv.dx");
     }
   }
 };
@@ -897,6 +900,13 @@ struct CudnnPoolingBwd : public CudnnOperation {
                                   &beta,
                                   dx_->desc(),
                                   dx_->deviceMem()));
+
+    if(p.debug_) {
+      dy_->printStats("pooling.dy");
+      if(dx_)
+        dx_->printStats("pooling.dx");
+    }
+
   }
 };
 
