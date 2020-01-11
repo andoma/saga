@@ -1494,8 +1494,22 @@ reshape_make(CudnnProgram &p, const Node &n)
   p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
                                                dims, p.tensor_format_,
                                                x->namePostfix("reshape"));
+
+
+  auto dx = p.lower_tensor_batch(n.outputs_.get("dx"));
+  if(dx) {
+    auto dy = n.inputs_.get("dy");
+
+    Dims dims(dy->dims_);
+    dims[0] = p.batch_size_;
+
+    p.tensors_[dy] = std::make_shared<CudaTensor>(dx->storage_,
+                                                  dims, p.tensor_format_,
+                                                  dx->namePostfix("reshape"));
+  }
 }
 
+//------------------------------------------------------------------------
 
 static void
 dropout_make(CudnnProgram &p, const Node &n)
