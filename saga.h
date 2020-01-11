@@ -213,6 +213,9 @@ public:
                                                  const Attributes &attributes,
                                                  Tensors &named_tensors,
                                                  const std::optional<const std::string> &name = std::nullopt);
+
+
+  std::shared_ptr<Tensor> y();
 };
 
 
@@ -229,10 +232,10 @@ public:
   std::unordered_set<std::shared_ptr<Tensor>> outputs_;
   Tensors tensors_;
 
-  std::shared_ptr<Tensor> addNode(const std::string &type,
-                                  const Tensors &inputs,
-                                  const Attributes &attributes,
-                                  const std::optional<const std::string> &name = std::nullopt);
+  std::shared_ptr<Node> addNode(const std::string &type,
+                                const Tensors &inputs,
+                                const Attributes &attributes,
+                                const std::optional<const std::string> &name = std::nullopt);
 
   static std::shared_ptr<Graph> load(const char *path);
 

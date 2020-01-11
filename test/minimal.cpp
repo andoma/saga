@@ -68,13 +68,14 @@ minimal_main(int argc, char **argv)
   Graph g;
 
   auto x = std::make_shared<Tensor>(dt, Dims({1, 2}), "input");
-  std::shared_ptr<Tensor> t;
-  t = g.addNode("fc", {{"x", x}},
-                {{"outputs", 4}, {"bias", true}});
-  t = g.addNode("relu", {{"x", t}}, {});
-  t = g.addNode("fc", {{"x", t}},
-                {{"outputs", 2}, {"bias", true}});
-  auto y = g.addNode("catclassifier", {{"x", t}}, {});
+  std::shared_ptr<Node> n;
+  n = g.addNode("fc", {{"x", x}}, {{"outputs", 2}, {"bias", true}});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("fc", {{"x", n->y()}}, {{"outputs", 2}, {"bias", true}});
+  n = g.addNode("catclassifier", {{"x", n->y()}}, {});
+
+  auto loss = n->outputs_["loss"];
+  auto y = n->y();
   auto dy = g.createGradients();
   g.print();
 
@@ -86,6 +87,7 @@ minimal_main(int argc, char **argv)
   x = p->resolveTensor(x);
   y = p->resolveTensor(y);
   dy = p->resolveTensor(dy);
+  loss = p->resolveTensor(loss);
 
   printf("x: %s\n", x->info().c_str());
   printf("y: %s\n", y->info().c_str());
@@ -105,10 +107,14 @@ minimal_main(int argc, char **argv)
   x->print("X");
   dy->print("DY");
 
+  int iter = 0;
   while(1) {
     p->exec(true);
-    y->print("y");
-    usleep(10000);
+    iter++;
+    if((iter % 10000) == 0) {
+      loss->print("LOSS");
+      y->print("Y");
+    }
   }
 
   return 0;

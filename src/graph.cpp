@@ -36,7 +36,7 @@ Graph::print() const
   }
 }
 
-std::shared_ptr<Tensor>
+std::shared_ptr<Node>
 Graph::addNode(const std::string &type,
                const Tensors &inputs,
                const Attributes &attributes,
@@ -46,7 +46,7 @@ Graph::addNode(const std::string &type,
   nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
   if(nodes_.size() == 0)
     return nullptr;
-  return nodes_[nodes_.size() - 1]->outputs_["y"];
+  return nodes_[nodes_.size() - 1];
 }
 
 

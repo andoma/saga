@@ -157,7 +157,7 @@ mnist_main(int argc, char **argv)
   const char *loadpath = NULL;
   const char *savepath = NULL;
   int opt;
-  float learning_rate = 1e-4;
+  float learning_rate = 3e-4;
   std::string mode = "lecun";
 
   auto dt = Tensor::DataType::FLOAT;
@@ -241,33 +241,38 @@ mnist_main(int argc, char **argv)
 
   Graph g;
 
+  if(loadpath)
+    g.loadRawTensors(loadpath);
+
   auto x = std::make_shared<Tensor>(Tensor::DataType::FLOAT,
                                     Dims({1, 1, 28, 28}), "input");
-  std::shared_ptr<Tensor> t;
+  std::shared_ptr<Node> n;
 
-  t = g.addNode("conv", {{"x", x}},
+  n = g.addNode("conv", {{"x", x}},
                 {{"size", 5}, {"activations", 32}, {"bias", true}},
                 "conv1");
 
-  t = g.addNode("relu", {{"x", t}}, {});
-  t = g.addNode("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}});
-  t = g.addNode("conv", {{"x", t}},
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+  n = g.addNode("conv", {{"x", n->y()}},
                 {{"size", 5}, {"activations", 64}, {"bias", true}},
                 "conv2");
-  t = g.addNode("relu", {{"x", t}}, {});
-  t = g.addNode("maxpool", {{"x", t}}, {{"size", 2}, {"stride", 2}});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
-  t = g.addNode("fc", {{"x", t}},
+  n = g.addNode("fc", {{"x", n->y()}},
                 {{"outputs", 1024}, {"bias", true}},
                 "fc1");
 
-  t = g.addNode("relu", {{"x", t}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
 
-  t = g.addNode("fc", {{"x", t}},
+  n = g.addNode("fc", {{"x", n->y()}},
                 {{"outputs", 10}, {"bias", true}},
                 "fc2");
 
-  auto y = g.addNode("catclassifier", {{"x", t}}, {});
+  n = g.addNode("catclassifier", {{"x", n->y()}}, {});
+  auto y = n->y();
+  auto loss = n->outputs_["loss"];
 
   auto dy = g.createGradients();
 
@@ -282,38 +287,33 @@ mnist_main(int argc, char **argv)
   x = p->resolveTensor(x);
   y = p->resolveTensor(y);
   dy = p->resolveTensor(dy);
-
-  printf("x: %s\n", x->info().c_str());
-  printf("y: %s\n", y->info().c_str());
-  printf("dy: %s\n", dy->info().c_str());
+  loss = p->resolveTensor(loss);
 
   while(g_run) {
     std::random_shuffle(train_data.begin(), train_data.end());
 
     // Train
-
     const int64_t t0 = get_ts();
-
     double loss_sum = 0;
 
     for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
       loadInputTensor(*x, &train_data[i]);
       loadOutputTensor(*dy, &train_data[i]);
       p->exec(true);
-      y->print("y");
+      auto la = loss->access();
+      for(int i = 0; i < batch_size; i++) {
+        loss_sum += la->get({i});
+      }
     }
 
-    if(!g_run)
-      break;
 
     // Test
     const int64_t t1 = get_ts();
     int correct = 0;
-    for(size_t i = 0; i < test_inputs; i += batch_size) {
+    for(size_t i = 0; i < test_inputs && g_run; i += batch_size) {
       loadInputTensor(*x, &test_data[i]);
       p->exec(false);
 
-      y->print("y");
       auto ta = y->access();
 
       for(int j = 0; j < batch_size; j++) {
@@ -321,127 +321,10 @@ mnist_main(int argc, char **argv)
           correct++;
       }
     }
-    const int64_t t2 = get_ts();
-    float percentage = 100.0 * correct / test_inputs;
-    printf("%3.3f%% Train:%.3fs Test:%.3fs Loss:%f\n",
-           percentage,
-           (t1 - t0) / 1e6,
-           (t2 - t1) / 1e6,
-           loss_sum / test_inputs);
-    if(percentage > 99)
-      break;
-  }
-
-
-
-
-  return 0;
-
-
-
-
-#if 0
-  Network net(learn);
-
-  if(loadpath)
-    net.loadTensors(loadpath);
-
-  Tensor input(Size(batch_size, 1, 28, 28), dt);
-
-  auto tail = net.addLayer(makeInput(&input));
-
-  if(mode == "squeezenet" || mode == "squeezenet-fc") {
-    tail = net.addLayer(makeConvolution(64, 3, 1, 0, *tail, net));
-    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-
-    tail = net.addLayer(makePooling(PoolingMode::MAX, 3, 0, 2, *tail, net));
-    tail = build_fire_module(net, *tail, 16, 64, 64);
-    tail = build_fire_module(net, *tail, 16, 64, 64);
-
-    tail = net.addLayer(makePooling(PoolingMode::MAX, 3, 0, 2, *tail, net));
-    tail = build_fire_module(net, *tail, 32, 128, 128);
-    tail = build_fire_module(net, *tail, 32, 128, 128);
-
-    tail = net.addLayer(makePooling(PoolingMode::MAX, 3, 0, 2, *tail, net));
-    tail = build_fire_module(net, *tail, 48, 192, 192);
-    tail = build_fire_module(net, *tail, 48, 192, 192);
-
-    tail = net.addLayer(makeDropout(0.25, tail, net));
-    tail = net.addLayer(makeConvolution(labels, 1, 1, 0, *tail, net));
-    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-
-    if(mode == "squeezenet-fc") {
-
-      tail = net.addLayer(makeFullyConnected(labels, *tail, net));
-    } else {
-      tail = net.addLayer(makePooling(PoolingMode::AVERAGE, 2, 0, 2,
-                                      *tail, net));
-    }
-
-  } else if(mode == "lecun") {
-
-    tail = net.addLayer(makeConvolution(32, 5, 1, 0, *tail, net, true,
-                                        "c1w", "c1b"));
-    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-    tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 0, 2, *tail, net));
-
-    tail = net.addLayer(makeConvolution(64, 5, 1, 0, *tail, net, true,
-                                        "c2w", "c2b"));
-    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-    tail = net.addLayer(makePooling(PoolingMode::MAX, 2, 0, 2, *tail, net));
-
-    tail = net.addLayer(makeFullyConnected(1024, *tail, net, "fc1w", "fc1b"));
-    tail = net.addLayer(makeActivation(ActivationMode::RELU, 0, *tail, net));
-
-    tail = net.addLayer(makeFullyConnected(labels, *tail, net,
-                                           "fc2w", "fc2b"));
-
-  } else {
-
-    fprintf(stderr, "Unknown mode %s", mode.c_str());
-    exit(1);
-  }
-  auto tail_m1 = tail;
-  tail = net.addLayer(makeCatClassifier(*tail, Tensor::Type::U8, net));
-
-  unsigned int iteration = 0;
-  while(g_run) {
-    std::random_shuffle(train_data.begin(), train_data.end());
-
-    // Train
-
-    const int64_t t0 = get_ts();
-
-    double loss_sum = 0;
-
-    for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
-      loadInputTensor(input, &train_data[i]);
-      net.forward(false);
-      if(learn) {
-        loadOutputTensor(*tail->gradient(), &train_data[i]);
-        net.backprop(iteration);
-        auto loss = tail->loss();
-
-        loss_sum += std::accumulate(loss.begin(), loss.end(), 0.0f);
-      }
-    }
-    iteration++;
 
     if(!g_run)
       break;
 
-    // Test
-    const int64_t t1 = get_ts();
-    int correct = 0;
-    for(size_t i = 0; i < test_inputs; i += batch_size) {
-      loadInputTensor(input, &test_data[i]);
-      net.forward(true);
-
-      for(size_t j = 0; j < batch_size; j++) {
-        if(tail->output()->get(j, 0, 0, 0) == test_data[i + j].label)
-          correct++;
-      }
-    }
     const int64_t t2 = get_ts();
     float percentage = 100.0 * correct / test_inputs;
     printf("%3.3f%% Train:%.3fs Test:%.3fs Loss:%f\n",
@@ -452,10 +335,6 @@ mnist_main(int argc, char **argv)
     if(percentage > 99)
       break;
   }
-
-  if(savepath)
-    net.saveTensors(savepath);
-#endif
 
   return 0;
 }
