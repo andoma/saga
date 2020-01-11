@@ -1418,6 +1418,23 @@ concat_make(CudnnProgram &p, const Node &n)
   }
 }
 
+
+static void
+concat_transform(CudnnProgram &p, const Node &n)
+{
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+  auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
+  const int axis = 1;
+  for(const auto &xh : n.inputs_.getv("x")) {
+    p.tensors_[xh] = std::make_shared<CudaTensor>(y,
+                                                  xh->dims_,
+                                                  element_offset,
+                                                  xh->namePostfix("concat.alias"));
+    element_offset[axis] += xh->dims_[axis];
+  }
+}
+
+
 //------------------------------------------------------------------------
 
 
@@ -1696,18 +1713,45 @@ generate_operation(CudnnProgram &p, const Node &n)
   abort();
 }
 
+
+
 static std::vector<std::shared_ptr<Node>>
-transform_node(CudnnProgram &p, std::shared_ptr<Node> n)
+pass_remove_concat(CudnnProgram &p,
+                   const std::vector<std::shared_ptr<Node>> &nodes)
 {
-  for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
-    if(n->type_ == nodetypes[i].name) {
-      if(nodetypes[i].transform_op)
-        return nodetypes[i].transform_op(p, *n);
-      break;
+  std::vector<std::shared_ptr<Node>> r;
+
+  for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
+    auto &n = nodes[i];
+    if(n->type_ == "concat") {
+      concat_transform(p, *n);
+    } else {
+      r.insert(r.begin(), n);
     }
   }
-  return {n};
+  return r;
 }
+
+
+static std::vector<std::shared_ptr<Node>>
+pass_node_transform(CudnnProgram &p,
+                    const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+
+  for(const auto &n : nodes) {
+    std::vector<std::shared_ptr<Node>> v{n};
+    for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
+      if(n->type_ == nodetypes[i].name && nodetypes[i].transform_op) {
+        v = nodetypes[i].transform_op(p, *n);
+        break;
+      }
+    }
+    r.insert(r.end(), v.begin(), v.end());
+  }
+  return r;
+}
+
 
 
 std::shared_ptr<Program>
@@ -1727,12 +1771,9 @@ CudnnContext::createProgram(const Graph &g,
                                           type, batch_size,
                                           learning_rate);
 
-  std::vector<std::shared_ptr<Node>> nodes;
+  auto nodes = pass_remove_concat(*p, g.nodes_);
 
-  for(const auto &n : g.nodes_) {
-    auto r = transform_node(*p, n);
-    nodes.insert(nodes.end(), r.begin(), r.end());
-  }
+  nodes = pass_node_transform(*p, nodes);
 
   for(const auto &n : nodes) {
     generate_operation(*p, *n);
