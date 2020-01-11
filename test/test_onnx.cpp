@@ -119,5 +119,9 @@ test_onnx_main(int argc, char **argv)
     exit(1);
   }
 
+  if(test_one("models/vgg19/vgg19.onnx", ctx, verbose)) {
+    exit(1);
+  }
+
   return 0;
 }
