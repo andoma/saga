@@ -734,7 +734,7 @@ Graph::load(const char *path)
 
 
 std::shared_ptr<Tensor>
-Tensor::load(const char *path)
+Tensor::loadProtoBuf(const char *path)
 {
   auto pb = mapPBfile(path);
   if(pb == NULL)

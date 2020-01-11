@@ -24,6 +24,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <string.h>
+#include <dirent.h>
+
 #include "saga.h"
 
 namespace saga {
@@ -88,5 +91,34 @@ Graph::createGradients()
   }
   return dy;
 }
+
+
+void
+Graph::loadRawTensors(const char *path)
+{
+  struct dirent **namelist;
+  int n = scandir(path, &namelist, NULL, NULL);
+  if(n == -1) {
+    fprintf(stderr, "Unable to load tensors from %s -- %s",
+            path, strerror(errno));
+    return;
+  }
+
+  while(n--) {
+    const char *fname = namelist[n]->d_name;
+    if(fname[0] != '.') {
+      char filepath[PATH_MAX];
+      snprintf(filepath, sizeof(filepath), "%s/%s", path, fname);
+      auto t = Tensor::loadRaw(filepath, fname);
+      if(t) {
+        tensors_[fname] = t;
+        printf("Loaded %s: %s\n", fname, t->info().c_str());
+      }
+    }
+    free(namelist[n]);
+  }
+  free(namelist);
+}
+
 
 }

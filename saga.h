@@ -129,7 +129,11 @@ public:
 
   double sse(Tensor &t);
 
-  static std::shared_ptr<Tensor> load(const char *path);
+  static std::shared_ptr<Tensor> loadProtoBuf(const char *path);
+
+  static std::shared_ptr<Tensor> loadRaw(const char *path,
+                                         const std::optional<const std::string> &name);
+
 
   static std::shared_ptr<Tensor> find(Tensor::DataType data_type,
                                       const Dims &size,
@@ -238,6 +242,8 @@ public:
                                 const std::optional<const std::string> &name = std::nullopt);
 
   static std::shared_ptr<Graph> load(const char *path);
+
+  void loadRawTensors(const char *path);
 
   void print() const;
 

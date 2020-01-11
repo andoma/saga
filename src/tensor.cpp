@@ -24,6 +24,11 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <errno.h>
 
 #include <random>
 #include <sstream>
@@ -663,6 +668,15 @@ public:
     , offset_(0)
   {}
 
+  CPUTensor(DataType data_type, const Dims &size,
+            const Dims &strides,
+            const std::optional<std::string> &name)
+    : Tensor(data_type, size, name)
+    , strides_(strides)
+    , storage_(std::make_shared<CPUTensorStorage>(data_type, size, strides_))
+    , offset_(0)
+  {}
+
   CPUTensor(const Dims &size, const Dims &strides,
             std::shared_ptr<CPUTensorStorage> storage, int64_t offset,
             const std::optional<std::string> &name)
@@ -724,6 +738,65 @@ makeCPUTensor(Tensor::DataType data_type, const Dims &size,
 {
   return std::make_shared<CPUTensor>(data_type, size, name);
 }
+
+//------------------------------------------------------------------------
+// Raw tensor disk IO. Disk format is NHWC
+
+struct TensorDiskHeader {
+  uint8_t magic[8];
+  unsigned int n;
+  unsigned int h;
+  unsigned int w;
+  unsigned int c;
+
+} __attribute__((packed));
+
+
+
+
+std::shared_ptr<Tensor>
+Tensor::loadRaw(const char *path, const std::optional<const std::string> &name)
+{
+  int fd = open(path, O_RDONLY);
+  if(fd == -1) {
+    fprintf(stderr, "Unable to open %s -- %s\n", path, strerror(errno));
+    return nullptr;
+  }
+  std::shared_ptr<Tensor> t;
+  TensorDiskHeader tdh;
+
+  if(read(fd, &tdh, sizeof(tdh)) == sizeof(tdh)) {
+    if(!memcmp(tdh.magic, "sagaT000", 8)) {
+      Dims dims, strides;
+
+      if(tdh.w && tdh.h) {
+        dims = Dims{tdh.n, tdh.c, tdh.h, tdh.w};
+        strides.push_back(dims[1] * dims[2] * dims[3]); // N
+        strides.push_back(1);                           // C
+        strides.push_back(dims[1] * dims[3]);           // H
+        strides.push_back(dims[1]);                     // W
+      } else {
+
+        dims = Dims{tdh.n, tdh.c};
+        strides.push_back(tdh.c);                       // N
+        strides.push_back(1);                           // C
+      }
+      t = std::make_shared<CPUTensor>(Tensor::DataType::FLOAT, dims,
+                                      strides,
+                                      name);
+      auto ta = t->access();
+      ssize_t s = t->elements_ * sizeof(float);
+      if(read(fd, ta->data(), s) != s) {
+        fprintf(stderr, "Unable to read values from %s\n", path);
+        t = nullptr;
+      }
+    }
+  }
+
+  close(fd);
+  return t;
+}
+
 
 }
 

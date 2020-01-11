@@ -46,7 +46,7 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
     if(access(input_path, R_OK))
       break;
 
-    auto loaded_input = Tensor::load(input_path);
+    auto loaded_input = Tensor::loadProtoBuf(input_path);
     if(!loaded_input) {
       fprintf(stderr, "Failed to load input %s\n", input_path);
       return 1;
@@ -57,7 +57,7 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
     snprintf(output_path, sizeof(output_path),
              "%s/test_data_set_%d/output_0.pb",
              base_path, i);
-    auto loaded_output = Tensor::load(output_path);
+    auto loaded_output = Tensor::loadProtoBuf(output_path);
     if(!loaded_output) {
       fprintf(stderr, "Failed to load output %s\n", output_path);
       return 1;
