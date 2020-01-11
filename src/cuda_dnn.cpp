@@ -50,7 +50,8 @@ public:
   std::shared_ptr<Program> createProgram(const Graph &graph,
                                          ProgramType type,
                                          int batch_size,
-                                         float learning_rate);
+                                         float learning_rate,
+                                         TensorLayout layout);
 
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
@@ -1686,10 +1687,16 @@ std::shared_ptr<Program>
 CudnnContext::createProgram(const Graph &g,
                             ProgramType type,
                             int batch_size,
-                            float learning_rate)
+                            float learning_rate,
+                            TensorLayout layout)
 {
+
+  cudnnTensorFormat_t tensor_format = CUDNN_TENSOR_NHWC;
+  if(layout == TensorLayout::NCHW)
+    tensor_format = CUDNN_TENSOR_NCHW;
+
   auto p = std::make_shared<CudnnProgram>(shared_from_this(),
-                                          CUDNN_TENSOR_NCHW,
+                                          tensor_format,
                                           type, batch_size,
                                           learning_rate);
   for(const auto &n : g.nodes_) {

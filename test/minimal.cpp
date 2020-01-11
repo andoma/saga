@@ -80,7 +80,8 @@ minimal_main(int argc, char **argv)
   g.print();
 
   auto ctx = createContext();
-  auto p = ctx->createProgram(g, ProgramType::TRAINING, 4, 1e-3);
+  auto p = ctx->createProgram(g, ProgramType::TRAINING, 4, 1e-3,
+                              TensorLayout::NCHW);
 
   p->print();
 

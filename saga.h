@@ -260,6 +260,10 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
+enum class TensorLayout {
+  NHWC,
+  NCHW,
+};
 
 enum class ProgramType {
   INFERENCE,
@@ -286,7 +290,8 @@ public:
   virtual std::shared_ptr<Program> createProgram(const Graph &graph,
                                                  ProgramType type,
                                                  int batch_size,
-                                                 float learning_rate) = 0;
+                                                 float learning_rate,
+                                                 TensorLayout layout) = 0;
 };
 
 

@@ -28,7 +28,8 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
   if(verbose)
     g->print();
 
-  auto p = ctx->createProgram(*g, ProgramType::INFERENCE, 1, 0);
+  auto p = ctx->createProgram(*g, ProgramType::INFERENCE, 1, 0,
+                              TensorLayout::NCHW);
   if(verbose)
     p->print();
 
