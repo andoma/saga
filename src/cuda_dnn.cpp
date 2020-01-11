@@ -1003,7 +1003,6 @@ struct CudnnGemmFwd : public CudnnOperation {
   const int num_inputs_;
   const int num_outputs_;
   const int transW_;
-  //  cudnnOpTensorDescriptor_t desc_;
 
   CudnnGemmFwd(CudnnProgram &p, const Node &n)
     : ctx_(p.ctx_)
