@@ -265,8 +265,9 @@ CudaTensor::CudaTensor(DataType data_type,
 
 CudaTensor::CudaTensor(const CudaTensor &o,
                        cudnnTensorFormat_t format,
-                       const std::string &postfix)
-  : CudaTensor(o.data_type_, o.dims_, format, o.namePostfix(postfix))
+                       const std::optional<const std::string> &postfix)
+  : CudaTensor(o.data_type_, o.dims_, format,
+               postfix ? o.namePostfix(*postfix) : std::nullopt)
 {
 }
 

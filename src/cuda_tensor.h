@@ -63,7 +63,7 @@ public:
 
   CudaTensor(const CudaTensor &t,
              cudnnTensorFormat_t format,
-             const std::string &name_postfix);
+             const std::optional<const std::string> &name_postfix = std::nullopt);
 
   ~CudaTensor();
 
