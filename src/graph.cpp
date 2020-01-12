@@ -58,16 +58,18 @@ std::pair<TensorMapping, TensorMapping>
 Graph::tensorMappings()
 {
   std::unordered_map<std::shared_ptr<Tensor>,
-                     std::vector<std::shared_ptr<Node>>> input_usage;
+                     std::vector<std::pair<std::string,
+                                           std::shared_ptr<Node>>>> input_usage;
   std::unordered_map<std::shared_ptr<Tensor>,
-                     std::vector<std::shared_ptr<Node>>> output_usage;
+                     std::vector<std::pair<std::string,
+                                           std::shared_ptr<Node>>>> output_usage;
 
   for(const auto &n : nodes_) {
     for(const auto &t : n->inputs_) {
-      input_usage[t.second].push_back(n);
+      input_usage[t.second].push_back(std::make_pair(t.first, n));
     }
     for(const auto &t : n->outputs_) {
-      output_usage[t.second].push_back(n);
+      output_usage[t.second].push_back(std::make_pair(t.first, n));
     }
   }
   return {input_usage, output_usage};
@@ -86,7 +88,7 @@ Graph::createGradients()
     n->inputs_["dy"] = dy;
 
     for(const auto &u : mappings.first[y]) {
-      u->outputs_["dx"] = dy;
+      u.second->outputs_["d" + u.first] = dy;
     }
   }
   return dy;

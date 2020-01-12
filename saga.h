@@ -230,7 +230,8 @@ public:
 //------------------------------------------------------------------------
 
 typedef std::unordered_map<std::shared_ptr<Tensor>,
-                           std::vector<std::shared_ptr<Node>>> TensorMapping;
+                           std::vector<std::pair<std::string,
+                                                 std::shared_ptr<Node>>>> TensorMapping;
 
 class Graph {
 public:
