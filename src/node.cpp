@@ -383,6 +383,24 @@ Node::print() const
     printf("\tOutput: %s: %s\n",
            t.first.c_str(), t.second->info().c_str());
   }
+
+  for(const auto &a : attributes_) {
+    std::string value;
+
+    if(auto v = std::get_if<int>(&a.second)) {
+      value = std::to_string(*v);
+    } else if(auto v = std::get_if<float>(&a.second)) {
+      value = std::to_string(*v);
+    } else if(std::get_if<std::vector<int>>(&a.second)) {
+      value = "<vector>";
+    } else {
+      value = "?";
+    }
+
+    printf("\tAttrib: %s: %s\n",
+           a.first.c_str(), value.c_str());
+  }
+
 }
 
 
