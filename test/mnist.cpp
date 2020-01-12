@@ -283,7 +283,7 @@ mnist_main(int argc, char **argv)
 
   auto ctx = createContext();
   auto p = ctx->createProgram(g, ProgramType::TRAINING, batch_size,
-                              learning_rate, TensorLayout::NHWC);
+                              learning_rate, TensorLayout::NCHW);
 
   p->print();
 
