@@ -1004,6 +1004,128 @@ sum_make(CudnnProgram &p, const Node &n)
   p.fwd(f);
 }
 
+//------------------------------------------------------------------------
+
+
+static std::shared_ptr<Node>
+sum_transform(CudnnProgram &p, const Node &n)
+{
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+  auto xvec = n.inputs_.getv("x");
+
+  Dims d = y->dims_;
+  d.insert(d.begin(), xvec.size());
+
+  int strides[d.size()];
+  int dims[d.size()];
+  int rank;
+  cudnnDataType_t data_type;
+
+  chkCUDNN(cudnnGetTensorNdDescriptor(y->desc_, y->dims_.size(),
+                                      &data_type,
+                                      &rank, dims + 1, strides + 1));
+
+  strides[0] = xvec.size() * strides[1];
+  auto t = std::make_shared<CudaTensor>(y->data_type_, d, (const int *)strides,
+                                        y->namePostfix("sum"));
+
+  int64_t offset = 0;
+  for(const auto &xh : xvec) {
+    p.tensors_[xh] = std::make_shared<CudaTensor>(t->storage_,
+                                                  xh->dims_,
+                                                  offset,
+                                                  (const int *)strides + 1,
+                                                  xh->namePostfix("sum.alias"));
+    offset += strides[0];
+  }
+
+  auto nn = std::make_shared<Node>("cudnn.reduce.add");
+  p.tensors_[t] = t;
+
+  d[0] = 1;
+  auto ya = std::make_shared<CudaTensor>(y->storage_,
+                                         d,
+                                         0,
+                                         (const int *)strides,
+                                         y->namePostfix("sum"));
+
+  p.tensors_[ya] = ya;
+  nn->inputs_["x"] = t;
+  nn->outputs_["y"] = ya;
+  return nn;
+}
+
+
+//------------------------------------------------------------------------
+
+struct CudnnReduce : public CudnnOperation {
+
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> x_, y_;
+  cudnnReduceTensorDescriptor_t desc_;
+
+  CudnnReduce(CudnnProgram &p,
+              std::shared_ptr<CudaTensor> x,
+              std::shared_ptr<CudaTensor> y,
+              cudnnReduceTensorOp_t op)
+    : ctx_(p.ctx_)
+    , x_(x)
+    , y_(y)
+  {
+    chkCUDNN(cudnnCreateReduceTensorDescriptor(&desc_));
+    chkCUDNN(cudnnSetReduceTensorDescriptor(desc_, op,
+                                            x->type_,
+                                            CUDNN_PROPAGATE_NAN,
+                                            CUDNN_REDUCE_TENSOR_NO_INDICES,
+                                            CUDNN_32BIT_INDICES));
+
+    size_t workspace;
+
+    chkCUDNN(cudnnGetReductionWorkspaceSize(ctx_->cudnn_, desc_,
+                                            x_->desc_,
+                                            y_->desc_,
+                                            &workspace));
+    p.requetstWorkspace(workspace);
+  }
+
+  ~CudnnReduce()
+  {
+    chkCUDNN(cudnnDestroyReduceTensorDescriptor(desc_));
+  }
+
+  void print() const {
+    printf("Reduce\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
+  }
+
+  void exec(CudnnProgram &p) {
+
+    float alpha = 1.0f, beta = 0.0f;
+
+    chkCUDNN(cudnnReduceTensor(ctx_->cudnn_,
+                               desc_,
+                               NULL, 0,
+                               p.workspace_, p.workspace_size_,
+                               &alpha,
+                               x_->desc(),
+                               x_->deviceMem(),
+                               &beta,
+                               y_->desc(),
+                               y_->deviceMem()));
+  }
+};
+
+
+static void
+cudnn_reduce_add_make(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnReduce>(p,
+                                         p.lower_tensor(n.inputs_.get("x")),
+                                         p.lower_tensor(n.outputs_.get("y")),
+                                         CUDNN_REDUCE_TENSOR_ADD);
+  p.fwd(f);
+}
 
 //------------------------------------------------------------------------
 
@@ -1689,6 +1811,7 @@ static const struct {
   { "concat",        concat_make },
   { "conv",          conv_make },
   { "convert",       convert_make },
+  { "cudnn.reduce.add",  cudnn_reduce_add_make },
   { "dropout",       NULL, dropout_transform },
   { "fc",            fc_make },
   { "maxpool",       maxpool_make },
@@ -1725,6 +1848,10 @@ pass_remove_concat(CudnnProgram &p,
     auto &n = nodes[i];
     if(n->type_ == "concat") {
       concat_transform(p, *n);
+#if 0
+    } else if(n->type_ == "sum") {
+      r.insert(r.begin(), sum_transform(p, *n));
+#endif
     } else {
       r.insert(r.begin(), n);
     }
