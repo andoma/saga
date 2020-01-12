@@ -241,6 +241,28 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
 }
 
 
+CudaTensor::CudaTensor(DataType data_type,
+                       const Dims &size,
+                       const int *strides,
+                       const std::optional<const std::string> &name)
+  : Tensor(data_type, size, name)
+  , type_(cudnnDataType_from_dataType(data_type))
+{
+  const size_t rank = size.size();
+  int dimsA[rank];
+  for(size_t i = 0; i < rank; i++)
+    dimsA[i] = size[i];
+
+  chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
+  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank,
+                                      dimsA, strides));
+  size_t bytes;
+  chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes));
+
+  storage_ = std::make_shared<CudaTensorStorage>(data_type, bytes);
+}
+
+
 CudaTensor::CudaTensor(const CudaTensor &o,
                        cudnnTensorFormat_t format,
                        const std::string &postfix)

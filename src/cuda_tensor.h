@@ -56,6 +56,11 @@ public:
              const int *strides,
              const std::optional<const std::string> &name = std::nullopt);
 
+  CudaTensor(DataType data_type,
+             const Dims &size,
+             const int *strides,
+             const std::optional<const std::string> &name);
+
   CudaTensor(const CudaTensor &t,
              cudnnTensorFormat_t format,
              const std::string &name_postfix);
