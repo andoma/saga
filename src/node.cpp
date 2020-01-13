@@ -108,6 +108,43 @@ conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
   return {n};
 }
 
+//------------------------------------------------------------------------
+
+static std::vector<std::shared_ptr<Node>>
+batchnorm_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+{
+  auto x = n->inputs_.get("x");
+  if(!x)
+    return {};
+
+  Dims dims{1, x->dims_[1]};
+
+  if(!n->inputs_.get("s")) {
+    n->inputs_["s"] =
+      Tensor::find(x->data_type_, dims,
+                   1.0, 0, named_tensors, node_tensor_name(n->name_, "s"));
+  }
+
+  if(!n->inputs_.get("b")) {
+    n->inputs_["b"] =
+      Tensor::find(x->data_type_, dims,
+                   0.0, 0, named_tensors, node_tensor_name(n->name_, "b"));
+  }
+
+  if(!n->inputs_.get("m")) {
+    n->inputs_["m"] =
+      Tensor::find(x->data_type_, dims,
+                   0.0, 0, named_tensors, node_tensor_name(n->name_, "m"));
+  }
+
+  if(!n->inputs_.get("v")) {
+    n->inputs_["v"] =
+      Tensor::find(x->data_type_, dims,
+                   1.0, 0, named_tensors, node_tensor_name(n->name_, "v"));
+  }
+  return {n};
+}
+
 
 //------------------------------------------------------------------------
 
@@ -337,7 +374,7 @@ static const struct {
 } nodetypes[] = {
   { "add",               passthru_y },
   { "avgpool",           pooling_y },
-  { "batchnorm",         passthru_y },
+  { "batchnorm",         passthru_y, batchnorm_setup },
   { "catclassifier",     catclassifier_y, catclassifier_setup },
   { "concat",            concat_y },
   { "conv",              conv_y, conv_setup },
