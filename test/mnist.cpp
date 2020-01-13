@@ -124,27 +124,89 @@ loadOutputTensor(Tensor &t, const LabeledImage *lis)
   }
 }
 
-#if 0
 
 // SqueezeNet's fire module: https://arxiv.org/pdf/1602.07360.pdf
-// + batchnorm
-static std::shared_ptr<Layer>
-build_fire_module(Network &net, const Layer &input,
-                  int s1x1, int e1x1, int e3x3)
+
+static std::shared_ptr<Node>
+firemodule(Graph &g, std::shared_ptr<Node> input,
+           int s1x1, int e1x1, int e3x3, const std::string &name)
 {
-  auto s = net.addLayer(makeConvolution(s1x1, 1, 1, 0, input, net));
-  s = net.addLayer(makeBatchNorm(1e-5, *s, net, 0.25));
-  s = net.addLayer(makeActivation(ActivationMode::RELU, 0, *s, net));
+  auto s = g.addNode("conv", {{"x", input->y()}},
+                     {{"size", 1}, {"activations", s1x1}, {"bias", false}},
+                     name + "-s1x1");
 
-  auto e1 = net.addLayer(makeConvolution(e1x1, 1, 1, 0, *s, net, false));
-  auto e3 = net.addLayer(makeConvolution(e3x3, 3, 1, 1, *s, net, false));
+  s = g.addNode("batchnorm", {{"x", s->y()}}, {});
 
-  e1 = net.addLayer(makeActivation(ActivationMode::RELU, 0, *e1, net));
-  e3 = net.addLayer(makeActivation(ActivationMode::RELU, 0, *e3, net));
+  s = g.addNode("relu", {{"x", s->y()}}, {});
 
-  return net.addLayer(makeConcat({e1.get(), e3.get()}, net));
+  auto e1 = g.addNode("conv", {{"x", s->y()}},
+                      {{"size", 1}, {"activations", e1x1}, {"bias", true}},
+                      name + "-e1x1");
+  auto e3 = g.addNode("conv", {{"x", s->y()}},
+                      {{"size", 3}, {"activations", e3x3}, {"pad", 1}, {"bias", true}},
+                      name + "-e3x3");
+
+  e1 = g.addNode("relu", {{"x", e1->y()}}, {});
+  e3 = g.addNode("relu", {{"x", e3->y()}}, {});
+
+  return g.addNode("concat", {{"x0", e1->y()}, {"x1", e3->y()}}, {});
 }
-#endif
+
+
+static std::shared_ptr<Node>
+squeezenet(Graph &g, std::shared_ptr<Node> n)
+{
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 64}, {"bias", true}},
+                "conv0");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 3}, {"stride", 2}});
+  n = firemodule(g, n, 16, 64, 64, "f1a");
+  n = firemodule(g, n, 16, 64, 64, "f1b");
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 3}, {"stride", 2}});
+  n = firemodule(g, n, 32, 128, 128, "f2a");
+  n = firemodule(g, n, 32, 128, 128, "f2b");
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 3}, {"stride", 2}});
+  n = firemodule(g, n, 48, 192, 192, "f3a");
+  n = firemodule(g, n, 48, 192, 192, "f3b");
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 1}, {"activations", 10}, {"bias", true}},
+                "conv4");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("avgpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+  return n;
+}
+
+
+
+
+static std::shared_ptr<Node>
+lecun(Graph &g, std::shared_ptr<Node> n)
+{
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 5}, {"activations", 32}, {"bias", true}},
+                "conv1");
+
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 5}, {"activations", 64}, {"bias", true}},
+                "conv2");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", 1024}, {"bias", true}},
+                "fc1");
+
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", 10}, {"bias", true}},
+                "fc2");
+  return n;
+}
 
 
 extern int
@@ -158,10 +220,11 @@ mnist_main(int argc, char **argv)
   int opt;
   float learning_rate = 3e-4;
   std::string mode = "lecun";
+  int verbose = 0;
 
   auto dt = Tensor::DataType::FLOAT;
 
-  while((opt = getopt(argc, argv, "ns:l:b:hm:r:")) != -1) {
+  while((opt = getopt(argc, argv, "ns:l:b:hm:r:v")) != -1) {
     switch(opt) {
     case 's':
       savepath = optarg;
@@ -183,6 +246,9 @@ mnist_main(int argc, char **argv)
       break;
     case 'r':
       learning_rate = strtod(optarg, NULL);
+      break;
+    case 'v':
+      verbose++;
       break;
     }
   }
@@ -251,27 +317,11 @@ mnist_main(int argc, char **argv)
                 {{"scale", 1.0f / 255.0f},
                     {"datatype", (int)Tensor::DataType::FLOAT}});
 
-  n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 5}, {"activations", 32}, {"bias", true}},
-                "conv1");
-
-  n = g.addNode("relu", {{"x", n->y()}}, {});
-  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
-  n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 5}, {"activations", 64}, {"bias", true}},
-                "conv2");
-  n = g.addNode("relu", {{"x", n->y()}}, {});
-  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
-
-  n = g.addNode("fc", {{"x", n->y()}},
-                {{"outputs", 1024}, {"bias", true}},
-                "fc1");
-
-  n = g.addNode("relu", {{"x", n->y()}}, {});
-
-  n = g.addNode("fc", {{"x", n->y()}},
-                {{"outputs", 10}, {"bias", true}},
-                "fc2");
+  if(mode == "lecun") {
+    n = lecun(g, n);
+  } else {
+    n = squeezenet(g, n);
+  }
 
   n = g.addNode("catclassifier", {{"x", n->y()}}, {});
   auto y = n->y();
@@ -279,13 +329,14 @@ mnist_main(int argc, char **argv)
 
   auto dy = g.createGradients();
 
-  g.print();
+  if(verbose)
+    g.print();
 
   auto ctx = createContext();
   auto p = ctx->createProgram(g, ProgramType::TRAINING, batch_size,
                               learning_rate, TensorLayout::NCHW);
-
-  p->print();
+  if(verbose > 1)
+    p->print();
 
   x = p->resolveTensor(x);
   y = p->resolveTensor(y);
@@ -302,7 +353,7 @@ mnist_main(int argc, char **argv)
     for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
       loadInputTensor(*x, &train_data[i]);
       loadOutputTensor(*dy, &train_data[i]);
-      p->exec(true);
+      p->exec(learn);
       auto la = loss->access();
       for(int i = 0; i < batch_size; i++) {
         loss_sum += la->get({i});
