@@ -1835,8 +1835,7 @@ mul_make(CudnnProgram &p, const Node &n)
 static std::vector<std::shared_ptr<Node>>
 reshape_transform(CudnnProgram &p, const Node &n)
 {
-  auto x = p.lower_tensor_batch(n.inputs_.get("x"),
-                                CUDNN_TENSOR_NCHW);
+  auto x = p.lower_tensor_batch(n.inputs_.get("x"), CUDNN_TENSOR_NCHW);
   auto y = n.outputs_.get("y");
 
   Dims dims(y->dims_);
@@ -1846,8 +1845,7 @@ reshape_transform(CudnnProgram &p, const Node &n)
                                                dims, CUDNN_TENSOR_NCHW,
                                                x->namePostfix("reshape"));
 
-  auto dx = p.lower_tensor_batch(n.outputs_.get("dx"),
-                                 CUDNN_TENSOR_NCHW);
+  auto dx = p.lower_tensor_batch(n.outputs_.get("dx"), CUDNN_TENSOR_NCHW);
   if(dx) {
     auto dy = n.inputs_.get("dy");
 
