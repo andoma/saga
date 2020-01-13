@@ -1667,15 +1667,32 @@ concat_make(CudnnProgram &p, const Node &n)
 static void
 concat_transform(CudnnProgram &p, const Node &n)
 {
+  const int axis = 1;
+
   auto y = p.lower_tensor_batch(n.outputs_.get("y"));
   auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
-  const int axis = 1;
+
   for(const auto &xh : n.inputs_.getv("x")) {
-    p.tensors_[xh] = std::make_shared<CudaTensor>(y,
-                                                  xh->dims_,
-                                                  element_offset,
+    std::vector<int64_t> dims = xh->dims_;
+    dims[0] = p.batch_size_;
+    p.tensors_[xh] = std::make_shared<CudaTensor>(y, dims, element_offset,
                                                   xh->namePostfix("concat.alias"));
     element_offset[axis] += xh->dims_[axis];
+  }
+
+  auto dxv = n.outputs_.getv("dx");
+  if(dxv.size()) {
+    auto dy = p.lower_tensor_batch(n.inputs_.get("dy"));
+    auto element_offset = std::vector<int64_t>(dy->dims_.size(), 0);
+
+    for(auto &dxh : dxv) {
+      std::vector<int64_t> dims = dxh->dims_;
+      dims[0] = p.batch_size_;
+
+      p.tensors_[dxh] = std::make_shared<CudaTensor>(dy, dims, element_offset,
+                                                     dxh->namePostfix("concat.alias"));
+      element_offset[axis] += dxh->dims_[axis];
+    }
   }
 }
 
