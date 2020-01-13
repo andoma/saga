@@ -155,7 +155,8 @@ public:
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
 
-  std::vector<std::shared_ptr<CudnnOperation>> fwd_operations_;
+  std::vector<std::shared_ptr<CudnnOperation>> infer_operations_;
+  std::vector<std::shared_ptr<CudnnOperation>> train_operations_;
   std::vector<std::shared_ptr<CudnnOperation>> bwd_operations_;
   std::vector<std::shared_ptr<CudnnOperation>> upd_operations_;
 
@@ -179,7 +180,20 @@ public:
 
   void fwd(const std::shared_ptr<CudnnOperation> &op)
   {
-    fwd_operations_.push_back(op);
+    infer_operations_.push_back(op);
+    if(type_ == ProgramType::INFERENCE)
+      return;
+    train_operations_.push_back(op);
+  }
+
+  void infer(const std::shared_ptr<CudnnOperation> &op)
+  {
+    infer_operations_.push_back(op);
+  }
+
+  void train(const std::shared_ptr<CudnnOperation> &op)
+  {
+    train_operations_.push_back(op);
   }
 
   void bwd(const std::shared_ptr<CudnnOperation> &op)
@@ -289,10 +303,18 @@ void
 CudnnProgram::exec(bool learn)
 {
   allocWorkspace();
-  for(const auto &op : fwd_operations_) {
-    op->exec(*this);
-  }
-  if(learn) {
+
+  if(!learn) {
+
+    for(const auto &op : infer_operations_) {
+      op->exec(*this);
+    }
+
+  } else {
+
+    for(const auto &op : train_operations_) {
+      op->exec(*this);
+    }
     for(const auto &op : bwd_operations_) {
       op->exec(*this);
     }
@@ -306,17 +328,18 @@ CudnnProgram::exec(bool learn)
 void
 CudnnProgram::print() const
 {
-  printf("Forward:\n");
-  for(const auto &op : fwd_operations_) {
+  printf("Inference:\n");
+  for(const auto &op : train_operations_) {
     op->print();
   }
 
-  printf("Backward:\n");
+  printf("Training:\n");
+  for(const auto &op : train_operations_) {
+    op->print();
+  }
   for(const auto &op : bwd_operations_) {
     op->print();
   }
-
-  printf("Update:\n");
   for(const auto &op : upd_operations_) {
     op->print();
   }
@@ -679,13 +702,13 @@ conv_make(CudnnProgram &p, const Node &n)
 
 //------------------------------------------------------------------------
 
-struct CudnnBatchNormFwd : public CudnnOperation {
+struct CudnnBatchNormInference : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_;
   const float epsilon_;
 
-  CudnnBatchNormFwd(CudnnProgram &p, const Node &n)
+  CudnnBatchNormInference(CudnnProgram &p, const Node &n)
     : ctx_(p.ctx_)
     , x_(p.lower_tensor_batch(n.inputs_.get("x")))
     , s_(p.lower_tensor(n.inputs_.get("s"), 2))
@@ -725,11 +748,111 @@ struct CudnnBatchNormFwd : public CudnnOperation {
   }
 };
 
+
+struct CudnnBatchNormTrain : public CudnnBatchNormInference {
+
+  const std::shared_ptr<CudaTensor> sm_, sv_;
+  const float expavgf_;
+
+  CudnnBatchNormTrain(CudnnProgram &p, const Node &n)
+    : CudnnBatchNormInference(p, n)
+    , sm_(std::make_shared<CudaTensor>(*m_, p.tensor_format_))
+    , sv_(std::make_shared<CudaTensor>(*v_, p.tensor_format_))
+    , expavgf_(n.attributes_.get("expavg", 0.1f))
+  {}
+
+  void print() const {
+    CudnnBatchNormInference::print();
+    printf("\tsm: %s\n", sm_->info().c_str());
+    printf("\tsv: %s\n", sv_->info().c_str());
+  }
+
+  void exec(CudnnProgram &p) {
+    float alpha = 1.0f, beta = 0.0f;
+    chkCUDNN(cudnnBatchNormalizationForwardTraining(ctx_->cudnn_,
+                                                    CUDNN_BATCHNORM_SPATIAL,
+                                                    &alpha, &beta,
+                                                    x_->desc(),
+                                                    x_->deviceMem(),
+                                                    y_->desc(),
+                                                    y_->deviceMem(),
+                                                    s_->desc(),
+                                                    s_->deviceMem(),
+                                                    b_->deviceMem(),
+                                                    expavgf_,
+                                                    m_->deviceMem(),
+                                                    v_->deviceMem(),
+                                                    epsilon_,
+                                                    sm_->deviceMem(),
+                                                    sv_->deviceMem()));
+
+
+  }
+};
+
+struct CudnnBatchNormBwd : public CudnnOperation {
+
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> x_, dy_, dx_, s_, ds_, db_, sm_, sv_;
+  const float epsilon_;
+
+  CudnnBatchNormBwd(CudnnProgram &p, const Node &n,
+                    const CudnnBatchNormTrain &fwd)
+    : ctx_(p.ctx_)
+    , x_(fwd.x_)
+    , dy_(p.lower_tensor_batch(n.inputs_.get("dy")))
+    , dx_(p.lower_tensor_batch(n.outputs_.get("dx")))
+    , s_(fwd.s_)
+    , ds_(p.grad(fwd.s_))
+    , db_(p.grad(fwd.b_))
+    , sm_(fwd.sm_)
+    , sv_(fwd.sv_)
+    , epsilon_(fwd.epsilon_)
+  {}
+
+  void print() const {
+    printf("BatchNorm Bwd\n");
+  }
+
+  void exec(CudnnProgram &p) {
+    float alpha = 1.0f, beta = 0.0f;
+
+    chkCUDNN(cudnnBatchNormalizationBackward(ctx_->cudnn_,
+                                             CUDNN_BATCHNORM_SPATIAL,
+                                             &alpha, &beta,
+                                             &alpha, &beta,
+                                             x_->desc(),
+                                             x_->deviceMem(),
+                                             dy_->desc(),
+                                             dy_->deviceMem(),
+                                             dx_->desc(),
+                                             dx_->deviceMem(),
+                                             s_->desc(),
+                                             s_->deviceMem(),
+                                             ds_->deviceMem(),
+                                             db_->deviceMem(),
+                                             epsilon_,
+                                             sm_->deviceMem(),
+                                             sv_->deviceMem()));
+  }
+
+};
+
 static void
 batchnorm_make(CudnnProgram &p, const Node &n)
 {
-  auto f = std::make_shared<CudnnBatchNormFwd>(p, n);
-  p.fwd(f);
+  p.infer(std::make_shared<CudnnBatchNormInference>(p, n));
+  if(p.type_ == ProgramType::INFERENCE)
+    return;
+
+  auto f = std::make_shared<CudnnBatchNormTrain>(p, n);
+  p.train(f);
+
+  auto b = std::make_shared<CudnnBatchNormBwd>(p, n, *f);
+  p.bwd(b);
+
+  p.upd(std::make_shared<CudnnAdam>(p, f->s_, b->ds_));
+  p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
 }
 
 
