@@ -3,10 +3,13 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <string.h>
 
+#include <random>
 #include <algorithm>
 #include <numeric>
-#include <string.h>
+
 
 #include "saga.h"
 
@@ -343,8 +346,11 @@ mnist_main(int argc, char **argv)
   dy = p->resolveTensor(dy);
   loss = p->resolveTensor(loss);
 
+  std::random_device rd;
+  std::mt19937 rnd(rd());
+
   while(g_run) {
-    std::random_shuffle(train_data.begin(), train_data.end());
+    std::shuffle(train_data.begin(), train_data.end(), rnd);
 
     // Train
     const int64_t t0 = get_ts();
