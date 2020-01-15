@@ -37,7 +37,7 @@
 
 #include "common.h"
 
-#include "onnx.proto3.pb.h"
+#include "onnx/onnx.proto3.pb.h"
 
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/io/coded_stream.h>
@@ -211,7 +211,7 @@ public:
     , data_(data)
     , size_(size)
   {
-    SetTotalBytesLimit(size, size);
+    SetTotalBytesLimit(size);
   }
 
   ~MappedPBFile() {
