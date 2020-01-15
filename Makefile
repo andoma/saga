@@ -27,7 +27,7 @@ SRCS-lib-$(HAVE_CUDA) += \
 
 CPPFLAGS-$(HAVE_CUDA) += $(shell pkg-config --cflags cuda-10.1 cudart-10.1)
 LDFLAGS-$(HAVE_CUDA)  += $(shell pkg-config --libs   cuda-10.1 cudart-10.1)
-LDFLAGS-$(HAVE_CUDA)  += -lnvidia-ml
+LDFLAGS-$(HAVE_CUDA)  += -lnvidia-ml -lcudnn -lcublas
 
 NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
 NVCC := /usr/local/cuda-10.1/bin/nvcc
@@ -38,7 +38,7 @@ NVCC := /usr/local/cuda-10.1/bin/nvcc
 
 HAVE_PROTOBUF := $(subst 0,yes,$(subst 1,no,$(shell $(PKG_CONFIG) protobuf; echo $$?)))
 
-SRCS-lib-$(HAVE_PROTOBUF) = src/onnx.cpp onnx/onnx.proto3
+SRCS-lib-$(HAVE_PROTOBUF) += src/onnx.cpp onnx/onnx.proto3
 
 CPPFLAGS-$(HAVE_PROTOBUF) += $(shell pkg-config --cflags protobuf)
 LDFLAGS-$(HAVE_PROTOBUF)  += $(shell pkg-config --libs protobuf)
