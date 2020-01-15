@@ -6,6 +6,7 @@ PKG_CONFIG ?= pkg-config
 
 CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O)
 CXXFLAGS += --std=c++17 -march=native -fno-exceptions
+CXXFLAGS += -Wno-deprecated-declarations
 
 ###########################################
 # Lib

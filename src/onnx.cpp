@@ -42,8 +42,6 @@
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/io/coded_stream.h>
 
-#include <google/protobuf/port_def.inc>
-
 using namespace google::protobuf::io;
 using namespace std;
 
@@ -213,11 +211,7 @@ public:
     , data_(data)
     , size_(size)
   {
-#if PROTOBUF_VERSION < 3011000
     SetTotalBytesLimit(size, size);
-#else
-    SetTotalBytesLimit(size);
-#endif
   }
 
   ~MappedPBFile() {
