@@ -211,7 +211,11 @@ public:
     , data_(data)
     , size_(size)
   {
+#if PROTOBUF_VERSION < 3011000
+    SetTotalBytesLimit(size, size);
+#else
     SetTotalBytesLimit(size);
+#endif
   }
 
   ~MappedPBFile() {
