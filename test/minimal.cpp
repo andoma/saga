@@ -21,6 +21,7 @@ get_ts(void)
   return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
 }
 
+#if 0
 static const int table_or[12] = {
   0, 0, 0,
   0, 1, 1,
@@ -34,6 +35,7 @@ static const int table_and[12] = {
   1, 0, 0,
   1, 1, 1,
 };
+#endif
 
 static const int table_xor[12] = {
   0, 0, 1,
