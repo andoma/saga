@@ -56,17 +56,14 @@ SRCS += main.cpp \
 
 SRCS += $(SRCS-lib) $(SRCS-lib-yes)
 
-PROTO3 += $(PROTO3-lib-yes)
-
 CPPFLAGS += $(CPPFLAGS-yes)
 LDFLAGS  += $(LDFLAGS-yes)
 
 OBJS := ${SRCS:%.cpp=${O}/%.o}
-OBJS := ${OBJS:%.proto3=${O}/%.o}
+OBJS := ${OBJS:%.proto3=${O}/%.proto3.o}
 OBJS := ${OBJS:%.cu=${O}/%.o}
 DEPS := ${OBJS:%.o=%.d}
-
-#ALLDEPS = Makefile
+SRCDEPS := $(patsubst %,$(O)/%.pb.cc,$(filter %.proto3,$(SRCS)))
 
 ${PROG}: ${OBJS} ${ALLDEPS}
 	@mkdir -p $(dir $@)
@@ -78,15 +75,15 @@ ${O}/%.o: %.cu ${ALLDEPS}
 	${NVCC} -M ${NVCCFLAGS} -o ${@:%.o=%.d} -c $<
 	@sed -itmp "s:^$(notdir $@) :$@ :" ${@:%.o=%.d}
 
-${O}/%.o: %.cpp ${ALLDEPS}
+${O}/%.o: %.cpp ${ALLDEPS} | $(SRCDEPS)
 	@mkdir -p $(dir $@)
 	${CXX} -MD -MP ${CPPFLAGS} ${CXXFLAGS} -o $@ -c $<
 
-${O}/%.o: ${O}/%.proto3.pb.cc ${ALLDEPS}
+${O}/%.o: ${O}/%.pb.cc ${ALLDEPS}
 	@mkdir -p $(dir $@)
 	${CXX} -MD -MP ${CPPFLAGS} ${CXXFLAGS} -o $@ -c $<
 
-${O}/%.pb.cpp: %.proto3 ${ALLDEPS}
+${O}/%.proto3.pb.cc: %.proto3 ${ALLDEPS}
 	@mkdir -p $(dir $@)
 	protoc --cpp_out=$(O) $<
 
@@ -94,3 +91,5 @@ clean:
 	rm -rf "${O}" "${PROG}"
 
 -include ${DEPS}
+
+.PRECIOUS: ${O}/%.proto3.pb.cc
