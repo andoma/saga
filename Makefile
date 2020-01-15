@@ -65,6 +65,8 @@ OBJS := ${OBJS:%.cu=${O}/%.o}
 DEPS := ${OBJS:%.o=%.d}
 SRCDEPS := $(patsubst %,$(O)/%.pb.cc,$(filter %.proto3,$(SRCS)))
 
+ALLDEPS += Makefile
+
 ${PROG}: ${OBJS} ${ALLDEPS}
 	@mkdir -p $(dir $@)
 	${CXX} -o $@ ${OBJS} ${LDFLAGS}
