@@ -84,7 +84,7 @@ set_float(void *base, size_t offset, double v)
 static void
 set_half(void *base, size_t offset, double v)
 {
-  ((uint16_t *)base)[offset] = _cvtss_sh(v, 0);
+  ((uint16_t *)base)[offset] = _cvtss_sh((float)v, 0);
 }
 
 static void
