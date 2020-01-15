@@ -105,7 +105,7 @@ set_i32(void *base, size_t offset, double v)
   ((int32_t *)base)[offset] = v;
 }
 
-const TensorStorageAccess::getfn_t *
+TensorStorageAccess::getfn_t *
 datatype_get(Tensor::DataType dt)
 {
   switch(dt) {
@@ -118,7 +118,7 @@ datatype_get(Tensor::DataType dt)
   }
 }
 
-const TensorStorageAccess::setfn_t *
+TensorStorageAccess::setfn_t *
 datatype_set(Tensor::DataType dt)
 {
   switch(dt) {
