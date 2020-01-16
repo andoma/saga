@@ -121,25 +121,25 @@ batchnorm_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 
   if(!n->inputs_.get("s")) {
     n->inputs_["s"] =
-      Tensor::find(x->data_type_, dims,
+      Tensor::find(Tensor::DataType::FLOAT, dims,
                    1.0, 0, named_tensors, node_tensor_name(n->name_, "s"));
   }
 
   if(!n->inputs_.get("b")) {
     n->inputs_["b"] =
-      Tensor::find(x->data_type_, dims,
+      Tensor::find(Tensor::DataType::FLOAT, dims,
                    0.0, 0, named_tensors, node_tensor_name(n->name_, "b"));
   }
 
   if(!n->inputs_.get("m")) {
     n->inputs_["m"] =
-      Tensor::find(x->data_type_, dims,
+      Tensor::find(Tensor::DataType::FLOAT, dims,
                    0.0, 0, named_tensors, node_tensor_name(n->name_, "m"));
   }
 
   if(!n->inputs_.get("v")) {
     n->inputs_["v"] =
-      Tensor::find(x->data_type_, dims,
+      Tensor::find(Tensor::DataType::FLOAT, dims,
                    1.0, 0, named_tensors, node_tensor_name(n->name_, "v"));
   }
   return {n};
