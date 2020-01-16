@@ -330,8 +330,6 @@ mnist_main(int argc, char **argv)
   auto y = n->y();
   auto loss = n->outputs_["loss"];
 
-  auto dy = g.createGradients();
-
   if(verbose)
     g.print();
 
@@ -343,7 +341,7 @@ mnist_main(int argc, char **argv)
 
   x = p->resolveTensor(x);
   y = p->resolveTensor(y);
-  dy = p->resolveTensor(dy);
+  auto dy = y->grad();
   loss = p->resolveTensor(loss);
 
   std::random_device rd;

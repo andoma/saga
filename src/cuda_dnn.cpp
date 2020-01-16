@@ -172,12 +172,6 @@ public:
 
   std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src);
 
-  std::shared_ptr<CudaTensor> grad(std::shared_ptr<CudaTensor> src) {
-    if(!src)
-      return nullptr;
-    return std::make_shared<CudaTensor>(*src, tensor_format_, "grad");
-  }
-
   void fwd(const std::shared_ptr<CudnnOperation> &op)
   {
     infer_operations_.push_back(op);
@@ -571,10 +565,10 @@ struct CudnnConvolutionBwd : public CudnnOperation {
                       std::shared_ptr<CudnnConvolutionFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(p.lower_tensor_batch(n.outputs_.get("dx")))
-    , dw_(p.grad(fwd->w_))
-    , db_(p.grad(fwd->b_))
-    , dy_(p.lower_tensor_batch(n.inputs_.get("dy")))
+    , dx_(fwd_->x_->makeGrad())
+    , dw_(fwd_->w_->makeGrad())
+    , db_(fwd_->b_ ? fwd_->b_->makeGrad() : nullptr)
+    , dy_(fwd_->y_->makeGrad())
   {
     chkCUDNN(cudnnGetConvolutionBackwardDataAlgorithm(ctx_->cudnn_,
                                                       fwd->filter_desc_,
@@ -800,11 +794,11 @@ struct CudnnBatchNormBwd : public CudnnOperation {
                     const CudnnBatchNormTrain &fwd)
     : ctx_(p.ctx_)
     , x_(fwd.x_)
-    , dy_(p.lower_tensor_batch(n.inputs_.get("dy")))
-    , dx_(p.lower_tensor_batch(n.outputs_.get("dx")))
+    , dy_(fwd.y_->makeGrad())
+    , dx_(fwd.x_->makeGrad())
     , s_(fwd.s_)
-    , ds_(p.grad(fwd.s_))
-    , db_(p.grad(fwd.b_))
+    , ds_(fwd.s_->makeGrad())
+    , db_(fwd.b_->makeGrad())
     , sm_(fwd.sm_)
     , sv_(fwd.sv_)
     , epsilon_(fwd.epsilon_)
@@ -907,8 +901,8 @@ struct CudnnActivationBwd : public CudnnOperation {
                      const std::shared_ptr<CudnnActivationFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(p.lower_tensor_batch(n.outputs_.get("dx")))
-    , dy_(p.lower_tensor_batch(n.inputs_.get("dy")))
+    , dx_(fwd->x_->makeGrad())
+    , dy_(fwd->y_->makeGrad())
   {
   }
 
@@ -1013,8 +1007,8 @@ struct CudnnPoolingBwd : public CudnnOperation {
                   std::shared_ptr<CudnnPoolingFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(p.lower_tensor_batch(n.outputs_.get("dx")))
-    , dy_(p.lower_tensor_batch(n.inputs_.get("dy")))
+    , dx_(fwd->x_->makeGrad())
+    , dy_(fwd->y_->makeGrad())
   {
   }
 
@@ -1342,10 +1336,10 @@ struct CudnnGemmBwd : public CudnnOperation {
   CudnnGemmBwd(CudnnProgram &p, const Node &n,
                std::shared_ptr<CudnnGemmFwd> fwd)
     : ctx_(p.ctx_)
-    , dx_(p.lower_tensor_batch(n.outputs_.get("dx")))
-    , dw_(p.grad(fwd->w_))
-    , db_(p.grad(fwd->b_))
-    , dy_(p.lower_tensor_batch(n.inputs_.get("dy")))
+    , dx_(fwd->x_->makeGrad())
+    , dw_(fwd->w_->makeGrad())
+    , db_(fwd->b_->makeGrad())
+    , dy_(fwd->y_->makeGrad())
     , x_(fwd->x_)
     , w_(fwd->w_)
     , n_(fwd->n_)
@@ -1562,8 +1556,8 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
                         std::shared_ptr<CudnnCatClassifierFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(p.lower_tensor_batch(n.outputs_.get("dx")))
-    , dy_(p.lower_tensor_batch(n.inputs_.get("dy")))
+    , dx_(fwd->x_->makeGrad())
+    , dy_(fwd->y_->makeGrad())
     , loss_(p.lower_tensor_batch(n.outputs_.get("loss")))
   {
   }
@@ -1670,29 +1664,19 @@ concat_transform(CudnnProgram &p, const Node &n)
   const int axis = 1;
 
   auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+  auto dy = y->makeGrad();
   auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
 
   for(const auto &xh : n.inputs_.getv("x")) {
     std::vector<int64_t> dims = xh->dims_;
     dims[0] = p.batch_size_;
-    p.tensors_[xh] = std::make_shared<CudaTensor>(y, dims, element_offset,
-                                                  xh->namePostfix("concat.alias"));
+
+    auto x = std::make_shared<CudaTensor>(y, dims, element_offset,
+                                          xh->namePostfix("alias"));
+    p.tensors_[xh] = x;
+    x->grad_ = std::make_shared<CudaTensor>(dy, dims, element_offset,
+                                            xh->namePostfix("alias"));
     element_offset[axis] += xh->dims_[axis];
-  }
-
-  auto dxv = n.outputs_.getv("dx");
-  if(dxv.size()) {
-    auto dy = p.lower_tensor_batch(n.inputs_.get("dy"));
-    auto element_offset = std::vector<int64_t>(dy->dims_.size(), 0);
-
-    for(auto &dxh : dxv) {
-      std::vector<int64_t> dims = dxh->dims_;
-      dims[0] = p.batch_size_;
-
-      p.tensors_[dxh] = std::make_shared<CudaTensor>(dy, dims, element_offset,
-                                                     dxh->namePostfix("concat.alias"));
-      element_offset[axis] += dxh->dims_[axis];
-    }
   }
 }
 
@@ -1836,28 +1820,20 @@ static std::vector<std::shared_ptr<Node>>
 reshape_transform(CudnnProgram &p, const Node &n)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"), CUDNN_TENSOR_NCHW);
+  auto dx = x->makeGrad();
   auto y = n.outputs_.get("y");
 
   Dims dims(y->dims_);
   dims[0] = p.batch_size_;
 
-  p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
-                                               dims, CUDNN_TENSOR_NCHW,
-                                               x->namePostfix("reshape"));
+  auto yl = std::make_shared<CudaTensor>(x->storage_,
+                                         dims, CUDNN_TENSOR_NCHW,
+                                         x->namePostfix("reshape"));
 
-  auto dx = p.lower_tensor_batch(n.outputs_.get("dx"), CUDNN_TENSOR_NCHW);
-  if(dx) {
-    auto dy = n.inputs_.get("dy");
-
-    Dims dims(dy->dims_);
-    dims[0] = p.batch_size_;
-
-    p.tensors_[dy] = std::make_shared<CudaTensor>(dx->storage_,
-                                                  dims, CUDNN_TENSOR_NCHW,
-                                                  dx->namePostfix("reshape"));
-  }
-
-
+  p.tensors_[y] = yl;
+  yl->grad_ = std::make_shared<CudaTensor>(dx->storage_,
+                                           dims, CUDNN_TENSOR_NCHW,
+                                           x->namePostfix("reshape"));
   return {};
 }
 

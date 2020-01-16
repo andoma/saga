@@ -129,6 +129,10 @@ public:
     return nullptr;
   }
 
+  virtual std::shared_ptr<Tensor> grad() const {
+    return nullptr;
+  }
+
   void copyFrom(Tensor &t);
 
   double sse(Tensor &t);

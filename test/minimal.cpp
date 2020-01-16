@@ -78,7 +78,6 @@ minimal_main(int argc, char **argv)
 
   auto loss = n->outputs_["loss"];
   auto y = n->y();
-  auto dy = g.createGradients();
   g.print();
 
   auto ctx = createContext();
@@ -89,7 +88,8 @@ minimal_main(int argc, char **argv)
 
   x = p->resolveTensor(x);
   y = p->resolveTensor(y);
-  dy = p->resolveTensor(dy);
+  auto dy = y->grad();
+
   loss = p->resolveTensor(loss);
 
   printf("x: %s\n", x->info().c_str());

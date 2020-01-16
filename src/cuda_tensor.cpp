@@ -271,6 +271,30 @@ CudaTensor::CudaTensor(const CudaTensor &o,
 {
 }
 
+CudaTensor::CudaTensor(const CudaTensor &o,
+                       const std::optional<const std::string> &name)
+  : Tensor(o.data_type_, o.dims_, name)
+  , type_(cudnnDataType_from_dataType(data_type_))
+  , offset_(0)
+{
+  const int max_rank = 8;
+  int dimsA[max_rank];
+  int stridesA[max_rank];
+  int rank;
+  cudnnDataType_t data_type;
+
+  chkCUDNN(cudnnGetTensorNdDescriptor(o.desc_, max_rank, &data_type,
+                                      &rank, dimsA, stridesA));
+
+  chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
+  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank,
+                                      dimsA, stridesA));
+  size_t bytes;
+  chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes));
+
+  storage_ = std::make_shared<CudaTensorStorage>(data_type_, bytes);
+}
+
 
 CudaTensor::~CudaTensor()
 {
@@ -307,6 +331,14 @@ CudaTensor::slice(const Dims &offset, const Dims &size)
 
 
 
+std::shared_ptr<CudaTensor>
+CudaTensor::makeGrad()
+{
+  if(!grad_)
+    grad_ = std::make_shared<CudaTensor>(*this, namePostfix("grad"));
+
+  return grad_;
+}
 
 
 void *

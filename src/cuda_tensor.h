@@ -65,6 +65,9 @@ public:
              cudnnTensorFormat_t format,
              const std::optional<const std::string> &name_postfix = std::nullopt);
 
+  CudaTensor(const CudaTensor &o,
+             const std::optional<const std::string> &name);
+
   ~CudaTensor();
 
   std::unique_ptr<TensorAccess> access();
@@ -79,10 +82,17 @@ public:
 
   std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size);
 
+  std::shared_ptr<Tensor> grad() const {
+    return grad_;
+  }
+
+  std::shared_ptr<CudaTensor> makeGrad();
+
   const cudnnDataType_t type_;
   int64_t offset_;
   std::shared_ptr<CudaTensorStorage> storage_;
   cudnnTensorDescriptor_t desc_;
+  std::shared_ptr<CudaTensor> grad_;
 };
 
 }
