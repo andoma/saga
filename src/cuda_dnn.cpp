@@ -228,7 +228,7 @@ CudnnProgram::lower_tensor(std::shared_ptr<Tensor> src,
     return it->second;
   }
 
-  std::vector<int64_t> dims = src->dims_;
+  Dims dims = src->dims_;
 
   if(dimensions) {
     while(dims.size() < dimensions)
@@ -257,7 +257,7 @@ CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
     return it->second;
   }
 
-  std::vector<int64_t> dims = src->dims_;
+  Dims dims = src->dims_;
 
   dims[0] = batch_size_;
 
@@ -1668,7 +1668,7 @@ concat_transform(CudnnProgram &p, const Node &n)
   auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
 
   for(const auto &xh : n.inputs_.getv("x")) {
-    std::vector<int64_t> dims = xh->dims_;
+    Dims dims = xh->dims_;
     dims[0] = p.batch_size_;
 
     auto x = std::make_shared<CudaTensor>(y, dims, element_offset,

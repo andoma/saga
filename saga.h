@@ -70,7 +70,10 @@ public:
 
 class Tensors;
 
-typedef std::vector<int64_t> Dims;
+class Dims : public std::vector<int64_t> {
+  using std::vector<int64_t>::vector;
+};
+
 
 class TensorAccess {
 
