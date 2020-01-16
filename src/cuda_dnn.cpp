@@ -257,12 +257,9 @@ CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
     return it->second;
   }
 
-  Dims dims = src->dims_;
-
-  dims[0] = batch_size_;
-
   auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                        dims, tensor_format,
+                                        src->dims_.n(batch_size_),
+                                        tensor_format,
                                         src->name_);
 
   t->copyFrom(*src);
@@ -1668,13 +1665,12 @@ concat_transform(CudnnProgram &p, const Node &n)
   auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
 
   for(const auto &xh : n.inputs_.getv("x")) {
-    Dims dims = xh->dims_;
-    dims[0] = p.batch_size_;
-
-    auto x = std::make_shared<CudaTensor>(y, dims, element_offset,
+    auto x = std::make_shared<CudaTensor>(y, xh->dims_.n(p.batch_size_),
+                                          element_offset,
                                           xh->namePostfix("alias"));
     p.tensors_[xh] = x;
-    x->grad_ = std::make_shared<CudaTensor>(dy, dims, element_offset,
+    x->grad_ = std::make_shared<CudaTensor>(dy, xh->dims_.n(p.batch_size_),
+                                            element_offset,
                                             xh->namePostfix("alias"));
     element_offset[axis] += xh->dims_[axis];
   }
@@ -1823,16 +1819,15 @@ reshape_transform(CudnnProgram &p, const Node &n)
   auto dx = x->makeGrad();
   auto y = n.outputs_.get("y");
 
-  Dims dims(y->dims_);
-  dims[0] = p.batch_size_;
-
   auto yl = std::make_shared<CudaTensor>(x->storage_,
-                                         dims, CUDNN_TENSOR_NCHW,
+                                         y->dims_.n(p.batch_size_),
+                                         CUDNN_TENSOR_NCHW,
                                          x->namePostfix("reshape"));
 
   p.tensors_[y] = yl;
   yl->grad_ = std::make_shared<CudaTensor>(dx->storage_,
-                                           dims, CUDNN_TENSOR_NCHW,
+                                           y->dims_.n(p.batch_size_),
+                                           CUDNN_TENSOR_NCHW,
                                            x->namePostfix("reshape"));
   return {};
 }
