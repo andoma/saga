@@ -461,6 +461,51 @@ convfwdalgostr(cudnnConvolutionFwdAlgo_t algo)
   }
 }
 
+static const char *
+convbwddataalgostr(cudnnConvolutionBwdDataAlgo_t algo)
+{
+  switch(algo) {
+  case CUDNN_CONVOLUTION_BWD_DATA_ALGO_0:
+    return "Algo_0";
+  case CUDNN_CONVOLUTION_BWD_DATA_ALGO_1:
+    return "Algo_1";
+  case CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT:
+    return "FFT";
+  case CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT_TILING:
+    return "FFT-Tiling";
+  case CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD:
+    return "Winograd";
+  case CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD_NONFUSED:
+    return "Winograd-Nonfused";
+  default:
+    return "?";
+  }
+}
+
+static const char *
+convbwdfilteralgostr(cudnnConvolutionBwdFilterAlgo_t algo)
+{
+  switch(algo) {
+  case CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0:
+    return "Algo_0";
+  case CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1:
+    return "Algo_1";
+  case CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT:
+    return "FFT";
+  case CUDNN_CONVOLUTION_BWD_FILTER_ALGO_3:
+    return "Algo_3";
+  case CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD:
+    return "Winograd";
+  case CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD_NONFUSED:
+    return "Winograd-Nonfused";
+  case CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT_TILING:
+    return "FFT-Tiling";
+  default:
+    return "?";
+  }
+}
+
+
 
 struct CudnnConvolutionFwd : public CudnnOperation {
 
@@ -641,13 +686,15 @@ struct CudnnConvolutionBwd : public CudnnOperation {
   }
 
   void print() const {
-    printf("Convolution Bwd\n");
-    if(dx_)
-      printf("\tdx: %s\n", dx_->info().c_str());
-    printf("\tdw: %s\n", dw_->info().c_str());
+    printf("Convolution Bwd Filter:%s Data:%s\n",
+           convbwdfilteralgostr(bwd_filter_algo_),
+           convbwddataalgostr(bwd_data_algo_));
+    printf("\tdy: %s\n", dy_->info().c_str());
     if(db_)
       printf("\tdb: %s\n", db_->info().c_str());
-    printf("\tdy: %s\n", dy_->info().c_str());
+    printf("\tdw: %s\n", dw_->info().c_str());
+    if(dx_)
+      printf("\tdx: %s\n", dx_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
@@ -934,8 +981,8 @@ struct CudnnActivationBwd : public CudnnOperation {
 
   void print() const {
     printf("Activation Bwd\n");
-    printf("\tdx: %s\n", dx_->info().c_str());
     printf("\tdy: %s\n", dy_->info().c_str());
+    printf("\tdx: %s\n", dx_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
@@ -1036,8 +1083,8 @@ struct CudnnPoolingBwd : public CudnnOperation {
 
   void print() const {
     printf("Pooling Bwd\n");
-    printf("\tdx: %s\n", dx_->info().c_str());
     printf("\tdy: %s\n", dy_->info().c_str());
+    printf("\tdx: %s\n", dx_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
@@ -1373,11 +1420,11 @@ struct CudnnGemmBwd : public CudnnOperation {
 
   void print() const {
     printf("Gemm Bwd\n");
+    printf("\tdy: %s\n", dy_->info().c_str());
+    printf("\tdb: %s\n", db_->info().c_str());
+    printf("\tdw: %s\n", dw_->info().c_str());
     if(dx_)
       printf("\tdx: %s\n", dx_->info().c_str());
-    printf("\tdw: %s\n", dw_->info().c_str());
-    printf("\tdb: %s\n", db_->info().c_str());
-    printf("\tdy: %s\n", dy_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
@@ -1577,8 +1624,8 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
 
   void print() const {
     printf("CatClassifier Bwd\n");
-    printf("\tdx: %s\n", dx_->info().c_str());
     printf("\tdy: %s\n", dy_->info().c_str());
+    printf("\tdx: %s\n", dx_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
