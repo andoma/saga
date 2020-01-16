@@ -25,6 +25,7 @@
  */
 
 #include <sstream>
+#include <x86intrin.h>
 #include "saga.h"
 #include "tensor.h"
 
@@ -369,6 +370,24 @@ struct CudnnAdam : public CudnnOperation {
       chkCuda(cudaMalloc(&temp_, bytes));
       chkCuda(cudaMemset(temp_, 0, bytes));
       break;
+
+    case Tensor::DataType::HALF:
+      // Allocate 3x floats for each weight (m and v and float32 copy)
+      bytes = weights_->elements_ * 3 * sizeof(float);
+      chkCuda(cudaMallocManaged(&temp_, bytes, cudaMemAttachGlobal));
+      {
+        auto ta = weights->access();
+        const uint16_t *src = (const uint16_t *)ta->data();
+        float *dst = temp_;
+        for(int i = 0; i < weights->elements_; i++) {
+          *dst++ = 0;
+          *dst++ = 0;
+          *dst++ = _cvtsh_ss(*src++);
+        }
+        break;
+      }
+
+
     default:
       abort();
     }
@@ -399,6 +418,12 @@ struct CudnnAdam : public CudnnOperation {
       adam_float(weights_->elements_, learning_rate_,
                  (float *)weights_->deviceMem(),
                  (const float *)gradient_->deviceMem(),
+                 (float *)temp_, b1t, b2t);
+      break;
+    case Tensor::DataType::HALF:
+      adam_mixed(weights_->elements_, learning_rate_,
+                 (__half *)weights_->deviceMem(),
+                 (const __half *)gradient_->deviceMem(),
                  (float *)temp_, b1t, b2t);
       break;
     default:
@@ -1357,7 +1382,7 @@ struct CudnnGemmBwd : public CudnnOperation {
 
   void exec(CudnnProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
-    //    __half halpha = 1.0f, hbeta = 0.0f;
+    __half halpha = 1.0f, hbeta = 0.0f;
 
     switch(x_->type_) {
     case CUDNN_DATA_FLOAT:
@@ -1388,54 +1413,53 @@ struct CudnnGemmBwd : public CudnnOperation {
                             (float *)dx_->deviceMem(), num_inputs_));
       }
 
-      if(p.debug_) {
-        x_->print("gemm.x", 4);
-        w_->print("gemm.w", 4);
-        dy_->print("gemm.dy", 4);
-        dw_->print("gemm.dw", 4);
-        db_->print("gemm.db", 4);
-        if(dx_)
-          dx_->print("gemm.dx", 4);
-      }
-
-
       break;
-#if 0
+
     case CUDNN_DATA_HALF:
       chkCuda(cublasHgemm(ctx_->cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
                           num_inputs_, num_outputs_, n_,
                           &halpha,
-                          (const __half *)input_->deviceMem(), num_inputs_,
-                          (const __half *)output_grad_->deviceMem(),
+                          (const __half *)x_->deviceMem(), num_inputs_,
+                          (const __half *)dy_->deviceMem(),
                           num_outputs_,
                           &hbeta,
-                          (__half *)weights_grad_->deviceMem(), num_inputs_));
+                          (__half *)dw_->deviceMem(), num_inputs_));
 
       // No cublasSgemv() for half type, so do matrix*matrix instead
       chkCuda(cublasHgemm(ctx_->cublas_, CUBLAS_OP_N, CUBLAS_OP_T,
-                          1, num_outputs_, input_->n,
+                          1, num_outputs_, n_,
                           &halpha,
-                          (const __half *)batch_of_one_.deviceMem(),
+                          (const __half *)ones_->deviceMem(),
                           1,
-                          (const __half *)output_grad_->deviceMem(),
+                          (const __half *)dy_->deviceMem(),
                           num_outputs_,
                           &hbeta,
-                          (__half *)bias_grad_->deviceMem(), 1));
+                          (__half *)db_->deviceMem(), 1));
 
-      if(input_grad_ != NULL) {
+      if(dx_ != NULL) {
         chkCuda(cublasHgemm(ctx_->cublas_, CUBLAS_OP_N, CUBLAS_OP_N,
-                            num_inputs_, input_->n, num_outputs_,
+                            num_inputs_, n_, num_outputs_,
                             &halpha,
-                            (const __half *)weights_->deviceMem(), num_inputs_,
-                            (const __half *)output_grad_->deviceMem(),
+                            (const __half *)w_->deviceMem(), num_inputs_,
+                            (const __half *)dy_->deviceMem(),
                             num_outputs_,
                             &hbeta,
-                            (__half *)input_grad_->deviceMem(), num_inputs_));
+                            (__half *)dx_->deviceMem(), num_inputs_));
       }
       break;
-#endif
+
     default:
       abort();
+    }
+
+    if(p.debug_) {
+      x_->print("gemm.x", 4);
+      w_->print("gemm.w", 4);
+      dy_->print("gemm.dy", 4);
+      dw_->print("gemm.dw", 4);
+      db_->print("gemm.db", 4);
+      if(dx_)
+        dx_->print("gemm.dx", 4);
     }
   }
 };
@@ -1502,13 +1526,11 @@ softmax_make(CudnnProgram &p, const Node &n)
 struct CudnnCatClassifierFwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnContext> ctx_;
-  const std::shared_ptr<CudaTensor> x_, p_, y_;
+  const std::shared_ptr<CudaTensor> x_, y_;
 
   CudnnCatClassifierFwd(CudnnProgram &p, const Node &n)
     : ctx_(p.ctx_)
     , x_(p.lower_tensor_batch(n.inputs_.get("x")))
-    , p_(std::make_shared<CudaTensor>(x_->data_type_, x_->dims_,
-                                      p.tensor_format_))
     , y_(p.lower_tensor_batch(n.outputs_.get("y")))
   {
   }
@@ -1516,26 +1538,20 @@ struct CudnnCatClassifierFwd : public CudnnOperation {
   void print() const {
     printf("CatClassifier Fwd\n");
     printf("\tx: %s\n", x_->info().c_str());
-    printf("\tp: %s\n", p_->info().c_str());
     printf("\ty: %s\n", y_->info().c_str());
   }
 
   void exec(CudnnProgram &p) {
-
-    float alpha = 1.0f, beta = 0.0f;
-    chkCUDNN(cudnnSoftmaxForward(ctx_->cudnn_,
-                                 CUDNN_SOFTMAX_ACCURATE,
-                                 CUDNN_SOFTMAX_MODE_CHANNEL,
-                                 &alpha,
-                                 x_->desc(), x_->deviceMem(),
-                                 &beta,
-                                 p_->desc(), p_->deviceMem()));
-
-    switch(p_->type_) {
+    switch(x_->type_) {
     case CUDNN_DATA_FLOAT:
-      catclassifier_pred_float_i32(p_->dims_[0],
-                                   (const float *)p_->deviceMem(),
-                                   (int32_t *)y_->deviceMem(), p_->dims_[1]);
+      catclassifier_fwd_float_i32(x_->dims_[0],
+                                  (const float *)x_->deviceMem(),
+                                  (int32_t *)y_->deviceMem(), x_->dims_[1]);
+      break;
+    case CUDNN_DATA_HALF:
+      catclassifier_fwd_half_i32(x_->dims_[0],
+                                 (const __half *)x_->deviceMem(),
+                                 (int32_t *)y_->deviceMem(), x_->dims_[1]);
       break;
     default:
       abort();
@@ -1567,18 +1583,28 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
 
   void exec(CudnnProgram &p) {
 
-    const int n = fwd_->p_->dims_[0];
-    const int c = fwd_->p_->dims_[1];
+    const int n = fwd_->x_->dims_[0];
+    const int c = fwd_->x_->dims_[1];
     const float scale = 1.0f / n;
 
-    switch(fwd_->p_->type_) {
+    switch(fwd_->x_->type_) {
     case CUDNN_DATA_FLOAT:
-      catclassifier_backprop_float_i32(n,
-                                       (const float *)fwd_->p_->deviceMem(),
-                                       (float *)dx_->deviceMem(),
-                                       (const int32_t *)dy_->deviceMem(),
-                                       loss_ ? (float *)loss_->deviceMem() : NULL,
-                                       c, scale);
+      catclassifier_bwd_float_i32(n,
+                                  (const float *)fwd_->x_->deviceMem(),
+                                  (float *)dx_->deviceMem(),
+                                  (const int32_t *)fwd_->y_->deviceMem(),
+                                  (const int32_t *)dy_->deviceMem(),
+                                  loss_ ? (float *)loss_->deviceMem() : NULL,
+                                  c, scale);
+      break;
+    case CUDNN_DATA_HALF:
+      catclassifier_bwd_half_i32(n,
+                                 (const __half *)fwd_->x_->deviceMem(),
+                                 (__half *)dx_->deviceMem(),
+                                 (const int32_t *)fwd_->y_->deviceMem(),
+                                 (const int32_t *)dy_->deviceMem(),
+                                 loss_ ? (float *)loss_->deviceMem() : NULL,
+                                 c, scale);
       break;
     default:
       abort();
@@ -1586,7 +1612,7 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
 
     if(p.debug_) {
       fwd_->x_->print("catclassifier.x");
-      fwd_->p_->print("catclassifier.p");
+      fwd_->y_->print("catclassifier.y");
       dy_->print("catclassifier.dy");
       dx_->print("catclassifier.dx");
     }
@@ -1700,6 +1726,9 @@ struct CudnnConvert : public CudnnOperation {
     if(x_->data_type_ == Tensor::DataType::U8 &&
        y_->data_type_ == Tensor::DataType::FLOAT) {
       algo_ = convert_u8_float;
+    } else if(x_->data_type_ == Tensor::DataType::U8 &&
+              y_->data_type_ == Tensor::DataType::HALF) {
+      algo_ = convert_u8_half;
     } else {
       abort();
     }

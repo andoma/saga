@@ -1,3 +1,4 @@
+#include <math.h>
 #include <signal.h>
 #include <assert.h>
 #include <unistd.h>
@@ -317,8 +318,7 @@ mnist_main(int argc, char **argv)
   std::shared_ptr<Node> n;
 
   n = g.addNode("convert", {{"x", x}},
-                {{"scale", 1.0f / 255.0f},
-                    {"datatype", (int)Tensor::DataType::FLOAT}});
+                {{"scale", 1.0f / 255.0f}, {"datatype", (int)dt}});
 
   if(mode == "lecun") {
     n = lecun(g, n);
