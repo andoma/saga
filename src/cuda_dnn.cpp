@@ -565,7 +565,7 @@ struct CudnnConvolutionBwd : public CudnnOperation {
                       std::shared_ptr<CudnnConvolutionFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(fwd_->x_->makeGrad())
+    , dx_(fwd_->x_->grad_)
     , dw_(fwd_->w_->makeGrad())
     , db_(fwd_->b_ ? fwd_->b_->makeGrad() : nullptr)
     , dy_(fwd_->y_->makeGrad())
