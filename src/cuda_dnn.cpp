@@ -321,7 +321,7 @@ void
 CudnnProgram::print() const
 {
   printf("Inference:\n");
-  for(const auto &op : train_operations_) {
+  for(const auto &op : infer_operations_) {
     op->print();
   }
 
@@ -1194,10 +1194,10 @@ sum_make(CudnnProgram &p, const Node &n)
 
 
 static std::shared_ptr<Node>
-sum_transform(CudnnProgram &p, const Node &n)
+sum_transform(CudnnProgram &p, std::shared_ptr<Node> n)
 {
-  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
-  auto xvec = n.inputs_.getv("x");
+  auto y = p.lower_tensor_batch(n->outputs_.get("y"));
+  auto xvec = n->inputs_.getv("x");
 
   Dims d = y->dims_;
   d.insert(d.begin(), xvec.size());
@@ -1888,12 +1888,13 @@ mul_make(CudnnProgram &p, const Node &n)
 
 //------------------------------------------------------------------------
 
+
 static std::vector<std::shared_ptr<Node>>
-reshape_transform(CudnnProgram &p, const Node &n)
+reshape_transform(CudnnProgram &p, std::shared_ptr<Node> n)
 {
-  auto x = p.lower_tensor_batch(n.inputs_.get("x"), CUDNN_TENSOR_NCHW);
+  auto x = p.lower_tensor_batch(n->inputs_.get("x"), CUDNN_TENSOR_NCHW);
   auto dx = x->makeGrad();
-  auto y = n.outputs_.get("y");
+  auto y = n->outputs_.get("y");
 
   auto yl = std::make_shared<CudaTensor>(x->storage_,
                                          y->dims_.n(p.batch_size_),
@@ -1910,12 +1911,118 @@ reshape_transform(CudnnProgram &p, const Node &n)
 
 //------------------------------------------------------------------------
 
-static std::vector<std::shared_ptr<Node>>
-dropout_transform(CudnnProgram &p, const Node &n)
+
+struct CudnnDropoutFwd : public CudnnOperation {
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> x_, y_;
+  cudnnDropoutDescriptor_t desc_;
+  size_t reserve_size_;
+  void *reserve_;
+  size_t states_size_;
+  void *states_;
+
+  CudnnDropoutFwd(CudnnProgram &p, const Node &n)
+    : ctx_(p.ctx_)
+    , x_(p.lower_tensor_batch(n.inputs_.get("x")))
+    , y_(p.lower_tensor_batch(n.outputs_.get("y")))
+  {
+    const float prob = n.attributes_.get("prob", 0.5f);
+    chkCUDNN(cudnnDropoutGetReserveSpaceSize(x_->desc(), &reserve_size_));
+    chkCuda(cudaMalloc(&reserve_, reserve_size_));
+    chkCUDNN(cudnnDropoutGetStatesSize(ctx_->cudnn_, &states_size_));
+    chkCuda(cudaMalloc(&states_, states_size_));
+
+    chkCUDNN(cudnnCreateDropoutDescriptor(&desc_));
+    chkCUDNN(cudnnSetDropoutDescriptor(desc_, ctx_->cudnn_, prob,
+                                       states_, states_size_, 0));
+  }
+
+  ~CudnnDropoutFwd()
+  {
+    chkCUDNN(cudnnDestroyDropoutDescriptor(desc_));
+  }
+
+  void print() const {
+    printf("Dropout Fwd\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
+  }
+
+  void exec(CudnnProgram &p) {
+    chkCUDNN(cudnnDropoutForward(ctx_->cudnn_, desc_,
+                                 x_->desc(), x_->deviceMem(),
+                                 y_->desc(), y_->deviceMem(),
+                                 reserve_, reserve_size_));
+  }
+};
+
+
+struct CudnnDropoutBwd : public CudnnOperation {
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudnnDropoutFwd> fwd_;
+  const std::shared_ptr<CudaTensor> dx_, dy_;
+
+  CudnnDropoutBwd(CudnnProgram &p, const Node &n,
+                     const std::shared_ptr<CudnnDropoutFwd> fwd)
+    : ctx_(p.ctx_)
+    , fwd_(fwd)
+    , dx_(fwd->x_->makeGrad())
+    , dy_(fwd->y_->makeGrad())
+  {
+  }
+
+  ~CudnnDropoutBwd()
+  {
+  }
+
+  void print() const {
+    printf("Dropout Bwd\n");
+    printf("\tdy: %s\n", dy_->info().c_str());
+    printf("\tdx: %s\n", dx_->info().c_str());
+  }
+
+  void exec(CudnnProgram &p) {
+    chkCUDNN(cudnnDropoutBackward(ctx_->cudnn_, fwd_->desc_,
+                                  dy_->desc(), dy_->deviceMem(),
+                                  dx_->desc(), dx_->deviceMem(),
+                                  fwd_->reserve_, fwd_->reserve_size_));
+  }
+};
+
+
+
+static void
+dropout_make(CudnnProgram &p, const Node &n)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
-  auto y = n.outputs_.get("y");
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
 
+  p.infer(std::make_shared<CudnnTransform>(p, x, y));
+
+  if(p.type_ == ProgramType::INFERENCE)
+    return;
+
+  auto f = std::make_shared<CudnnDropoutFwd>(p, n);
+  p.train(f);
+
+  p.bwd(std::make_shared<CudnnDropoutBwd>(p, n, f));
+}
+
+
+
+
+
+
+static std::vector<std::shared_ptr<Node>>
+dropout_transform(CudnnProgram &p, std::shared_ptr<Node> n)
+{
+  return {n};
+  if(p.type_ != ProgramType::INFERENCE)
+    return {n};
+
+
+  auto x = p.lower_tensor_batch(n->inputs_.get("x"));
+  auto y = n->outputs_.get("y");
 
   p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
                                                x->dims_, p.tensor_format_,
@@ -1987,7 +2094,7 @@ static const struct {
   const char *name;
   void (*create_op)(CudnnProgram &p, const Node &n);
   std::vector<std::shared_ptr<Node>> (*transform_op)(CudnnProgram &p,
-                                                     const Node &n);
+                                                     std::shared_ptr<Node>);
 } nodetypes[] = {
   { "add",           add_make },
   { "avgpool",       avgpool_make },
@@ -1997,7 +2104,7 @@ static const struct {
   { "conv",          conv_make },
   { "convert",       convert_make },
   { "cudnn.reduce.add",  cudnn_reduce_add_make },
-  { "dropout",       NULL, dropout_transform },
+  { "dropout",       dropout_make, dropout_transform },
   { "fc",            fc_make },
   { "maxpool",       maxpool_make },
   { "mul",           mul_make },
@@ -2055,7 +2162,7 @@ pass_node_transform(CudnnProgram &p,
     std::vector<std::shared_ptr<Node>> v{n};
     for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
       if(n->type_ == nodetypes[i].name && nodetypes[i].transform_op) {
-        v = nodetypes[i].transform_op(p, *n);
+        v = nodetypes[i].transform_op(p, n);
         break;
       }
     }
