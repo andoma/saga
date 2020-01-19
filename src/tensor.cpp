@@ -341,7 +341,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
 
 
 void
-Tensor::printRGB(const char *prefix, float scale)
+Tensor::printRGB(const char *prefix, float scale, float offset)
 {
   printf("%s: %s\n", prefix, info().c_str());
 
@@ -359,24 +359,68 @@ Tensor::printRGB(const char *prefix, float scale)
 
   size_t dim_offset = dims_.size() - 3;
 
+  const int c = dims_[dim_offset];
+
   for(int n = 0; n < dims_[0]; n++) {
+    printf("%s: [%d]", prefix, n);
+    for(int x = 0; x < dims_[dim_offset + 2]; x++) {
+      printf("=");
+    }
+    printf("\n");
 
     for(int y = 0; y < dims_[dim_offset + 1]; y++) {
       printf("%s: [%d]", prefix, n);
 
-      if(dims_[dim_offset] == 1) {
-        for(int x = 0; x < dims_[dim_offset + 2]; x++) {
-          const int v = ta->get({n,0,y,x}) * scale;
-          printf("\033[48;2;%d;%d;%dm ", v, v, v);
+      for(int x = 0; x < dims_[dim_offset + 2]; x++) {
+        int r, g, b;
+        switch(c) {
+        default:
+          r = ta->get({n,0,y,x}) * scale + offset;
+          g = ta->get({n,1,y,x}) * scale + offset;
+          b = ta->get({n,2,y,x}) * scale + offset;
+          break;
+        case 2:
+          r = ta->get({n,0,y,x}) * scale + offset;
+          g = ta->get({n,1,y,x}) * scale + offset;
+          b = 0;
+          break;
+        case 1:
+          r = ta->get({n,0,y,x}) * scale + offset;
+          g = r;
+          b = r;
         }
-      } else {
-        for(int x = 0; x < dims_[dim_offset + 2]; x++) {
-          const int r = ta->get({n,0,y,x}) * scale;
-          const int g = ta->get({n,1,y,x}) * scale;
-          const int b = ta->get({n,2,y,x}) * scale;
-          printf("\033[48;2;%d;%d;%dm ", r, g, b);
+
+        char c = ' ';
+
+        if(r > 255) {
+          c = '+';
+          r = 255;
         }
+        if(g > 255) {
+          c = '+';
+          g = 255;
+        }
+        if(b > 255) {
+          c = '+';
+          b = 255;
+        }
+
+        if(r < 0) {
+          c = '-';
+          r = 0;
+        }
+        if(g < 0) {
+          c = '-';
+          g = 0;
+        }
+        if(b < 0) {
+          c = '-';
+          b = 0;
+        }
+
+        printf("\033[48;2;%d;%d;%dm%c", r, g, b, c);
       }
+
       printf("\033[0m\n");
     }
   }
