@@ -2033,6 +2033,79 @@ dropout_transform(CudnnProgram &p, std::shared_ptr<Node> n)
 
 //------------------------------------------------------------------------
 
+struct CudnnSpatialTransformFwd : public CudnnOperation {
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> x_, theta_, y_, grid_;
+  cudnnSpatialTransformerDescriptor_t desc_;
+
+  CudnnSpatialTransformFwd(CudnnProgram &p, const Node &n)
+    : ctx_(p.ctx_)
+    , x_(p.lower_tensor_batch(n.inputs_.get("x")))
+    , theta_(p.lower_tensor(n.inputs_.get("theta")))
+    , y_(p.lower_tensor_batch(n.outputs_.get("y")))
+    , grid_(std::make_shared<CudaTensor>(Tensor::DataType::FLOAT,
+                                         Dims{ y_->dims_[0], 2, y_->dims_[2], y_->dims_[3]},
+                                         CUDNN_TENSOR_NHWC))
+  {
+    int dims[4] = {
+      (int)y_->dims_[0], // n
+      1, // c
+      (int)y_->dims_[2], // h
+      (int)y_->dims_[3]  // w
+    };
+    chkCUDNN(cudnnCreateSpatialTransformerDescriptor(&desc_));
+    chkCUDNN(cudnnSetSpatialTransformerNdDescriptor(desc_,
+                                                    CUDNN_SAMPLER_BILINEAR,
+                                                    CUDNN_DATA_FLOAT,
+                                                    4,
+                                                    dims));
+  }
+
+  ~CudnnSpatialTransformFwd()
+  {
+    chkCUDNN(cudnnDestroySpatialTransformerDescriptor(desc_));
+  }
+
+  void print() const {
+    printf("SpatialTransform Fwd\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
+  }
+
+  void exec(CudnnProgram &p) {
+    float alpha = 1.0f; float beta = 0.0f;
+
+    chkCUDNN(cudnnSpatialTfGridGeneratorForward(ctx_->cudnn_, desc_,
+                                                theta_->deviceMem(),
+                                                grid_->deviceMem()));
+    chkCUDNN(cudnnSpatialTfSamplerForward(ctx_->cudnn_, desc_,
+                                          &alpha,
+                                          x_->desc(), x_->deviceMem(),
+                                          grid_->deviceMem(),
+                                          &beta,
+                                          y_->desc(), y_->deviceMem()));
+  }
+};
+
+
+
+static void
+spatialtransform_make(CudnnProgram &p, const Node &n)
+{
+  auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+
+  p.infer(std::make_shared<CudnnTransform>(p, x, y));
+
+  if(p.type_ == ProgramType::INFERENCE)
+     return;
+
+  p.train(std::make_shared<CudnnSpatialTransformFwd>(p, n));
+}
+
+
+//------------------------------------------------------------------------
+
 struct CudnnPrintTensor : public CudnnOperation {
 
   const std::string prefix_;
@@ -2111,6 +2184,7 @@ static const struct {
   { "relu",          relu_make },
   { "reshape",       NULL, reshape_transform },
   { "softmax",       softmax_make },
+  { "spatialtransform", spatialtransform_make },
   { "sum",           sum_make }
 };
 
