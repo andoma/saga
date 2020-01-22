@@ -68,14 +68,10 @@ CudnnContext::init()
   struct cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, device);
 
-  printf("Device name: %s\n", prop.name);
-  printf("Compute capability: %d.%d\n", prop.major, prop.minor);
-  printf("CanMapHostMem: %d\n", prop.canMapHostMemory);
-  printf("ComputeMode: %d\n", prop.computeMode);
-  printf("Memory Clock Rate (KHz): %d\n", prop.memoryClockRate);
-  printf("Memory Bus Width (bits): %d\n", prop.memoryBusWidth);
-  printf("Peak Memory Bandwidth (GB/s): %f\n\n",
-         2.0 * prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
+  printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s\n",
+         prop.name, prop.major, prop.minor,
+         prop.concurrentKernels ? "yes":"no",
+         prop.canMapHostMemory ? "yes":"no");
 
   chkCUDNN(cudnnCreate(&cudnn_));
   chkCuda(cublasCreate(&cublas_));
