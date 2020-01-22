@@ -213,6 +213,109 @@ lecun(Graph &g, std::shared_ptr<Node> n)
 }
 
 
+static std::shared_ptr<Node>
+test(Graph &g, std::shared_ptr<Node> n, bool with_bn)
+{
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 32}, {"pad", 1}, {"bias", false}},
+                "conv1");
+  if(with_bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", false}},
+                "conv2");
+  if(with_bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", false}},
+                "conv3");
+  if(with_bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", false}},
+                "conv3");
+  if(with_bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", false}},
+                "conv3");
+  if(with_bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", false}},
+                "conv3");
+  if(with_bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", false}},
+                "conv3");
+  if(with_bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", 1024}, {"bias", true}},
+                "fc1");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", 1024}, {"bias", true}},
+                "fc2");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+   n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", 10}, {"bias", true}},
+                "fc3");
+
+  return n;
+}
+
+
+
+static void
+fill_theta(Tensor *t, int batch_size)
+{
+  auto ta = t->access();
+  for(int i = 0; i < batch_size; i++) {
+
+    float xx = drand48() > 0.5 ? 1 : -1;
+    float xy = drand48() > 0.5 ? 1 : -1;
+    float yx = drand48() > 0.5 ? 1 : -1;
+    float yy = drand48() > 0.5 ? 1 : -1;
+
+    ta->set({i, 0, 0}, ( 0.9 + drand48() * 0.2) * xx);
+    ta->set({i, 0, 1}, (-0.1 + drand48() * 0.2) * xy);
+    ta->set({i, 0, 2}, -0.1 + drand48() * 0.2);
+    ta->set({i, 1, 0}, (-0.1 + drand48() * 0.2) * yx);
+    ta->set({i, 1, 1}, (0.9 + drand48() * 0.2) * yy);
+    ta->set({i, 1, 2}, -0.1 + drand48() * 0.2);
+  }
+}
+
+
 extern int
 mnist_main(int argc, char **argv)
 {
@@ -225,10 +328,11 @@ mnist_main(int argc, char **argv)
   float learning_rate = 3e-4;
   std::string mode = "lecun";
   int verbose = 0;
-
+  bool augmentation = false;
+  bool packed_channels = false;
   auto dt = Tensor::DataType::FLOAT;
 
-  while((opt = getopt(argc, argv, "ns:l:b:hm:r:v")) != -1) {
+  while((opt = getopt(argc, argv, "ns:l:b:hm:r:vac")) != -1) {
     switch(opt) {
     case 's':
       savepath = optarg;
@@ -253,6 +357,12 @@ mnist_main(int argc, char **argv)
       break;
     case 'v':
       verbose++;
+      break;
+    case 'a':
+      augmentation = true;
+      break;
+    case 'c':
+      packed_channels = true;
       break;
     }
   }
@@ -320,8 +430,22 @@ mnist_main(int argc, char **argv)
   n = g.addNode("convert", {{"x", x}},
                 {{"scale", 1.0f / 255.0f}, {"datatype", (int)dt}});
 
+  std::shared_ptr<Tensor> theta;
+
+  if(augmentation) {
+    theta = makeCPUTensor(Tensor::DataType::FLOAT,
+                          Dims({batch_size, 2, 3}), "theta");
+
+    n = g.addNode("spatialtransform", {{"x", n->y()}, {"theta", theta}},
+                  {});
+  }
+
   if(mode == "lecun") {
     n = lecun(g, n);
+  } else if(mode == "test") {
+    n = test(g, n, false);
+  } else if(mode == "test+bn") {
+    n = test(g, n, true);
   } else {
     n = squeezenet(g, n);
   }
@@ -335,7 +459,9 @@ mnist_main(int argc, char **argv)
 
   auto ctx = createContext();
   auto p = ctx->createProgram(g, ProgramType::TRAINING, batch_size,
-                              learning_rate, TensorLayout::NCHW);
+                              learning_rate,
+                              packed_channels ? TensorLayout::NHWC :
+                              TensorLayout::NCHW);
   if(verbose > 1)
     p->print();
 
@@ -343,13 +469,17 @@ mnist_main(int argc, char **argv)
   y = p->resolveTensor(y);
   auto dy = y->grad();
   loss = p->resolveTensor(loss);
+  theta = p->resolveTensor(theta);
 
   std::random_device rd;
   std::mt19937 rnd(rd());
 
-  while(g_run) {
-    std::shuffle(train_data.begin(), train_data.end(), rnd);
 
+  while(g_run) {
+    if(theta)
+      fill_theta(theta.get(), batch_size);
+
+    std::shuffle(train_data.begin(), train_data.end(), rnd);
     // Train
     const int64_t t0 = get_ts();
     double loss_sum = 0;
