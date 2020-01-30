@@ -165,15 +165,6 @@ public:
                                                  cudnnTensorFormat_t format);
 
   std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src);
-#if 0
-  void fwd(const std::shared_ptr<CudnnOperation> &op)
-  {
-    infer_operations_.push_back(op);
-    if(type_ == ProgramType::INFERENCE)
-      return;
-    train_operations_.push_back(op);
-  }
-#endif
 
   void infer(const std::shared_ptr<CudnnOperation> &op)
   {
@@ -1939,24 +1930,7 @@ struct CudnnTransform : public CudnnOperation {
   }
 };
 
-#if 0
-
-static void
-concat_make(CudnnProgram &p, const Node &n)
-{
-  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
-  auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
-  const int axis = 1;
-  for(const auto &xh : n.inputs_.getv("x")) {
-    auto x = p.lower_tensor_batch(xh);
-    auto y2 = std::make_shared<CudaTensor>(y, x->dims_, element_offset,
-                                           y->namePostfix("concat.alias"));
-    p.fwd(std::make_shared<CudnnTransform>(p, x, y2));
-    element_offset[axis] += xh->dims_[axis];
-  }
-}
-
-#endif
+//------------------------------------------------------------------------
 
 static void
 concat_transform(CudnnProgram &p, const Node &n)
@@ -2591,3 +2565,4 @@ CudnnContext::createProgram(const Graph &g,
   return p;
 }
 }
+
