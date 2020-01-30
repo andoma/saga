@@ -917,6 +917,196 @@ batchnorm_train(CudnnProgram &p, const Node &n)
 
 //------------------------------------------------------------------------
 
+
+
+
+
+struct CudnnBatchNormActivationTrain : public CudnnOperation {
+
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_, sm_, sv_;
+  const float epsilon_;
+  const float expavgf_;
+
+  cudnnBatchNormMode_t mode_;
+  cudnnBatchNormOps_t bnOps_;
+
+  cudnnActivationDescriptor_t desc_;
+
+  size_t reserve_size_;
+  void *reserve_;
+
+  CudnnBatchNormActivationTrain(CudnnProgram &p, const Node &n)
+    : ctx_(p.ctx_)
+    , x_(p.lower_tensor_batch(n.inputs_.get("x")))
+    , s_(p.lower_tensor(n.inputs_.get("s"), 2))
+    , b_(p.lower_tensor(n.inputs_.get("b"), 2))
+    , m_(p.lower_tensor(n.inputs_.get("m"), 2))
+    , v_(p.lower_tensor(n.inputs_.get("v"), 2))
+    , y_(p.lower_tensor_batch(n.outputs_.get("y")))
+    , sm_(std::make_shared<CudaTensor>(*m_, p.tensor_format_))
+    , sv_(std::make_shared<CudaTensor>(*v_, p.tensor_format_))
+    , epsilon_(n.attributes_.get("epsilon", 1e-5f))
+    , expavgf_(n.attributes_.get("expavg", 0.1f))
+  {
+    mode_ = CUDNN_BATCHNORM_SPATIAL_PERSISTENT;
+    bnOps_ = CUDNN_BATCHNORM_OPS_BN_ACTIVATION;
+
+    chkCUDNN(cudnnCreateActivationDescriptor(&desc_));
+    chkCUDNN(cudnnSetActivationDescriptor(desc_, CUDNN_ACTIVATION_RELU,
+                                          CUDNN_PROPAGATE_NAN, 0.0f));
+
+    size_t workspace;
+
+    chkCUDNN(cudnnGetBatchNormalizationForwardTrainingExWorkspaceSize(ctx_->cudnn_,
+                                                                      mode_, bnOps_,
+                                                                      x_->desc(),
+                                                                      NULL,
+                                                                      y_->desc(),
+                                                                      s_->desc(),
+                                                                      desc_,
+                                                                      &workspace));
+    p.requetstWorkspace(workspace);
+
+
+    chkCUDNN(cudnnGetBatchNormalizationTrainingExReserveSpaceSize(ctx_->cudnn_,
+                                                                  mode_, bnOps_,
+                                                                  desc_,
+                                                                  x_->desc(),
+                                                                  &reserve_size_));
+    chkCuda(cudaMalloc(&reserve_, reserve_size_));
+
+  }
+
+  void print() const {
+    printf("CudnnBatchNormActivationTrain\n");
+  }
+
+  ~CudnnBatchNormActivationTrain()
+  {
+    chkCUDNN(cudnnDestroyActivationDescriptor(desc_));
+    chkCuda(cudaFree(reserve_));
+  }
+
+
+  void exec(CudnnProgram &p) {
+    float alpha = 1.0f, beta = 0.0f;
+    chkCUDNN(cudnnBatchNormalizationForwardTrainingEx(ctx_->cudnn_,
+                                                      mode_, bnOps_,
+                                                      &alpha, &beta,
+                                                      x_->desc(),
+                                                      x_->deviceMem(),
+                                                      NULL, NULL,
+                                                      y_->desc(),
+                                                      y_->deviceMem(),
+                                                      s_->desc(),
+                                                      s_->deviceMem(),
+                                                      b_->deviceMem(),
+                                                      expavgf_,
+                                                      m_->deviceMem(),
+                                                      v_->deviceMem(),
+                                                      epsilon_,
+                                                      sm_->deviceMem(),
+                                                      sv_->deviceMem(),
+                                                      desc_,
+                                                      p.workspace_, p.workspace_size_,
+                                                      reserve_, reserve_size_));
+  }
+};
+
+
+
+struct CudnnBatchNormActivationBwd : public CudnnOperation {
+
+  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudnnBatchNormActivationTrain> fwd_;
+  const std::shared_ptr<CudaTensor> dy_, dx_, ds_, db_;
+
+  CudnnBatchNormActivationBwd(CudnnProgram &p, const Node &n,
+                              std::shared_ptr<CudnnBatchNormActivationTrain> fwd)
+    : ctx_(p.ctx_)
+    , fwd_(fwd)
+    , dy_(fwd->y_->makeGrad())
+    , dx_(fwd->x_->makeGrad())
+    , ds_(fwd->s_->makeGrad())
+    , db_(fwd->b_->makeGrad())
+  {
+
+
+  }
+
+  void print() const {
+    printf("CudnnBatchNormActivationBwd\n");
+  }
+
+
+  void exec(CudnnProgram &p) {
+    float alpha = 1.0f, beta = 0.0f;
+    chkCUDNN(cudnnBatchNormalizationBackwardEx(ctx_->cudnn_,
+                                               fwd_->mode_, fwd_->bnOps_,
+                                               &alpha, &beta,
+                                               &alpha, &beta,
+                                               fwd_->x_->desc(),
+                                               fwd_->x_->deviceMem(),
+                                               fwd_->y_->desc(),
+                                               fwd_->y_->deviceMem(),
+                                               dy_->desc(),
+                                               dy_->deviceMem(),
+                                               NULL, NULL,
+                                               dx_->desc(),
+                                               dx_->deviceMem(),
+                                               fwd_->s_->desc(),
+                                               fwd_->s_->deviceMem(),
+                                               fwd_->b_->deviceMem(),
+                                               ds_->deviceMem(),
+                                               db_->deviceMem(),
+                                               fwd_->epsilon_,
+                                               fwd_->sm_->deviceMem(),
+                                               fwd_->sv_->deviceMem(),
+                                               fwd_->desc_,
+                                               p.workspace_, p.workspace_size_,
+                                               fwd_->reserve_, fwd_->reserve_size_));
+  }
+};
+
+
+
+static void
+batchnorm_relu_train(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnBatchNormActivationTrain>(p, n);
+  p.train(f);
+
+  auto b = std::make_shared<CudnnBatchNormActivationBwd>(p, n, f);
+  p.bwd(b);
+
+  p.upd(std::make_shared<CudnnAdam>(p, f->s_, b->ds_));
+  p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
+}
+
+
+static std::shared_ptr<Node>
+batchnorm_relu_transform(CudnnProgram &p, std::shared_ptr<Node> bn,
+                         std::shared_ptr<Node> mp)
+{
+
+  auto nn = std::make_shared<Node>("batchnorm_relu");
+
+  nn->inputs_["x"] = bn->inputs_["x"];
+  nn->inputs_["s"] = bn->inputs_["s"];
+  nn->inputs_["b"] = bn->inputs_["b"];
+  nn->inputs_["m"] = bn->inputs_["m"];
+  nn->inputs_["v"] = bn->inputs_["v"];
+
+  nn->attributes_["epsilon"] = bn->attributes_["epsilon"];
+
+  nn->outputs_["y"] = mp->outputs_["y"];
+  return nn;
+}
+
+
+//------------------------------------------------------------------------
+
 struct CudnnActivationFwd : public CudnnOperation {
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, y_;
@@ -2196,16 +2386,14 @@ static const struct Operation {
   { "avgpool",          avgpool_infer,          avgpool_train },
   { "batchnorm",        batchnorm_infer,        batchnorm_train },
   { "catclassifier",    catclassifier_infer,    catclassifier_train },
-  //  { "concat",           concat_infer,          concat_train },
   { "conv",             conv_infer,             conv_train},
   { "convert",          convert_infer,          convert_train },
-  //  { "cudnn.reduce.add", cudnn_reduce_add_infer,  },
+  { "batchnorm_relu",   NULL,                   batchnorm_relu_train },
   { "dropout",          NULL,                   dropout_train },
   { "fc",               fc_infer,               fc_train },
   { "maxpool",          maxpool_infer,          maxpool_train },
   { "mul",              mul_infer,              NULL },
   { "relu",             relu_infer,             relu_train },
-  //  { "reshape",       NULL, reshape_transform },
   { "softmax",          softmax_infer,          NULL },
   { "spatialtransform", spatialtransform_infer, spatialtransform_train },
   { "sum",              sum_infer,              NULL },
@@ -2276,6 +2464,29 @@ pass_remove_for_inference(CudnnProgram &p,
   return r;
 }
 
+static std::vector<std::shared_ptr<Node>>
+pass_merge_train_ops(CudnnProgram &p,
+                     const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+
+  if(nodes.size() < 2)
+    return nodes;
+
+  for(size_t i = 0; i < nodes.size(); i++) {
+    std::shared_ptr<Node> n = nodes[i];
+
+    if(i < nodes.size() - 1) {
+      if(nodes[i + 0]->type_ == "batchnorm" &&
+         nodes[i + 1]->type_ == "relu") {
+        n = batchnorm_relu_transform(p, nodes[i], nodes[i + 1]);
+        i++;
+      }
+    }
+    r.push_back(n);
+  }
+  return r;
+}
 
 
 static void
@@ -2323,14 +2534,15 @@ CudnnContext::createProgram(const Graph &g,
   nodes = pass_reshape(*p, nodes);
 
   if(pc.training) {
-
-    for(const auto &n : nodes) {
+    auto train_nodes = pass_merge_train_ops(*p, nodes);
+    for(const auto &n : train_nodes) {
       auto op = find_operation(*n);
       if(op != NULL && op->create_train) {
         op->create_train(*p, *n);
       } else {
         fprintf(stderr, "Unable to create training operation for node %s\n",
                 n->type_.c_str());
+        n->print();
         exit(1);
       }
     }
@@ -2347,6 +2559,7 @@ CudnnContext::createProgram(const Graph &g,
       } else {
         fprintf(stderr, "Unable to create inference operation for node %s\n",
                 n->type_.c_str());
+        n->print();
         exit(1);
       }
     }
