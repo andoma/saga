@@ -329,8 +329,8 @@ mnist_main(int argc, char **argv)
   std::string mode = "lecun";
   int verbose = 0;
   bool augmentation = false;
-  bool packed_channels = false;
   auto dt = Tensor::DataType::FLOAT;
+  auto tensor_layout = TensorLayout::NCHW;
 
   while((opt = getopt(argc, argv, "ns:l:b:hm:r:vac")) != -1) {
     switch(opt) {
@@ -362,7 +362,7 @@ mnist_main(int argc, char **argv)
       augmentation = true;
       break;
     case 'c':
-      packed_channels = true;
+      tensor_layout = TensorLayout::NHWC;
       break;
     }
   }
@@ -458,10 +458,14 @@ mnist_main(int argc, char **argv)
     g.print();
 
   auto ctx = createContext();
-  auto p = ctx->createProgram(g, ProgramType::TRAINING, batch_size,
-                              learning_rate,
-                              packed_channels ? TensorLayout::NHWC :
-                              TensorLayout::NCHW);
+  auto p = ctx->createProgram(g, {
+      .inference = true,
+      .training = true,
+      .batch_size = batch_size,
+      .initial_learning_rate = learning_rate,
+      .tensor_layout = tensor_layout
+    });
+
   if(verbose > 1)
     p->print();
 
@@ -487,7 +491,7 @@ mnist_main(int argc, char **argv)
     for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
       loadInputTensor(*x, &train_data[i]);
       loadOutputTensor(*dy, &train_data[i]);
-      p->exec(learn);
+      p->train();
       auto la = loss->access();
       for(int i = 0; i < batch_size; i++) {
         loss_sum += la->get({i});
@@ -500,7 +504,7 @@ mnist_main(int argc, char **argv)
     int correct = 0;
     for(size_t i = 0; i < test_inputs && g_run; i += batch_size) {
       loadInputTensor(*x, &test_data[i]);
-      p->exec(false);
+      p->infer();
 
       auto ta = y->access();
 

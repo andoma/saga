@@ -81,8 +81,13 @@ minimal_main(int argc, char **argv)
   g.print();
 
   auto ctx = createContext();
-  auto p = ctx->createProgram(g, ProgramType::TRAINING, 4, 1e-3,
-                              TensorLayout::NCHW);
+  auto p = ctx->createProgram(g, {
+      .inference = true,
+      .training = true,
+      .batch_size = 4,
+      .initial_learning_rate = 1e-3,
+      .tensor_layout = TensorLayout::NCHW
+    });
 
   p->print();
 
@@ -112,7 +117,7 @@ minimal_main(int argc, char **argv)
 
   int iter = 0;
   while(1) {
-    p->exec(true);
+    p->train();
     iter++;
     if((iter % 10000) == 0) {
       loss->print("LOSS");

@@ -49,10 +49,7 @@ public:
   int init();
 
   std::shared_ptr<Program> createProgram(const Graph &graph,
-                                         ProgramType type,
-                                         int batch_size,
-                                         float learning_rate,
-                                         TensorLayout layout);
+                                         const ProgramConfig &pc);
 
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
@@ -102,12 +99,10 @@ public:
 
   CudnnProgram(std::shared_ptr<CudnnContext> ctx,
                cudnnTensorFormat_t tensor_format,
-               ProgramType type,
                int batch_size,
                float learning_rate)
     : ctx_(ctx)
     , tensor_format_(tensor_format)
-    , type_(type)
     , batch_size_(batch_size)
     , learning_rate_(learning_rate)
     , debug_(false)
@@ -123,7 +118,8 @@ public:
   }
 
 
-  void exec(bool learn);
+  void infer();
+  void train();
 
   void print() const;
   void debug(bool);
@@ -144,7 +140,6 @@ public:
 
   const std::shared_ptr<CudnnContext> ctx_;
   const cudnnTensorFormat_t tensor_format_;
-  const ProgramType type_;
   const int batch_size_;
   const float learning_rate_;
   bool debug_;
@@ -168,7 +163,7 @@ public:
                                                  cudnnTensorFormat_t format);
 
   std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src);
-
+#if 0
   void fwd(const std::shared_ptr<CudnnOperation> &op)
   {
     infer_operations_.push_back(op);
@@ -176,6 +171,7 @@ public:
       return;
     train_operations_.push_back(op);
   }
+#endif
 
   void infer(const std::shared_ptr<CudnnOperation> &op)
   {
@@ -288,27 +284,24 @@ public:
 
 
 void
-CudnnProgram::exec(bool learn)
+CudnnProgram::infer()
 {
-  allocWorkspace();
+  for(const auto &op : infer_operations_) {
+    op->exec(*this);
+  }
+}
 
-  if(!learn) {
-
-    for(const auto &op : infer_operations_) {
-      op->exec(*this);
-    }
-
-  } else {
-
-    for(const auto &op : train_operations_) {
-      op->exec(*this);
-    }
-    for(const auto &op : bwd_operations_) {
-      op->exec(*this);
-    }
-    for(const auto &op : upd_operations_) {
-      op->exec(*this);
-    }
+void
+CudnnProgram::train()
+{
+  for(const auto &op : train_operations_) {
+    op->exec(*this);
+  }
+  for(const auto &op : bwd_operations_) {
+    op->exec(*this);
+  }
+  for(const auto &op : upd_operations_) {
+    op->exec(*this);
   }
 }
 
@@ -744,12 +737,17 @@ struct CudnnConvolutionBwd : public CudnnOperation {
 
 
 static void
-conv_make(CudnnProgram &p, const Node &n)
+conv_infer(CudnnProgram &p, const Node &n)
+{
+  p.infer(std::make_shared<CudnnConvolutionFwd>(p, n));
+}
+
+
+static void
+conv_train(CudnnProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnConvolutionFwd>(p, n);
-  p.fwd(f);
-  if(p.type_ == ProgramType::INFERENCE)
-    return;
+  p.train(f);
   auto b = std::make_shared<CudnnConvolutionBwd>(p, n, f);
   p.bwd(b);
 
@@ -898,12 +896,14 @@ struct CudnnBatchNormBwd : public CudnnOperation {
 };
 
 static void
-batchnorm_make(CudnnProgram &p, const Node &n)
+batchnorm_infer(CudnnProgram &p, const Node &n)
 {
   p.infer(std::make_shared<CudnnBatchNormInference>(p, n));
-  if(p.type_ == ProgramType::INFERENCE)
-    return;
+}
 
+static void
+batchnorm_train(CudnnProgram &p, const Node &n)
+{
   auto f = std::make_shared<CudnnBatchNormTrain>(p, n);
   p.train(f);
 
@@ -995,18 +995,20 @@ struct CudnnActivationBwd : public CudnnOperation {
 };
 
 
+static void
+relu_infer(CudnnProgram &p, const Node &n)
+{
+  p.infer(std::make_shared<CudnnActivationFwd>(p, n, CUDNN_ACTIVATION_RELU,
+                                               0.0f));
+}
 
 static void
-relu_make(CudnnProgram &p, const Node &n)
+relu_train(CudnnProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnActivationFwd>(p, n, CUDNN_ACTIVATION_RELU,
                                                 0.0f);
-  p.fwd(f);
-
-  if(p.type_ == ProgramType::INFERENCE)
-    return;
+  p.train(f);
   p.bwd(std::make_shared<CudnnActivationBwd>(p, n, f));
-
 }
 
 
@@ -1105,28 +1107,32 @@ struct CudnnPoolingBwd : public CudnnOperation {
 };
 
 
+static void
+maxpool_infer(CudnnProgram &p, const Node &n)
+{
+  p.infer(std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_MAX));
+}
 
 static void
-pooling_make(CudnnProgram &p, const Node &n, cudnnPoolingMode_t mode)
+maxpool_train(CudnnProgram &p, const Node &n)
 {
-  auto f = std::make_shared<CudnnPoolingFwd>(p, n, mode);
-  p.fwd(f);
-  if(p.type_ == ProgramType::INFERENCE)
-    return;
+  auto f = std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_MAX);
+  p.train(f);
   p.bwd(std::make_shared<CudnnPoolingBwd>(p, n, f));
 }
 
-
 static void
-maxpool_make(CudnnProgram &p, const Node &n)
+avgpool_infer(CudnnProgram &p, const Node &n)
 {
-  pooling_make(p, n, CUDNN_POOLING_MAX);
+  p.infer(std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING));
 }
 
 static void
-avgpool_make(CudnnProgram &p, const Node &n)
+avgpool_train(CudnnProgram &p, const Node &n)
 {
-  pooling_make(p, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
+  auto f = std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
+  p.train(f);
+  p.bwd(std::make_shared<CudnnPoolingBwd>(p, n, f));
 }
 
 
@@ -1180,14 +1186,14 @@ struct CudnnSumFwd : public CudnnOperation {
 };
 
 static void
-sum_make(CudnnProgram &p, const Node &n)
+sum_infer(CudnnProgram &p, const Node &n)
 {
-  auto f = std::make_shared<CudnnSumFwd>(p, n);
-  p.fwd(f);
+  p.infer(std::make_shared<CudnnSumFwd>(p, n));
 }
 
-//------------------------------------------------------------------------
 
+//------------------------------------------------------------------------
+#if 0
 
 static std::shared_ptr<Node>
 sum_transform(CudnnProgram &p, std::shared_ptr<Node> n)
@@ -1308,6 +1314,7 @@ cudnn_reduce_add_make(CudnnProgram &p, const Node &n)
                                          CUDNN_REDUCE_TENSOR_ADD);
   p.fwd(f);
 }
+ #endif
 
 //------------------------------------------------------------------------
 
@@ -1507,14 +1514,19 @@ struct CudnnGemmBwd : public CudnnOperation {
   }
 };
 
+
+
 static void
-fc_make(CudnnProgram &p, const Node &n)
+fc_infer(CudnnProgram &p, const Node &n)
+{
+  p.infer(std::make_shared<CudnnGemmFwd>(p, n));
+}
+
+static void
+fc_train(CudnnProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnGemmFwd>(p, n);
-  p.fwd(f);
-
-  if(p.type_ == ProgramType::INFERENCE)
-    return;
+  p.train(f);
   auto b = std::make_shared<CudnnGemmBwd>(p, n, f);
   p.bwd(b);
 
@@ -1559,10 +1571,9 @@ struct CudnnSoftmaxFwd : public CudnnOperation {
 };
 
 static void
-softmax_make(CudnnProgram &p, const Node &n)
+softmax_infer(CudnnProgram &p, const Node &n)
 {
-  auto f = std::make_shared<CudnnSoftmaxFwd>(p, n);
-  p.fwd(f);
+  p.infer(std::make_shared<CudnnSoftmaxFwd>(p, n));
 }
 
 //------------------------------------------------------------------------
@@ -1665,12 +1676,16 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
 };
 
 static void
-catclassifier_make(CudnnProgram &p, const Node &n)
+catclassifier_infer(CudnnProgram &p, const Node &n)
+{
+  p.infer(std::make_shared<CudnnCatClassifierFwd>(p, n));
+}
+
+static void
+catclassifier_train(CudnnProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnCatClassifierFwd>(p, n);
-  p.fwd(f);
-  if(p.type_ == ProgramType::INFERENCE)
-    return;
+  p.train(f);
   p.bwd(std::make_shared<CudnnCatClassifierBwd>(p, n, f));
 }
 
@@ -1708,6 +1723,8 @@ struct CudnnTransform : public CudnnOperation {
   }
 };
 
+#if 0
+
 static void
 concat_make(CudnnProgram &p, const Node &n)
 {
@@ -1723,6 +1740,7 @@ concat_make(CudnnProgram &p, const Node &n)
   }
 }
 
+#endif
 
 static void
 concat_transform(CudnnProgram &p, const Node &n)
@@ -1790,15 +1808,25 @@ struct CudnnConvert : public CudnnOperation {
 };
 
 
+
 static void
-convert_make(CudnnProgram &p, const Node &n)
+convert_infer(CudnnProgram &p, const Node &n)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
   auto y = p.lower_tensor_batch(n.outputs_.get("y"));
   auto scale = n.attributes_.get("scale", 1.0f);
+  p.infer(std::make_shared<CudnnConvert>(p, x, y, scale));
+}
 
-  p.fwd(std::make_shared<CudnnConvert>(p, x, y, scale));
+static void
+convert_train(CudnnProgram &p, const Node &n)
+{
+  auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+  auto scale = n.attributes_.get("scale", 1.0f);
+  p.train(std::make_shared<CudnnConvert>(p, x, y, scale));
 
+  assert(y->grad_ == NULL); // No backprop here yet
 }
 
 //------------------------------------------------------------------------
@@ -1857,26 +1885,26 @@ struct CudnnMathOp : public CudnnOperation {
 
 
 static void
-add_make(CudnnProgram &p, const Node &n)
+add_infer(CudnnProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnMathOp>(p,
                                          p.lower_tensor_batch(n.outputs_.get("x")),
                                          p.lower_tensor(n.outputs_.get("b")),
                                          p.lower_tensor_batch(n.outputs_.get("y")),
                                          CUDNN_OP_TENSOR_ADD);
-  p.fwd(f);
+  p.infer(f);
 }
 
 
 static void
-mul_make(CudnnProgram &p, const Node &n)
+mul_infer(CudnnProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnMathOp>(p,
                                          p.lower_tensor_batch(n.outputs_.get("x")),
                                          p.lower_tensor(n.outputs_.get("s")),
                                          p.lower_tensor_batch(n.outputs_.get("y")),
                                          CUDNN_OP_TENSOR_MUL);
-  p.fwd(f);
+  p.infer(f);
 }
 
 
@@ -1988,19 +2016,10 @@ struct CudnnDropoutBwd : public CudnnOperation {
 
 
 static void
-dropout_make(CudnnProgram &p, const Node &n)
+dropout_train(CudnnProgram &p, const Node &n)
 {
-  auto x = p.lower_tensor_batch(n.inputs_.get("x"));
-  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
-
-  p.infer(std::make_shared<CudnnTransform>(p, x, y));
-
-  if(p.type_ == ProgramType::INFERENCE)
-    return;
-
   auto f = std::make_shared<CudnnDropoutFwd>(p, n);
   p.train(f);
-
   p.bwd(std::make_shared<CudnnDropoutBwd>(p, n, f));
 }
 
@@ -2012,17 +2031,24 @@ dropout_make(CudnnProgram &p, const Node &n)
 static std::vector<std::shared_ptr<Node>>
 dropout_transform(CudnnProgram &p, std::shared_ptr<Node> n)
 {
-  return {n};
-  if(p.type_ != ProgramType::INFERENCE)
-    return {n};
-
-
-  auto x = p.lower_tensor_batch(n->inputs_.get("x"));
   auto y = n->outputs_.get("y");
+  auto ly = p.tensors_[y];
 
-  p.tensors_[y] = std::make_shared<CudaTensor>(x->storage_,
-                                               x->dims_, p.tensor_format_,
-                                               x->namePostfix("dropout"));
+  if(ly) {
+    auto x = n->inputs_.get("x");
+    auto lx = std::make_shared<CudaTensor>(ly->storage_,
+                                           ly->dims_, p.tensor_format_,
+                                           ly->namePostfix("dropout"));
+    p.tensors_[x] = ly;
+
+  } else {
+
+    auto x = p.lower_tensor_batch(n->inputs_.get("x"));
+    ly = std::make_shared<CudaTensor>(x->storage_,
+                                      x->dims_, p.tensor_format_,
+                                      x->namePostfix("dropout"));
+    p.tensors_[y] = ly;
+  }
   return {};
 }
 
@@ -2086,17 +2112,19 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
 
 
 static void
-spatialtransform_make(CudnnProgram &p, const Node &n)
+spatialtransform_train(CudnnProgram &p, const Node &n)
 {
+  p.train(std::make_shared<CudnnSpatialTransformFwd>(p, n));
+}
+
+static void
+spatialtransform_infer(CudnnProgram &p, const Node &n)
+{
+  // FIXME: Replace by skipping node
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
   auto y = p.lower_tensor_batch(n.outputs_.get("y"));
 
   p.infer(std::make_shared<CudnnTransform>(p, x, y));
-
-  if(p.type_ == ProgramType::INFERENCE)
-     return;
-
-  p.train(std::make_shared<CudnnSpatialTransformFwd>(p, n));
 }
 
 
@@ -2159,45 +2187,40 @@ struct CudnnHalt : public CudnnOperation {
 
 //------------------------------------------------------------------------
 
-static const struct {
+static const struct Operation {
   const char *name;
-  void (*create_op)(CudnnProgram &p, const Node &n);
-  std::vector<std::shared_ptr<Node>> (*transform_op)(CudnnProgram &p,
-                                                     std::shared_ptr<Node>);
+  void (*create_infer)(CudnnProgram &p, const Node &n);
+  void (*create_train)(CudnnProgram &p, const Node &n);
 } nodetypes[] = {
-  { "add",           add_make },
-  { "avgpool",       avgpool_make },
-  { "batchnorm",     batchnorm_make },
-  { "catclassifier", catclassifier_make },
-  { "concat",        concat_make },
-  { "conv",          conv_make },
-  { "convert",       convert_make },
-  { "cudnn.reduce.add",  cudnn_reduce_add_make },
-  { "dropout",       dropout_make, dropout_transform },
-  { "fc",            fc_make },
-  { "maxpool",       maxpool_make },
-  { "mul",           mul_make },
-  { "relu",          relu_make },
-  { "reshape",       NULL, reshape_transform },
-  { "softmax",       softmax_make },
-  { "spatialtransform", spatialtransform_make },
-  { "sum",           sum_make }
+  { "add",              add_infer,              NULL },
+  { "avgpool",          avgpool_infer,          avgpool_train },
+  { "batchnorm",        batchnorm_infer,        batchnorm_train },
+  { "catclassifier",    catclassifier_infer,    catclassifier_train },
+  //  { "concat",           concat_infer,          concat_train },
+  { "conv",             conv_infer,             conv_train},
+  { "convert",          convert_infer,          convert_train },
+  //  { "cudnn.reduce.add", cudnn_reduce_add_infer,  },
+  { "dropout",          NULL,                   dropout_train },
+  { "fc",               fc_infer,               fc_train },
+  { "maxpool",          maxpool_infer,          maxpool_train },
+  { "mul",              mul_infer,              NULL },
+  { "relu",             relu_infer,             relu_train },
+  //  { "reshape",       NULL, reshape_transform },
+  { "softmax",          softmax_infer,          NULL },
+  { "spatialtransform", spatialtransform_infer, spatialtransform_train },
+  { "sum",              sum_infer,              NULL },
 };
 
-
-static void
-generate_operation(CudnnProgram &p, const Node &n)
+static const Operation *
+find_operation(const Node &n)
 {
   for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
     if(n.type_ == nodetypes[i].name) {
-      nodetypes[i].create_op(p, n);
-      return;
+      return &nodetypes[i];
     }
   }
-  printf("Cant emit operation for node type %s\n", n.type_.c_str());
-  abort();
+  return NULL;
 }
-
 
 
 static std::vector<std::shared_ptr<Node>>
@@ -2210,10 +2233,6 @@ pass_remove_concat(CudnnProgram &p,
     auto &n = nodes[i];
     if(n->type_ == "concat") {
       concat_transform(p, *n);
-#if 0
-    } else if(n->type_ == "sum") {
-      r.insert(r.begin(), sum_transform(p, *n));
-#endif
     } else {
       r.insert(r.begin(), n);
     }
@@ -2223,56 +2242,116 @@ pass_remove_concat(CudnnProgram &p,
 
 
 static std::vector<std::shared_ptr<Node>>
-pass_node_transform(CudnnProgram &p,
-                    const std::vector<std::shared_ptr<Node>> &nodes)
+pass_reshape(CudnnProgram &p,
+             const std::vector<std::shared_ptr<Node>> &nodes)
 {
   std::vector<std::shared_ptr<Node>> r;
 
-  for(const auto &n : nodes) {
-    std::vector<std::shared_ptr<Node>> v{n};
-    for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
-      if(n->type_ == nodetypes[i].name && nodetypes[i].transform_op) {
-        v = nodetypes[i].transform_op(p, n);
-        break;
-      }
+  for(size_t i = 0; i < nodes.size(); i++) {
+    auto &n = nodes[i];
+    if(n->type_ == "reshape") {
+      reshape_transform(p, n);
+    } else {
+      r.push_back(n);
     }
-    r.insert(r.end(), v.begin(), v.end());
+  }
+  return r;
+}
+
+
+static std::vector<std::shared_ptr<Node>>
+pass_remove_for_inference(CudnnProgram &p,
+                          const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+
+  for(size_t i = 0; i < nodes.size(); i++) {
+    auto &n = nodes[i];
+    if(n->type_ == "dropout") {
+      dropout_transform(p, n);
+    } else {
+      r.push_back(n);
+    }
   }
   return r;
 }
 
 
 
-std::shared_ptr<Program>
-CudnnContext::createProgram(const Graph &g,
-                            ProgramType type,
-                            int batch_size,
-                            float learning_rate,
-                            TensorLayout layout)
+static void
+print_nodes(CudnnProgram &p,
+            const std::vector<std::shared_ptr<Node>> &nodes)
 {
+  std::vector<std::shared_ptr<Node>> r;
 
-  cudnnTensorFormat_t tensor_format = CUDNN_TENSOR_NHWC;
-  if(layout == TensorLayout::NCHW)
-    tensor_format = CUDNN_TENSOR_NCHW;
+  for(size_t i = 0; i < nodes.size(); i++) {
+    auto &n = nodes[i];
 
-  auto p = std::make_shared<CudnnProgram>(shared_from_this(),
-                                          tensor_format,
-                                          type, batch_size,
-                                          learning_rate);
+    printf("%s:\n", n->type_.c_str());
 
-  auto nodes = pass_remove_concat(*p, g.nodes_);
+    for(const auto &t : n->inputs_) {
+      auto l = p.resolveTensor(t.second);
+      printf("\t Input: %s: %s\n",
+             t.first.c_str(), l ? l->info().c_str() : t.second->info().c_str());
+    }
 
-  nodes = pass_node_transform(*p, nodes);
-
-  for(const auto &n : nodes) {
-    generate_operation(*p, *n);
+    for(const auto &t : n->outputs_) {
+      auto l = p.resolveTensor(t.second);
+      printf("\tOutput: %s: %s\n",
+             t.first.c_str(), l ? l->info().c_str() : t.second->info().c_str());
+    }
   }
-
-  return p;
 }
 
 
 
+std::shared_ptr<Program>
+CudnnContext::createProgram(const Graph &g,
+                            const ProgramConfig &pc)
+{
+  cudnnTensorFormat_t tensor_format = CUDNN_TENSOR_NHWC;
+  if(pc.tensor_layout == TensorLayout::NCHW)
+    tensor_format = CUDNN_TENSOR_NCHW;
 
+  auto p = std::make_shared<CudnnProgram>(shared_from_this(),
+                                          tensor_format,
+                                          pc.batch_size,
+                                          pc.initial_learning_rate);
 
+  auto nodes = pass_remove_concat(*p, g.nodes_);
+
+  nodes = pass_reshape(*p, nodes);
+
+  if(pc.training) {
+
+    for(const auto &n : nodes) {
+      auto op = find_operation(*n);
+      if(op != NULL && op->create_train) {
+        op->create_train(*p, *n);
+      } else {
+        fprintf(stderr, "Unable to create training operation for node %s\n",
+                n->type_.c_str());
+        exit(1);
+      }
+    }
+
+    assert(p->infer_operations_.empty());
+  }
+
+  if(pc.inference) {
+    nodes = pass_remove_for_inference(*p, nodes);
+    for(const auto &n : nodes) {
+      auto op = find_operation(*n);
+      if(op != NULL && op->create_infer) {
+        op->create_infer(*p, *n);
+      } else {
+        fprintf(stderr, "Unable to create inference operation for node %s\n",
+                n->type_.c_str());
+        exit(1);
+      }
+    }
+  }
+  p->allocWorkspace();
+  return p;
+}
 }

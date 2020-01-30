@@ -280,17 +280,23 @@ enum class TensorLayout {
   NCHW,
 };
 
-enum class ProgramType {
-  INFERENCE,
-  TRAINING
+
+struct ProgramConfig {
+  bool inference;
+  bool training;
+  int batch_size;
+  float initial_learning_rate;
+  TensorLayout tensor_layout;
 };
+
 
 
 class Program {
 public:
   virtual ~Program() {}
   virtual std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) = 0;
-  virtual void exec(bool learn = false) = 0;
+  virtual void infer() = 0;
+  virtual void train() = 0;
   virtual void print() const = 0;
   virtual void debug(bool on) = 0;
 };
@@ -303,10 +309,7 @@ class Context {
 public:
   virtual ~Context() {}
   virtual std::shared_ptr<Program> createProgram(const Graph &graph,
-                                                 ProgramType type,
-                                                 int batch_size,
-                                                 float learning_rate,
-                                                 TensorLayout layout) = 0;
+                                                 const ProgramConfig &pc) = 0;
 };
 
 

@@ -16,8 +16,14 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
   char input_path[PATH_MAX];
   char output_path[PATH_MAX];
 
-  auto p = ctx->createProgram(g, ProgramType::INFERENCE, 1, 0,
-                              TensorLayout::NHWC);
+  auto p = ctx->createProgram(g, {
+      .inference = true,
+      .training = false,
+      .batch_size = 1,
+      .initial_learning_rate = 0,
+      .tensor_layout = TensorLayout::NHWC
+    });
+
   if(verbose)
     p->print();
 
@@ -53,7 +59,7 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
       return 1;
     }
 
-    p->exec();
+    p->infer();
 
     const double sse = loaded_output->sse(*output);
     if(sse > 0.001) {
