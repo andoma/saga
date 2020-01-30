@@ -98,11 +98,11 @@ class CudnnProgram : public Program {
 public:
 
   CudnnProgram(std::shared_ptr<CudnnContext> ctx,
-               cudnnTensorFormat_t tensor_format,
+               TensorLayout tensor_layout,
                int batch_size,
                float learning_rate)
     : ctx_(ctx)
-    , tensor_format_(tensor_format)
+    , tensor_layout_(tensor_layout)
     , batch_size_(batch_size)
     , learning_rate_(learning_rate)
     , debug_(false)
@@ -139,7 +139,7 @@ public:
   }
 
   const std::shared_ptr<CudnnContext> ctx_;
-  const cudnnTensorFormat_t tensor_format_;
+  const TensorLayout tensor_layout_;
   const int batch_size_;
   const float learning_rate_;
   bool debug_;
@@ -155,6 +155,8 @@ public:
   void *workspace_;
   size_t workspace_size_;
   size_t workspace_requested_;
+
+  cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
 
   std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
                                            size_t dimensions = 0);
@@ -209,6 +211,30 @@ CudnnProgram::resolveTensor(std::shared_ptr<Tensor> src)
 }
 
 
+cudnnTensorFormat_t
+CudnnProgram::tensorFormat(Tensor::DataType data_type)
+{
+  switch(tensor_layout_) {
+  case TensorLayout::Auto:
+
+    switch(data_type) {
+    case Tensor::DataType::HALF:
+      return CUDNN_TENSOR_NHWC;
+    default:
+      return CUDNN_TENSOR_NCHW;
+    }
+
+  case TensorLayout::NHWC:
+    return CUDNN_TENSOR_NHWC;
+
+  case TensorLayout::NCHW:
+    return CUDNN_TENSOR_NCHW;
+  }
+  abort();
+}
+
+
+
 std::shared_ptr<CudaTensor>
 CudnnProgram::lower_tensor(std::shared_ptr<Tensor> src,
                            size_t dimensions)
@@ -229,7 +255,7 @@ CudnnProgram::lower_tensor(std::shared_ptr<Tensor> src,
   }
 
   auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                        dims, tensor_format_,
+                                        dims, tensorFormat(src->data_type_),
                                         src->name_);
 
   t->copyFrom(*src);
@@ -264,7 +290,7 @@ CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
 std::shared_ptr<CudaTensor>
 CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
 {
-  return lower_tensor_batch(src, tensor_format_);
+  return lower_tensor_batch(src, tensorFormat(src->data_type_));
 }
 
 
@@ -309,12 +335,12 @@ CudnnProgram::train()
 void
 CudnnProgram::print() const
 {
-  printf("Inference:\n");
+  printf("\n\nInference:\n");
   for(const auto &op : infer_operations_) {
     op->print();
   }
 
-  printf("Training:\n");
+  printf("\n\nTraining:\n");
   for(const auto &op : train_operations_) {
     op->print();
   }
@@ -524,7 +550,7 @@ struct CudnnConvolutionFwd : public CudnnOperation {
 
     chkCUDNN(cudnnSetFilter4dDescriptor(filter_desc_,
                                         x_->type_,
-                                        p.tensor_format_,
+                                        p.tensorFormat(x_->data_type_),
                                         w_->dims_[0],
                                         w_->dims_[1],
                                         w_->dims_[2],
@@ -813,8 +839,8 @@ struct CudnnBatchNormTrain : public CudnnBatchNormInference {
 
   CudnnBatchNormTrain(CudnnProgram &p, const Node &n)
     : CudnnBatchNormInference(p, n)
-    , sm_(std::make_shared<CudaTensor>(*m_, p.tensor_format_))
-    , sv_(std::make_shared<CudaTensor>(*v_, p.tensor_format_))
+    , sm_(std::make_shared<CudaTensor>(*m_, p.tensorFormat(m_->data_type_)))
+    , sv_(std::make_shared<CudaTensor>(*v_, p.tensorFormat(v_->data_type_)))
     , expavgf_(n.attributes_.get("expavg", 0.1f))
   {}
 
@@ -944,8 +970,8 @@ struct CudnnBatchNormActivationTrain : public CudnnOperation {
     , m_(p.lower_tensor(n.inputs_.get("m"), 2))
     , v_(p.lower_tensor(n.inputs_.get("v"), 2))
     , y_(p.lower_tensor_batch(n.outputs_.get("y")))
-    , sm_(std::make_shared<CudaTensor>(*m_, p.tensor_format_))
-    , sv_(std::make_shared<CudaTensor>(*v_, p.tensor_format_))
+    , sm_(std::make_shared<CudaTensor>(*m_, p.tensorFormat(m_->data_type_)))
+    , sv_(std::make_shared<CudaTensor>(*v_, p.tensorFormat(v_->data_type_)))
     , epsilon_(n.attributes_.get("epsilon", 1e-5f))
     , expavgf_(n.attributes_.get("expavg", 0.1f))
   {
@@ -2227,7 +2253,7 @@ dropout_transform(CudnnProgram &p, std::shared_ptr<Node> n)
   if(ly) {
     auto x = n->inputs_.get("x");
     auto lx = std::make_shared<CudaTensor>(ly->storage_,
-                                           ly->dims_, p.tensor_format_,
+                                           ly->dims_, p.tensorFormat(ly->data_type_),
                                            ly->namePostfix("dropout"));
     p.tensors_[x] = ly;
 
@@ -2235,7 +2261,7 @@ dropout_transform(CudnnProgram &p, std::shared_ptr<Node> n)
 
     auto x = p.lower_tensor_batch(n->inputs_.get("x"));
     ly = std::make_shared<CudaTensor>(x->storage_,
-                                      x->dims_, p.tensor_format_,
+                                      x->dims_, p.tensorFormat(x->data_type_),
                                       x->namePostfix("dropout"));
     p.tensors_[y] = ly;
   }
@@ -2476,12 +2502,13 @@ pass_merge_train_ops(CudnnProgram &p,
   for(size_t i = 0; i < nodes.size(); i++) {
     std::shared_ptr<Node> n = nodes[i];
 
-    if(i < nodes.size() - 1) {
-      if(nodes[i + 0]->type_ == "batchnorm" &&
-         nodes[i + 1]->type_ == "relu") {
-        n = batchnorm_relu_transform(p, nodes[i], nodes[i + 1]);
-        i++;
-      }
+    if(i < nodes.size() - 1 &&
+       nodes[i + 0]->type_ == "batchnorm" &&
+       nodes[i + 1]->type_ == "relu" &&
+       nodes[i]->inputs_["x"] &&
+       nodes[i]->inputs_["x"]->data_type_ == Tensor::DataType::HALF) {
+      n = batchnorm_relu_transform(p, nodes[i], nodes[i + 1]);
+      i++;
     }
     r.push_back(n);
   }
@@ -2520,12 +2547,8 @@ std::shared_ptr<Program>
 CudnnContext::createProgram(const Graph &g,
                             const ProgramConfig &pc)
 {
-  cudnnTensorFormat_t tensor_format = CUDNN_TENSOR_NHWC;
-  if(pc.tensor_layout == TensorLayout::NCHW)
-    tensor_format = CUDNN_TENSOR_NCHW;
-
   auto p = std::make_shared<CudnnProgram>(shared_from_this(),
-                                          tensor_format,
+                                          pc.tensor_layout,
                                           pc.batch_size,
                                           pc.initial_learning_rate);
 

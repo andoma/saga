@@ -330,9 +330,9 @@ mnist_main(int argc, char **argv)
   int verbose = 0;
   bool augmentation = false;
   auto dt = Tensor::DataType::FLOAT;
-  auto tensor_layout = TensorLayout::NCHW;
+  auto tensor_layout = TensorLayout::Auto;
 
-  while((opt = getopt(argc, argv, "ns:l:b:hm:r:vac")) != -1) {
+  while((opt = getopt(argc, argv, "ns:l:b:hm:r:vacC")) != -1) {
     switch(opt) {
     case 's':
       savepath = optarg;
@@ -363,6 +363,9 @@ mnist_main(int argc, char **argv)
       break;
     case 'c':
       tensor_layout = TensorLayout::NHWC;
+      break;
+    case 'C':
+      tensor_layout = TensorLayout::NCHW;
       break;
     }
   }
