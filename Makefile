@@ -50,7 +50,9 @@ LDFLAGS-$(HAVE_PROTOBUF)  += $(shell pkg-config --libs protobuf)
 SRCS += main.cpp \
 	test/test_onnx.cpp \
 	test/mnist.cpp \
-	test/minimal.cpp
+	test/cifar.cpp \
+	test/minimal.cpp \
+	test/test_classifier.cpp \
 
 
 ###########################################

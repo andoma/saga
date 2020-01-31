@@ -153,12 +153,20 @@ pooling_y(const Node &n, const std::optional<const std::string> &name)
 {
   // Should make this more generic for n-dimensions
 
-  const int size = n.attributes_.get("size", 1);
   const int pad = n.attributes_.get("pad", 0);
   const int stride = n.attributes_.get("stride", 1);
   auto x = n.inputs_.get("x");
   if(x == nullptr)
     return nullptr;
+
+  int size;
+
+  if(n.attributes_.get("global", false)) {
+    size = x->dims_[2];
+    assert(x->dims_[3] == size);
+  } else {
+    size = n.attributes_.get("size", 1);
+  }
 
   const int channels   = x->dims_[1];
   const int inputdim_h = x->dims_[2];

@@ -7,6 +7,8 @@
 
 extern int mnist_main(int argc, char **argv);
 
+extern int cifar_main(int argc, char **argv);
+
 extern int test_concat_main(int argc, char **argv);
 
 extern int test_onnx_main(int argc, char **argv);
@@ -35,6 +37,10 @@ main(int argc, char **argv)
     argv += 1;
     argc -= 1;
     return mnist_main(argc, argv);
+  } else if(!strcmp(argv[1], "cifar")) {
+    argv += 1;
+    argc -= 1;
+    return cifar_main(argc, argv);
   } else if(!strcmp(argv[1], "minimal")) {
     argv += 1;
     argc -= 1;
