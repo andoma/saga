@@ -26,12 +26,10 @@ void convert_u8_half(const void *src, void *dst, int elements, float scale);
 
 void convert_float_half(const void *src, void *dst, int elements, float scale);
 
-void adam_float(int n, float alpha, float *weights,
-                const float *dweights, float *t,
-                float b1t, float b2t);
+void adam_float(int n, float *weights, const float *dweights, float *t,
+                float b1t, float b2t, float lr);
 
-void adam_mixed(int n, float alpha, __half *weights,
-                const __half *dweights,
-                float *t, float b1t, float b2t);
+void adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
+                float *t, float b1t, float b2t, float lr, int *range);
 
 }

@@ -109,12 +109,16 @@ public:
     , workspace_(NULL)
     , workspace_size_(0)
     , workspace_requested_(0)
+    , mp_scaling_(batch_size)
   {
+    chkCuda(cudaMallocManaged(&check_result_, sizeof(int), cudaMemAttachGlobal));
+    chkCuda(cudaMemset(check_result_, 0, sizeof(int)));
   }
 
   ~CudnnProgram()
   {
     chkCuda(cudaFree(workspace_));
+    chkCuda(cudaFree(check_result_));
   }
 
 
@@ -155,6 +159,9 @@ public:
   void *workspace_;
   size_t workspace_size_;
   size_t workspace_requested_;
+
+  void *check_result_;
+  float mp_scaling_;
 
   cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
 
@@ -320,6 +327,15 @@ CudnnProgram::train()
   for(const auto &op : upd_operations_) {
     op->exec(*this);
   }
+
+  cudaDeviceSynchronize();
+
+  if(*(int *)check_result_) {
+    mp_scaling_ *= 0.5;
+    *(int *)check_result_ = 0;
+  } else {
+    mp_scaling_ *= 1.01;
+  }
 }
 
 
@@ -421,16 +437,17 @@ struct CudnnAdam : public CudnnOperation {
 
     switch(weights_->data_type_) {
     case Tensor::DataType::FLOAT:
-      adam_float(weights_->elements_, learning_rate_,
+      adam_float(weights_->elements_,
                  (float *)weights_->deviceMem(),
                  (const float *)gradient_->deviceMem(),
-                 (float *)temp_, b1t, b2t);
+                 (float *)temp_, b1t, b2t, learning_rate_);
       break;
     case Tensor::DataType::HALF:
-      adam_mixed(weights_->elements_, learning_rate_,
+      adam_mixed(weights_->elements_, 1.0f / p.mp_scaling_,
                  (__half *)weights_->deviceMem(),
                  (const __half *)gradient_->deviceMem(),
-                 (float *)temp_, b1t, b2t);
+                 (float *)temp_, b1t, b2t, learning_rate_,
+                 (int *)p.check_result_);
       break;
     default:
       abort();
@@ -1865,7 +1882,7 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
                                  (const int32_t *)fwd_->y_->deviceMem(),
                                  (const int32_t *)dy_->deviceMem(),
                                  loss_ ? (float *)loss_->deviceMem() : NULL,
-                                 c, scale);
+                                 c, scale * p.mp_scaling_);
       break;
     default:
       abort();

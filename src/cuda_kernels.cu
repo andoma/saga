@@ -139,8 +139,8 @@ convert_float_half(const void *src, void *dst, int elements, float scale)
 #define ADAM_B2      0.999
 
 __global__ static void
-adam_kernel(int n, float alpha, float *weights, const float *dweights, float *t,
-            float b1t, float b2t)
+adam_kernel(int n, float *weights, const float *dweights, float *t,
+            float b1t, float b2t, float lr)
 {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i >= n)
@@ -158,48 +158,58 @@ adam_kernel(int n, float alpha, float *weights, const float *dweights, float *t,
   const float m_hat = m * b1t;
   const float v_hat = v * b2t;
 
-  weights[i] -= alpha * m_hat / (sqrtf(v_hat) + e);
+  weights[i] -= lr * m_hat / (sqrtf(v_hat) + e);
 }
 
 
 __global__ static void
 adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
-               float *t, float b1t, float b2t)
+               float *t, float b1t, float b2t, float lr, int *range)
 {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i >= n)
     return;
 
+  const uint16_t u16 = ((const uint16_t *)dweights)[i];
+  if((u16 & 0x7800) == 0x7800) {
+    *range = 1;
+    if((u16 & 0x7c00) == 0x7c00) {
+      // NaN or inf
+      return;
+    }
+  }
+
   t += i * 3;
+
+  const float dw = (float)dweights[i] * alpha;
 
   const float b1 = ADAM_B1;
   const float b2 = ADAM_B2;
   const float e = ADAM_EPSILON;
-  const float dw = dweights[i];
 
   const float m = t[0] = b1 * t[0] + (1.0f - b1) * dw;
   const float v = t[1] = b2 * t[1] + (1.0f - b2) * dw * dw;
   const float m_hat = m * b1t;
   const float v_hat = v * b2t;
 
-  const float w = t[2] - alpha * m_hat / (sqrtf(v_hat) + e);
+  const float w = t[2] - lr * m_hat / (sqrtf(v_hat) + e);
   t[2] = w;
   weights[i] = w;
 }
 
 void
-adam_float(int n, float alpha, float *weights, const float *dweights, float *t,
-           float b1t, float b2t)
+adam_float(int n, float *weights, const float *dweights, float *t,
+           float b1t, float b2t, float lr)
 {
-  adam_kernel<<<(n+255)/256, 256>>>(n, alpha, weights, dweights, t, b1t, b2t);
+  adam_kernel<<<(n+255)/256, 256>>>(n, weights, dweights, t, b1t, b2t, lr);
 }
 
 void
 adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
-           float *t, float b1t, float b2t)
+           float *t, float b1t, float b2t, float lr, int *range)
 {
-  adam_kernel_mp<<<(n+255)/256, 256>>>(n, alpha, weights, dweights, t, b1t, b2t);
+  adam_kernel_mp<<<(n+255)/256, 256>>>(n, alpha, weights, dweights, t, b1t, b2t,
+                                       lr, range);
 }
-
 
 };
