@@ -438,9 +438,6 @@ test_classifier(int argc, char **argv,
   loss = p->resolveTensor(loss);
   theta = p->resolveTensor(theta);
 
-  //  std::random_device rd;
-  //  std::mt19937 rnd(rd());
-
   int labels[batch_size];
 
   while(g_run) {
@@ -449,15 +446,12 @@ test_classifier(int argc, char **argv,
 
     epoch_begin();
 
-    //    std::shuffle(train_data.begin(), train_data.end(), rnd);
     // Train
     const int64_t t0 = get_ts();
     double loss_sum = 0;
 
     for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
       load_train(*x, *dy, i);
-      //      loadInputTensor(*x, &train_data[i]);
-      //      loadOutputTensor(*dy, &train_data[i]);
       p->train();
       auto la = loss->access();
       for(int i = 0; i < batch_size; i++) {
@@ -471,13 +465,12 @@ test_classifier(int argc, char **argv,
     int correct = 0;
     for(size_t i = 0; i < test_inputs && g_run; i += batch_size) {
       load_test(*x, labels, i);
-      //      loadInputTensor(*x, &test_data[i]);
       p->infer();
 
       auto ta = y->access();
 
       for(int j = 0; j < batch_size; j++) {
-        if(ta->get({j}) == labels[j]) // test_data[i + j].label)
+        if(ta->get({j}) == labels[j])
           correct++;
       }
     }
