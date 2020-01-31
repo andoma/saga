@@ -112,6 +112,70 @@ lecun(Graph &g, std::shared_ptr<Node> n, int output_classes)
 }
 
 
+
+static std::shared_ptr<Node>
+convrelu(Graph &g, std::shared_ptr<Node> n, bool bn,
+         int kernel_size, int activations, const std::string &name)
+{
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", kernel_size},
+                 {"activations", activations},
+                 {"pad", 1},
+                 {"bias", !bn}},
+                name + "conv");
+  if(bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {},
+                  name + "bn");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  return n;
+}
+
+static std::shared_ptr<Node>
+vgg19(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
+{
+  n = convrelu(g, n, true, 3, 64, "1a");
+  n = convrelu(g, n, bn, 3, 64, "1b");
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+  n = convrelu(g, n, bn, 3, 128, "2a");
+  n = convrelu(g, n, bn, 3, 128, "2b");
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+  n = convrelu(g, n, bn, 3, 256, "3a");
+  n = convrelu(g, n, bn, 3, 256, "3b");
+  n = convrelu(g, n, bn, 3, 256, "3c");
+  n = convrelu(g, n, bn, 3, 256, "3d");
+  if(n->y()->dims_[2] > 7)
+    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+  n = convrelu(g, n, bn, 3, 512, "4a");
+  n = convrelu(g, n, bn, 3, 512, "4b");
+  n = convrelu(g, n, bn, 3, 512, "4c");
+  n = convrelu(g, n, bn, 3, 512, "4d");
+  if(n->y()->dims_[2] > 7)
+    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+  n = convrelu(g, n, bn, 3, 512, "5a");
+  n = convrelu(g, n, bn, 3, 512, "5b");
+  n = convrelu(g, n, bn, 3, 512, "5c");
+  n = convrelu(g, n, bn, 3, 512, "5d");
+  if(n->y()->dims_[2] > 7)
+    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", 4096}, {"bias", true}},
+                "fc1");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", 4096}, {"bias", true}},
+                "fc2");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+  n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", output_classes}, {"bias", true}},
+                "fc3");
+   return n;
+}
+
+
+
 /*
  *  RTX 2070 batchsize 512
 
@@ -132,63 +196,63 @@ lecun(Graph &g, std::shared_ptr<Node> n, int output_classes)
 
 
 static std::shared_ptr<Node>
-test(Graph &g, std::shared_ptr<Node> n, bool with_bn, int output_classes)
+test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 {
   n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 3}, {"activations", 32}, {"pad", 1}, {"bias", false}},
+                {{"size", 3}, {"activations", 32}, {"pad", 1}, {"bias", !bn}},
                 "conv1");
-  if(with_bn)
+  if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
   n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", false}},
+                {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", !bn}},
                 "conv2");
-  if(with_bn)
+  if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", false}},
+                {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", !bn}},
                 "conv3");
-  if(with_bn)
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
-  n = g.addNode("relu", {{"x", n->y()}}, {});
-
-  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
-
-  n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", false}},
-                "conv3");
-  if(with_bn)
+  if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
   n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", false}},
+                {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", !bn}},
                 "conv3");
-  if(with_bn)
+  if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
   n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", false}},
+                {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", !bn}},
                 "conv3");
-  if(with_bn)
+  if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
   n = g.addNode("conv", {{"x", n->y()}},
-                {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", false}},
+                {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", !bn}},
                 "conv3");
-  if(with_bn)
+  if(bn)
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", !bn}},
+                "conv3");
+  if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
@@ -228,6 +292,8 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
     return squeezenet(g, n, false, output_classes);
   } else if(name == "test+bn") {
     return squeezenet(g, n, true, output_classes);
+  } else if(name == "vgg19") {
+    return vgg19(g, n, false, output_classes);
   } else {
     return nullptr;
   }
