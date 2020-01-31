@@ -100,7 +100,7 @@ catclassifier_bwd_half_i32(int n, const __half *x, __half *dx,
 //------------------------------------------------------------------------
 
 template< typename S, typename D > __global__ static void
-convert_float(int n, const S *src, D *dst, float scale)
+convert(int n, const S *src, D *dst, float scale)
 {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i >= n)
@@ -113,14 +113,21 @@ convert_float(int n, const S *src, D *dst, float scale)
 void
 convert_u8_float(const void *src, void *dst, int elements, float scale)
 {
-  convert_float<<<(elements+255)/256, 256>>>(elements, (const uint8_t *)src, (float *)dst, scale);
+  convert<<<(elements+255)/256, 256>>>(elements, (const uint8_t *)src, (float *)dst, scale);
 }
 
 void
 convert_u8_half(const void *src, void *dst, int elements, float scale)
 {
-  convert_float<<<(elements+255)/256, 256>>>(elements, (const uint8_t *)src,
-                                             (__half *)dst, scale);
+  convert<<<(elements+255)/256, 256>>>(elements, (const uint8_t *)src,
+                                       (__half *)dst, scale);
+}
+
+void
+convert_float_half(const void *src, void *dst, int elements, float scale)
+{
+  convert<<<(elements+255)/256, 256>>>(elements, (const float *)src,
+                                       (__half *)dst, scale);
 }
 
 //------------------------------------------------------------------------

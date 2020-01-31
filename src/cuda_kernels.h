@@ -24,6 +24,8 @@ void convert_u8_float(const void *src, void *dst, int elements, float scale);
 
 void convert_u8_half(const void *src, void *dst, int elements, float scale);
 
+void convert_float_half(const void *src, void *dst, int elements, float scale);
+
 void adam_float(int n, float alpha, float *weights,
                 const float *dweights, float *t,
                 float b1t, float b2t);

@@ -294,6 +294,13 @@ test(Graph &g, std::shared_ptr<Node> n, bool with_bn)
 }
 
 
+std::shared_ptr<Node>
+convert(Graph &g, std::shared_ptr<Tensor> x, float scale, Tensor::DataType dt)
+{
+  return g.addNode("convert", {{"x", x}},
+                   {{"scale", scale}, {"datatype", (int)dt}});
+}
+
 
 static void
 fill_theta(Tensor *t, int batch_size)
@@ -428,19 +435,23 @@ mnist_main(int argc, char **argv)
 
   auto x = std::make_shared<Tensor>(Tensor::DataType::U8,
                                     Dims({1, 1, 28, 28}), "input");
+
   std::shared_ptr<Node> n;
-
-  n = g.addNode("convert", {{"x", x}},
-                {{"scale", 1.0f / 255.0f}, {"datatype", (int)dt}});
-
   std::shared_ptr<Tensor> theta;
 
   if(augmentation) {
     theta = makeCPUTensor(Tensor::DataType::FLOAT,
                           Dims({batch_size, 2, 3}), "theta");
 
+    n = convert(g, x, 1.0f / 255.0f, Tensor::DataType::FLOAT);
     n = g.addNode("spatialtransform", {{"x", n->y()}, {"theta", theta}},
                   {});
+
+    if(dt != Tensor::DataType::FLOAT) {
+      n = convert(g, n->y(), 1.0f, dt);
+    }
+  } else {
+    n = convert(g, x, 1.0f / 255.0f, dt);
   }
 
   if(mode == "lecun") {

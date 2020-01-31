@@ -1980,6 +1980,9 @@ struct CudnnConvert : public CudnnOperation {
     } else if(x_->data_type_ == Tensor::DataType::U8 &&
               y_->data_type_ == Tensor::DataType::HALF) {
       algo_ = convert_u8_half;
+    } else if(x_->data_type_ == Tensor::DataType::FLOAT &&
+              y_->data_type_ == Tensor::DataType::HALF) {
+      algo_ = convert_float_half;
     } else {
       abort();
     }
