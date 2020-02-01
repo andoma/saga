@@ -1249,7 +1249,12 @@ struct CudnnPoolingFwd : public CudnnOperation {
     , x_(p.lower_tensor_batch(n.inputs_.get("x")))
     , y_(p.lower_tensor_batch(n.outputs_.get("y")))
   {
-    const int size   = n.attributes_.get("size", 1);
+    int size;
+    if(n.attributes_.get("global", false)) {
+      size = x_->dims_[2];
+    } else {
+      size = n.attributes_.get("size", 1);
+    }
     const int pad    = n.attributes_.get("pad", 0);
     const int stride = n.attributes_.get("stride", 1);
 
