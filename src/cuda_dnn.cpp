@@ -646,6 +646,7 @@ struct CudnnConvolutionBwd : public CudnnOperation {
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudnnConvolutionFwd> fwd_;
   const std::shared_ptr<CudaTensor> dx_, dw_, db_, dy_;
+  const float betadx_;
 
   cudnnConvolutionBwdDataAlgo_t bwd_data_algo_;
   cudnnConvolutionBwdFilterAlgo_t bwd_filter_algo_;
@@ -659,7 +660,9 @@ struct CudnnConvolutionBwd : public CudnnOperation {
     , dw_(fwd_->w_->makeGrad())
     , db_(fwd_->b_ ? fwd_->b_->makeGrad() : nullptr)
     , dy_(fwd_->y_->makeGrad())
+    , betadx_(n.attributes_.get("betadx", 0.0f))
   {
+
     chkCUDNN(cudnnGetConvolutionBackwardDataAlgorithm(ctx_->cudnn_,
                                                       fwd->filter_desc_,
                                                       fwd->y_->desc(),
@@ -709,9 +712,10 @@ struct CudnnConvolutionBwd : public CudnnOperation {
   }
 
   void print() const {
-    printf("Convolution Bwd Filter:%s Data:%s\n",
+    printf("Convolution Bwd Filter:%s Data:%s betadx:%f\n",
            convbwdfilteralgostr(bwd_filter_algo_),
-           convbwddataalgostr(bwd_data_algo_));
+           convbwddataalgostr(bwd_data_algo_),
+           betadx_);
     printf("\tdy: %s\n", dy_->info().c_str());
     if(db_)
       printf("\tdb: %s\n", db_->info().c_str());
@@ -754,7 +758,7 @@ struct CudnnConvolutionBwd : public CudnnOperation {
                                             fwd_->conv_desc_,
                                             bwd_data_algo_,
                                             p.workspace_, p.workspace_size_,
-                                            &beta,
+                                            &betadx_,
                                             dx_->desc(),
                                             dx_->deviceMem()));
     }
@@ -2537,8 +2541,54 @@ print_nodes(CudnnProgram &p,
       printf("\tOutput: %s: %s\n",
              t.first.c_str(), l ? l->info().c_str() : t.second->info().c_str());
     }
+
+    for(const auto &a : n->attributes_) {
+      std::string value;
+
+      if(auto v = std::get_if<int>(&a.second)) {
+        value = std::to_string(*v);
+      } else if(auto v = std::get_if<float>(&a.second)) {
+        value = std::to_string(*v);
+      } else if(auto v = std::get_if<bool>(&a.second)) {
+        value = *v ? "true" : "false";
+      } else if(std::get_if<std::vector<int>>(&a.second)) {
+        value = "<vector>";
+      } else {
+        value = "?";
+      }
+
+      printf("\tAttrib: %s: %s\n",
+             a.first.c_str(), value.c_str());
+    }
   }
 }
+
+
+static std::vector<std::shared_ptr<Node>>
+compute_dx_beta(const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+  std::unordered_set<std::shared_ptr<Tensor>> xset;
+
+  for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
+    std::shared_ptr<Node> n = nodes[i];
+    auto &x = n->inputs_["x"];
+    if(x) {
+
+      if(xset.find(x) == xset.end()) {
+        xset.insert(x);
+      } else {
+        auto n2 = std::make_shared<Node>(*n);
+        n2->attributes_["betadx"] = 1.0f;
+        n = n2;
+      }
+    }
+    r.insert(r.begin(), n);
+  }
+  return r;
+}
+
+
 
 
 
@@ -2557,6 +2607,7 @@ CudnnContext::createProgram(const Graph &g,
 
   if(pc.training) {
     auto train_nodes = pass_merge_train_ops(*p, nodes);
+    train_nodes = compute_dx_beta(train_nodes);
     for(const auto &n : train_nodes) {
       auto op = find_operation(*n);
       if(op != NULL && op->create_train) {
