@@ -271,9 +271,6 @@ public:
   void print() const;
 
   std::pair<TensorMapping, TensorMapping> tensorMappings();
-
-  std::shared_ptr<Tensor> createGradients();
-
 };
 
 
