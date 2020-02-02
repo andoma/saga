@@ -1142,7 +1142,8 @@ batchnorm_relu_transform(CudnnProgram &p, std::shared_ptr<Node> bn,
   nn->inputs_["m"] = bn->inputs_["m"];
   nn->inputs_["v"] = bn->inputs_["v"];
 
-  nn->attributes_["epsilon"] = bn->attributes_["epsilon"];
+  if(bn->attributes_.find("epsilon") != bn->attributes_.end())
+    nn->attributes_["epsilon"] = bn->attributes_["epsilon"];
 
   nn->outputs_["y"] = mp->outputs_["y"];
   return nn;
