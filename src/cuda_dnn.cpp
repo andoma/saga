@@ -1018,6 +1018,12 @@ struct CudnnBatchNormActivationTrain : public CudnnOperation {
 
   void print() const {
     printf("CudnnBatchNormActivationTrain\n");
+    printf("\tx: %s\n", x_->info().c_str());
+    printf("\ts: %s\n", s_->info().c_str());
+    printf("\tb: %s\n", b_->info().c_str());
+    printf("\tm: %s\n", m_->info().c_str());
+    printf("\tv: %s\n", v_->info().c_str());
+    printf("\ty: %s\n", y_->info().c_str());
   }
 
   ~CudnnBatchNormActivationTrain()
