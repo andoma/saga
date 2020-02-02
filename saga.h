@@ -220,6 +220,14 @@ public:
     , name_(name)
   {}
 
+  Node(const Node &n)
+    : type_(n.type_)
+    , name_(n.name_)
+    , inputs_(n.inputs_)
+    , attributes_(n.attributes_)
+    , outputs_(n.outputs_)
+  {}
+
   const std::string type_;
   const std::optional<const std::string> name_;
 
