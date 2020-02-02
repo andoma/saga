@@ -88,6 +88,8 @@ public:
 
   std::shared_ptr<CudaTensor> makeGrad();
 
+  bool cpacked() const;
+
   const cudnnDataType_t type_;
   int64_t offset_;
   std::shared_ptr<CudaTensorStorage> storage_;

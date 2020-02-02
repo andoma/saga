@@ -403,4 +403,19 @@ CudaTensor::info() const
   return ss.str();
 }
 
+bool CudaTensor::cpacked() const
+{
+  const int max_rank = 8;
+  int dims[max_rank];
+  int strides[max_rank];
+  int rank;
+  cudnnDataType_t data_type;
+
+  chkCUDNN(cudnnGetTensorNdDescriptor(desc_, max_rank, &data_type,
+                                      &rank, dims, strides));
+
+  return strides[1] == 1;
+}
+
+
 }

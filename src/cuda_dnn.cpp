@@ -1130,9 +1130,28 @@ batchnorm_relu_train(CudnnProgram &p, const Node &n)
 
 
 static std::shared_ptr<Node>
-batchnorm_relu_transform(CudnnProgram &p, std::shared_ptr<Node> bn,
+batchnorm_relu_transform(CudnnProgram &p,
+                         std::shared_ptr<Node> bn,
                          std::shared_ptr<Node> mp)
 {
+  auto x = bn->inputs_["x"];
+  auto y = mp->outputs_["y"];
+
+  if(x->data_type_ != Tensor::DataType::HALF)
+    return nullptr;
+
+  auto lx = p.tensors_.find(x);
+  if(lx != p.tensors_.end()) {
+    if(!lx->second->cpacked())
+      return nullptr;
+  }
+
+  auto ly = p.tensors_.find(y);
+  if(ly != p.tensors_.end()) {
+    if(!ly->second->cpacked())
+      return nullptr;
+  }
+
 
   auto nn = std::make_shared<Node>("batchnorm_relu");
 
@@ -2514,11 +2533,12 @@ pass_merge_train_ops(CudnnProgram &p,
 
     if(i < nodes.size() - 1 &&
        nodes[i + 0]->type_ == "batchnorm" &&
-       nodes[i + 1]->type_ == "relu" &&
-       nodes[i]->inputs_["x"] &&
-       nodes[i]->inputs_["x"]->data_type_ == Tensor::DataType::HALF) {
-      n = batchnorm_relu_transform(p, nodes[i], nodes[i + 1]);
-      i++;
+       nodes[i + 1]->type_ == "relu") {
+      auto n2 = batchnorm_relu_transform(p, nodes[i], nodes[i + 1]);
+      if(n2) {
+        i++;
+        n = n2;
+      }
     }
     r.push_back(n);
   }
