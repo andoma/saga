@@ -357,9 +357,17 @@ test_classifier(int argc, char **argv,
   bool augmentation = false;
   auto dt = Tensor::DataType::FLOAT;
   auto tensor_layout = TensorLayout::Auto;
+  const char *savepath = NULL;
+  const char *loadpath = NULL;
 
   while((opt = getopt(argc, argv, "ns:l:b:hm:r:vacC")) != -1) {
     switch(opt) {
+    case 's':
+      savepath = optarg;
+      break;
+    case 'l':
+      loadpath = optarg;
+      break;
     case 'b':
       batch_size = atoi(optarg);
       break;
@@ -394,6 +402,9 @@ test_classifier(int argc, char **argv,
   test_inputs  = (test_inputs  / batch_size) * batch_size;
 
   Graph g;
+
+  if(loadpath != NULL)
+    g.loadTensors(loadpath);
 
   std::shared_ptr<Node> n;
   std::shared_ptr<Tensor> theta;
@@ -490,6 +501,9 @@ test_classifier(int argc, char **argv,
     if(percentage > 99)
       break;
   }
+
+  if(savepath != NULL)
+    g.saveTensors(savepath, p.get());
 
 }
 

@@ -24,10 +24,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sys/stat.h>
 #include <errno.h>
 #include <string.h>
 #include <dirent.h>
-
 #include "saga.h"
 
 namespace saga {
@@ -78,12 +78,12 @@ Graph::tensorMappings()
 
 
 void
-Graph::loadRawTensors(const char *path)
+Graph::loadTensors(const char *path)
 {
   struct dirent **namelist;
   int n = scandir(path, &namelist, NULL, NULL);
   if(n == -1) {
-    fprintf(stderr, "Unable to load tensors from %s -- %s",
+    fprintf(stderr, "Unable to load tensors from %s -- %s\n",
             path, strerror(errno));
     return;
   }
@@ -93,7 +93,7 @@ Graph::loadRawTensors(const char *path)
     if(fname[0] != '.') {
       char filepath[PATH_MAX];
       snprintf(filepath, sizeof(filepath), "%s/%s", path, fname);
-      auto t = Tensor::loadRaw(filepath, fname);
+      auto t = Tensor::load(filepath, fname);
       if(t) {
         tensors_[fname] = t;
         printf("Loaded %s: %s\n", fname, t->info().c_str());
@@ -102,6 +102,27 @@ Graph::loadRawTensors(const char *path)
     free(namelist[n]);
   }
   free(namelist);
+}
+
+
+bool
+Graph::saveTensors(const char *path, Program *p)
+{
+  char filepath[PATH_MAX];
+  mkdir(path, 0777);
+  for(const auto &it : tensors_) {
+
+    auto t = it.second;
+    if(p != NULL)
+      t = p->resolveTensor(t);
+
+    printf("Saving tensor %s : %s\n", it.first.c_str(),
+           t->info().c_str());
+    snprintf(filepath, sizeof(filepath), "%s/%s", path, it.first.c_str());
+    if(!t->save(filepath))
+      return false;
+  }
+  return true;
 }
 
 

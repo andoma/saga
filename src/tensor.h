@@ -4,14 +4,16 @@
 
 namespace saga {
 
-class TensorStorageAccess {
+class TensorStorage {
 
 public:
 
   typedef double (getfn_t)(const void *base, size_t offset);
   typedef void (setfn_t)(void *base, size_t offset, double value);
 
-  TensorStorageAccess(Tensor::DataType data_type);
+  TensorStorage(Tensor::DataType data_type);
+
+  virtual ~TensorStorage() {};
 
   double get(size_t offset) const {
     return get_(data_, offset);

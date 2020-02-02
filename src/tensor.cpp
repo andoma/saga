@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/mman.h>
 
 #include <random>
 #include <sstream>
@@ -105,7 +106,7 @@ set_i32(void *base, size_t offset, double v)
   ((int32_t *)base)[offset] = v;
 }
 
-TensorStorageAccess::getfn_t *
+TensorStorage::getfn_t *
 datatype_get(Tensor::DataType dt)
 {
   switch(dt) {
@@ -118,7 +119,7 @@ datatype_get(Tensor::DataType dt)
   }
 }
 
-TensorStorageAccess::setfn_t *
+TensorStorage::setfn_t *
 datatype_set(Tensor::DataType dt)
 {
   switch(dt) {
@@ -161,7 +162,7 @@ Tensor::DataTypeSize(DataType dt)
 
 
 
-TensorStorageAccess::TensorStorageAccess(Tensor::DataType data_type)
+TensorStorage::TensorStorage(Tensor::DataType data_type)
   : get_(datatype_get(data_type))
   , set_(datatype_set(data_type))
   , data_type_(data_type)
@@ -608,8 +609,13 @@ Tensor::find(Tensor::DataType data_type,
     }
   }
 
-  return std::make_shared<GenTensor>(data_type, size, name,
-                                     init_mean, init_stddev);
+  auto t = std::make_shared<GenTensor>(data_type, size, name,
+                                       init_mean, init_stddev);
+
+  if(name)
+    named_tensors[*name] = t;
+
+  return t;
 }
 
 std::shared_ptr<Tensor>
@@ -629,19 +635,39 @@ Tensor::make(Tensor::DataType data_type,
 
 //------------------------------------------------------------------------
 
+class HostTensorStorage : public TensorStorage {
 
-class CPUTensorStorage : public TensorStorageAccess {
+  const size_t buffer_size_;
+  void *mmaped_;
 
 public:
-  CPUTensorStorage(Tensor::DataType data_type, const Dims &size, const Dims &strides)
-    : TensorStorageAccess(data_type)
+  HostTensorStorage(Tensor::DataType data_type, const Dims &size,
+                    const Dims &strides)
+    : TensorStorage(data_type)
+    , buffer_size_(size[0] * strides[0] * Tensor::DataTypeSize(data_type))
+    , mmaped_(NULL)
   {
-    data_ = calloc(1, size[0] * strides[0] * Tensor::DataTypeSize(data_type));
+    data_ = calloc(1, buffer_size_);
   }
 
-  ~CPUTensorStorage()
+  HostTensorStorage(Tensor::DataType data_type, const Dims &size,
+                    const Dims &strides,
+                    void *mmaped_memory, size_t buffer_size,
+                    void *data)
+    : TensorStorage(data_type)
+    , buffer_size_(buffer_size)
+    , mmaped_(mmaped_memory)
   {
-    free(data_);
+    data_ = data;
+  }
+
+  ~HostTensorStorage()
+  {
+    if(mmaped_) {
+      munmap(mmaped_, buffer_size_);
+    } else {
+      free(data_);
+    }
   }
 };
 
@@ -653,7 +679,7 @@ class CPUTensorAccess : public TensorAccess {
 
 public:
   CPUTensorAccess(const Dims &strides,
-                  std::shared_ptr<CPUTensorStorage> storage,
+                  std::shared_ptr<TensorStorage> storage,
                   int64_t offset)
     : strides_(strides)
     , storage_(storage)
@@ -694,7 +720,7 @@ public:
   }
 
   const Dims strides_;
-  const std::shared_ptr<CPUTensorStorage> storage_;
+  const std::shared_ptr<TensorStorage> storage_;
   int64_t offset_;
 };
 
@@ -724,7 +750,7 @@ public:
             const std::optional<std::string> &name)
     : Tensor(data_type, size, name)
     , strides_(computeCPUStrides(size))
-    , storage_(std::make_shared<CPUTensorStorage>(data_type, size, strides_))
+    , storage_(std::make_shared<HostTensorStorage>(data_type, size, strides_))
     , offset_(0)
   {}
 
@@ -733,12 +759,12 @@ public:
             const std::optional<std::string> &name)
     : Tensor(data_type, size, name)
     , strides_(strides)
-    , storage_(std::make_shared<CPUTensorStorage>(data_type, size, strides_))
+    , storage_(std::make_shared<HostTensorStorage>(data_type, size, strides_))
     , offset_(0)
   {}
 
   CPUTensor(const Dims &size, const Dims &strides,
-            std::shared_ptr<CPUTensorStorage> storage, int64_t offset,
+            std::shared_ptr<TensorStorage> storage, int64_t offset,
             const std::optional<std::string> &name)
     : Tensor(storage->data_type_, size, name)
     , strides_(strides)
@@ -755,7 +781,7 @@ public:
   virtual std::string info() const;
 
   const Dims strides_;
-  const std::shared_ptr<CPUTensorStorage> storage_;
+  const std::shared_ptr<TensorStorage> storage_;
   const int64_t offset_;
 };
 
@@ -799,62 +825,168 @@ makeCPUTensor(Tensor::DataType data_type, const Dims &size,
   return std::make_shared<CPUTensor>(data_type, size, name);
 }
 
+
 //------------------------------------------------------------------------
-// Raw tensor disk IO. Disk format is NHWC
+// Raw tensor disk IO.
+
+typedef enum {
+  TENSOR_DISK_FLOAT = 0,
+  TENSOR_DISK_HALF  = 1,
+} TensorDiskType;
 
 struct TensorDiskHeader {
   uint8_t magic[8];
-  unsigned int n;
-  unsigned int h;
-  unsigned int w;
-  unsigned int c;
-
+  TensorDiskType type;
+  unsigned int rank;
 } __attribute__((packed));
 
 
-
-
 std::shared_ptr<Tensor>
-Tensor::loadRaw(const char *path, const std::optional<const std::string> &name)
+Tensor::load(const char *path, const std::optional<const std::string> &name)
 {
   int fd = open(path, O_RDONLY);
   if(fd == -1) {
     fprintf(stderr, "Unable to open %s -- %s\n", path, strerror(errno));
     return nullptr;
   }
-  std::shared_ptr<Tensor> t;
-  TensorDiskHeader tdh;
 
-  if(read(fd, &tdh, sizeof(tdh)) == sizeof(tdh)) {
-    if(!memcmp(tdh.magic, "sagaT000", 8)) {
-      Dims dims, strides;
-
-      if(tdh.w && tdh.h) {
-        dims = Dims{tdh.n, tdh.c, tdh.h, tdh.w};
-        strides.push_back(dims[1] * dims[2] * dims[3]); // N
-        strides.push_back(1);                           // C
-        strides.push_back(dims[1] * dims[3]);           // H
-        strides.push_back(dims[1]);                     // W
-      } else {
-
-        dims = Dims{tdh.n, tdh.c};
-        strides.push_back(tdh.c);                       // N
-        strides.push_back(1);                           // C
-      }
-      t = std::make_shared<CPUTensor>(Tensor::DataType::FLOAT, dims,
-                                      strides,
-                                      name);
-      auto ta = t->access();
-      ssize_t s = t->elements_ * sizeof(float);
-      if(read(fd, ta->data(), s) != s) {
-        fprintf(stderr, "Unable to read values from %s\n", path);
-        t = nullptr;
-      }
-    }
+  struct stat st;
+  if(fstat(fd, &st)) {
+    fprintf(stderr, "Unable to stat %s -- %s\n", path, strerror(errno));
+    close(fd);
+    return nullptr;
   }
 
+  if((size_t)st.st_size < sizeof(TensorDiskHeader)) {
+    fprintf(stderr, "Unable to load %s -- Not a saga tensor file\n", path);
+    close(fd);
+    return nullptr;
+  }
+
+  void *mem = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  if(mem == MAP_FAILED) {
+    fprintf(stderr, "Unable to load %s -- Out of memory\n", path);
+    close(fd);
+    return nullptr;
+  }
   close(fd);
-  return t;
+
+  const TensorDiskHeader *tdh = (const TensorDiskHeader *)mem;
+  if(memcmp(tdh->magic, "sagaT001", 8)) {
+    fprintf(stderr, "Unable to load %s -- Not a saga tensor file\n", path);
+    munmap(mem, st.st_size);
+    return nullptr;
+  }
+
+  Tensor::DataType data_type;
+
+  switch(tdh->type) {
+  case TENSOR_DISK_FLOAT:
+    data_type = Tensor::DataType::FLOAT;
+    break;
+  case TENSOR_DISK_HALF:
+    data_type = Tensor::DataType::HALF;
+    break;
+  default:
+    fprintf(stderr, "Unable to load %s -- Unsupported data type:%d\n",
+            path, tdh->type);
+    munmap(mem, st.st_size);
+    return nullptr;
+  }
+
+  if(tdh->rank > 8) {
+    fprintf(stderr, "Unable to load %s -- Rank %d too high\n",
+            path, tdh->rank);
+    munmap(mem, st.st_size);
+    return nullptr;
+  }
+
+  if((size_t)st.st_size < sizeof(TensorDiskHeader) + tdh->rank * sizeof(int)) {
+    fprintf(stderr, "Unable to load %s -- File too short\n",
+            path);
+    munmap(mem, st.st_size);
+    return nullptr;
+  }
+
+  Dims dims;
+  const unsigned int *d =
+    (unsigned int *)((char *)mem + sizeof(TensorDiskHeader));
+
+  for(unsigned int i = 0; i < tdh->rank; i++) {
+    dims.push_back(*d++);
+  }
+
+  auto strides = computeCPUStrides(dims);
+
+  // Ownership of mmap:ed region 'mem' is transfered to HostTensorStorage
+  auto storage = std::make_shared<HostTensorStorage>(data_type, dims, strides,
+                                                     mem, st.st_size,
+                                                     (void *)d);
+
+  return std::make_shared<CPUTensor>(dims, strides, storage, 0, name);
+}
+
+
+bool
+Tensor::save(const char *path)
+{
+  TensorDiskHeader tdh;
+  memcpy(&tdh.magic, "sagaT001", 8);
+
+  switch(data_type_) {
+  case Tensor::DataType::FLOAT:
+    tdh.type = TENSOR_DISK_FLOAT;
+    break;
+  case Tensor::DataType::HALF:
+    tdh.type = TENSOR_DISK_HALF;
+    break;
+  default:
+    fprintf(stderr, "Unable to load %s -- Unsupported data type:%d\n",
+            path, (int)data_type_);
+    return false;
+  }
+
+  int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+  if(fd == -1) {
+    fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
+    return false;
+  }
+
+  tdh.rank = dims_.size();
+
+  if(write(fd, &tdh, sizeof(tdh)) != sizeof(tdh)) {
+    fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
+    close(fd);
+    return false;
+  }
+
+  uint32_t ondiskdims[tdh.rank];
+  for(unsigned int i = 0; i < tdh.rank; i++) {
+    ondiskdims[i] = dims_[i];
+  }
+
+  if(write(fd, &ondiskdims[0], sizeof(int) * tdh.rank) !=
+     (int)(sizeof(int) * tdh.rank)) {
+    fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
+    close(fd);
+    return false;
+  }
+
+  CPUTensor copy(data_type_, dims_, std::nullopt);
+  copy.copyFrom(*this);
+
+  auto ta = copy.access();
+
+  size_t size =
+    copy.strides_[0] * copy.dims_[0] * Tensor::DataTypeSize(data_type_);
+
+  if(write(fd, ta->data(), size) != (int)size) {
+    fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
+    close(fd);
+    return false;
+  }
+  close(fd);
+  return true;
 }
 
 

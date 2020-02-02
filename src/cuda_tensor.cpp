@@ -35,11 +35,11 @@
 
 namespace saga {
 
-class CudaTensorStorage : public TensorStorageAccess {
+class CudaTensorStorage : public TensorStorage {
 
 public:
   CudaTensorStorage(Tensor::DataType data_type, size_t size)
-    : TensorStorageAccess(data_type)
+    : TensorStorage(data_type)
     , element_size_(Tensor::DataTypeSize(data_type))
   {
     chkCuda(cudaMallocManaged(&data_, size, cudaMemAttachGlobal));

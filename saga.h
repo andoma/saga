@@ -148,8 +148,9 @@ public:
 
   static std::shared_ptr<Tensor> loadProtoBuf(const char *path);
 
-  static std::shared_ptr<Tensor> loadRaw(const char *path,
-                                         const std::optional<const std::string> &name);
+  static std::shared_ptr<Tensor> load(const char *path,
+                                      const std::optional<const std::string> &name);
+  bool save(const char *path);
 
 
   static std::shared_ptr<Tensor> find(Tensor::DataType data_type,
@@ -243,6 +244,8 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
+class Program;
+
 typedef std::unordered_map<std::shared_ptr<Tensor>,
                            std::vector<std::pair<std::string,
                                                  std::shared_ptr<Node>>>> TensorMapping;
@@ -261,7 +264,9 @@ public:
 
   static std::shared_ptr<Graph> load(const char *path);
 
-  void loadRawTensors(const char *path);
+  void loadTensors(const char *path);
+
+  bool saveTensors(const char *path, Program *p);
 
   void print() const;
 
