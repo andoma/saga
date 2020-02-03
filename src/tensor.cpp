@@ -364,6 +364,9 @@ Tensor::printRGB(const char *prefix, float scale, float offset)
 
   for(int n = 0; n < dims_[0]; n++) {
     printf("%s: [%d]", prefix, n);
+    float min =  INFINITY;
+    float max = -INFINITY;
+
     for(int x = 0; x < dims_[dim_offset + 2]; x++) {
       printf("=");
     }
@@ -372,55 +375,67 @@ Tensor::printRGB(const char *prefix, float scale, float offset)
     for(int y = 0; y < dims_[dim_offset + 1]; y++) {
       printf("%s: [%d]", prefix, n);
 
+      const int dblrow = y < dims_[dim_offset + 1] - 1;
+
       for(int x = 0; x < dims_[dim_offset + 2]; x++) {
-        int r, g, b;
+        float fr, fg, fb;
+
         switch(c) {
         default:
-          r = ta->get({n,0,y,x}) * scale + offset;
-          g = ta->get({n,1,y,x}) * scale + offset;
-          b = ta->get({n,2,y,x}) * scale + offset;
+          fr = ta->get({n,0,y,x});
+          fg = ta->get({n,1,y,x});
+          fb = ta->get({n,2,y,x});
           break;
         case 2:
-          r = ta->get({n,0,y,x}) * scale + offset;
-          g = ta->get({n,1,y,x}) * scale + offset;
-          b = 0;
+          fr = ta->get({n,0,y,x});
+          fg = ta->get({n,1,y,x});
+          fb = 0;
           break;
         case 1:
-          r = ta->get({n,0,y,x}) * scale + offset;
-          g = r;
-          b = r;
+          fr = ta->get({n,0,y,x});
+          fg = fr;
+          fb = fr;
         }
+        min = std::min({min, fr, fg, fb});
+        max = std::max({max, fr, fg, fb});
 
-        char c = ' ';
+        fr = fr * scale + offset;
+        fg = fg * scale + offset;
+        fb = fb * scale + offset;
 
-        if(r > 255) {
-          c = '+';
-          r = 255;
-        }
-        if(g > 255) {
-          c = '+';
-          g = 255;
-        }
-        if(b > 255) {
-          c = '+';
-          b = 255;
-        }
+        if(dblrow) {
+          float br, bg, bb;
 
-        if(r < 0) {
-          c = '-';
-          r = 0;
-        }
-        if(g < 0) {
-          c = '-';
-          g = 0;
-        }
-        if(b < 0) {
-          c = '-';
-          b = 0;
-        }
+          switch(c) {
+          default:
+            br = ta->get({n,0,y+1,x});
+            bg = ta->get({n,1,y+1,x});
+            bb = ta->get({n,2,y+1,x});
+            break;
+          case 2:
+            br = ta->get({n,0,y+1,x});
+            bg = ta->get({n,1,y+1,x});
+            bb = 0;
+            break;
+          case 1:
+            br = ta->get({n,0,y+1,x});
+            bg = br;
+            bb = br;
+          }
+          min = std::min({min, br, bg, bb});
+          max = std::max({max, br, bg, bb});
 
-        printf("\033[48;2;%d;%d;%dm%c", r, g, b, c);
+          br = br * scale + offset;
+          bg = bg * scale + offset;
+          bb = bb * scale + offset;
+          printf("\033[48;2;%d;%d;%dm", (int)br, (int)bg, (int)bb);
+
+        }
+        printf("\033[38;2;%d;%d;%dm▀", (int)fr, (int)fg, (int)fb);
       }
+
+      if(dblrow)
+        y++;
 
       printf("\033[0m\n");
     }
