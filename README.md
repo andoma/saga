@@ -7,21 +7,33 @@ This project is still very much work in progress.
 
 * Relies exclusively on NVIDIA's cuDNN and cuda libraries. Ie, this does not work without an NVIDIA GPU.
 
+* Fully flexible tensor layouts (ie both NCHW and NHWC tensor are fully supported)
+
 * FP32 and FP16 inference and training mode.
 
-* Convolution, BatchNorm, Fully-Connected, Dropout -layers
+* Adam optimizer with mixed precision training and dynamic gradient scaling.
 
-* Adam optimizer with mixed precision training.
+* Data augmentation using 2d affine transforms (scaling, rotation, translation)
+
+* Supported layers:
+  * Activation
+  * Affine transformation
+  * Batchnorm
+  * Category Classifier
+  * Concat
+  * Convolution
+  * Dropout
+  * Elementwise math operations
+  * Fully conneceted
+  * Pooling
+  * Softmax
+  * Sum
+
+* Node optimizations:
+  * Concat is transformed to strided tensors
+  * Element-wise sum is transformed to outputs with GEMM beta set to 1
 
 * Can load (some) [ONNX](https://onnx.ai) models
-
-# TODO
-
-* Scaling of gradients when using mixed precision learning.
-
-* Load more ONNX models
-
-
 
 # Other
 
