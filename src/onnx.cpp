@@ -236,9 +236,21 @@ mapPBfile(const char *path)
   }
 
   struct stat st;
-  fstat(fd, &st);
+  if(fstat(fd, &st) == -1) {
+    fprintf(stderr, "Failed to stat protobuf file %s: %s\n",
+            path, strerror(errno));
+    close(fd);
+    return nullptr;
+  }
 
   void *mem = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  if(mem == MAP_FAILED) {
+    fprintf(stderr, "Failed to map protobuf file %s: %s\n",
+            path, strerror(errno));
+    close(fd);
+    return nullptr;
+  }
+
   close(fd);
 
   return make_unique<MappedPBFile>(mem, st.st_size);
