@@ -1,6 +1,7 @@
 O=build
 
 PROG=saga
+LIB=libsaga.a
 
 PKG_CONFIG ?= pkg-config
 
@@ -47,7 +48,8 @@ LDFLAGS-$(HAVE_PROTOBUF)  += $(shell pkg-config --libs protobuf)
 ###########################################
 # Program
 
-SRCS += main.cpp \
+SRCS-prog += \
+	main.cpp \
 	test/test_onnx.cpp \
 	test/mnist.cpp \
 	test/cifar.cpp \
@@ -65,14 +67,22 @@ LDFLAGS  += $(LDFLAGS-yes)
 OBJS := ${SRCS:%.cpp=${O}/%.o}
 OBJS := ${OBJS:%.proto3=${O}/%.proto3.o}
 OBJS := ${OBJS:%.cu=${O}/%.o}
-DEPS := ${OBJS:%.o=%.d}
+
+OBJS-prog := ${SRCS-prog:%.cpp=${O}/%.o}
+
+DEPS := ${OBJS:%.o=%.d} ${OBJS-prog:%.o=%.d}
 SRCDEPS := $(patsubst %,$(O)/%.pb.cc,$(filter %.proto3,$(SRCS)))
 
 ALLDEPS += Makefile
 
-${PROG}: ${OBJS} ${ALLDEPS}
+${PROG}: ${OBJS} ${OBJS-prog} ${ALLDEPS}
 	@mkdir -p $(dir $@)
-	${CXX} -o $@ ${OBJS} ${LDFLAGS}
+	${CXX} -o $@ ${OBJS} ${OBJS-prog} ${LDFLAGS}
+
+${LIB}:  ${OBJS} ${ALLDEPS}
+	@mkdir -p $(dir $@)
+	ar rcs $@ ${OBJS}
+	ranlib $@
 
 ${O}/%.o: %.cu ${ALLDEPS}
 	@mkdir -p $(dir $@)
@@ -94,6 +104,8 @@ ${O}/%.proto3.pb.cc: %.proto3 ${ALLDEPS}
 
 clean:
 	rm -rf "${O}" "${PROG}"
+
+lib: ${LIB}
 
 -include ${DEPS}
 
