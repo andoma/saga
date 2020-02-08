@@ -28,6 +28,7 @@
 #include <x86intrin.h>
 #include "saga.h"
 #include "tensor.h"
+#include "context.h"
 
 #include "cuda_common.h"
 #include "cuda_tensor.h"
@@ -78,8 +79,8 @@ CudnnContext::init()
 }
 
 
-
-std::shared_ptr<Context> createContext()
+static
+std::shared_ptr<Context> createCudnnContext()
 {
   auto ctx = std::make_shared<CudnnContext>();
 
@@ -88,6 +89,14 @@ std::shared_ptr<Context> createContext()
 
   return ctx;
 }
+
+
+static void registerCudnnContext(void) __attribute__((constructor(103)));
+static void registerCudnnContext(void)
+{
+  registerContextFactory(&createCudnnContext);
+}
+
 
 
 //------------------------------------------------------------------------

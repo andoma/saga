@@ -16,6 +16,7 @@ SRCS-lib += \
 	src/tensor.cpp \
 	src/graph.cpp \
 	src/node.cpp \
+	src/context.cpp \
 
 ###########################################
 # Cuda
