@@ -278,7 +278,7 @@ public:
 
   void print() const;
 
-  std::pair<TensorMapping, TensorMapping> tensorMappings();
+  std::pair<TensorMapping, TensorMapping> tensorMappings() const;
 };
 
 

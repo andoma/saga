@@ -56,7 +56,7 @@ Graph::addNode(const std::string &type,
 
 
 std::pair<TensorMapping, TensorMapping>
-Graph::tensorMappings()
+Graph::tensorMappings() const
 {
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::vector<std::pair<std::string,
