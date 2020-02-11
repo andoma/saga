@@ -109,7 +109,7 @@ public:
 
   virtual double get(const std::vector<int64_t> &element) {
     if(!sync_) {
-      cudaDeviceSynchronize();
+      cudaStreamSynchronize(storage_->ctx_->stream_);
       sync_ = true;
     }
     return storage_->get(offsetForElement(element));

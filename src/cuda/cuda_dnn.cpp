@@ -45,14 +45,19 @@ CudnnContext::init()
   struct cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, device);
 
+  chkCuda(cudaStreamCreate(&stream_));
+
   printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s\n",
          prop.name, prop.major, prop.minor,
          prop.concurrentKernels ? "yes":"no",
          prop.canMapHostMemory ? "yes":"no");
 
-  chkCUDNN(cudnnCreate(&cudnn_));
-  chkCuda(cublasCreate(&cublas_));
 
+  chkCUDNN(cudnnCreate(&cudnn_));
+  chkCUDNN(cudnnSetStream(cudnn_, stream_));
+
+  chkCuda(cublasCreate(&cublas_));
+  chkCuda(cublasSetStream(cublas_, stream_));
   chkCuda(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
   return 0;
 }
@@ -318,7 +323,7 @@ CudnnProgram::train()
     op->exec(*this);
   }
 
-  cudaDeviceSynchronize();
+  cudaStreamSynchronize(ctx_->stream_);
 
   if(*(int *)check_result_) {
     mp_scaling_ *= 0.5;
@@ -430,14 +435,16 @@ struct CudnnAdam : public CudnnOperation {
       adam_float(weights_->elements_,
                  (float *)weights_->deviceMem(),
                  (const float *)gradient_->deviceMem(),
-                 (float *)temp_, b1t, b2t, learning_rate_);
+                 (float *)temp_, b1t, b2t, learning_rate_,
+                 p.ctx_->stream_);
       break;
     case Tensor::DataType::HALF:
       adam_mixed(weights_->elements_, 1.0f / p.mp_scaling_,
                  (__half *)weights_->deviceMem(),
                  (const __half *)gradient_->deviceMem(),
                  (float *)temp_, b1t, b2t, learning_rate_,
-                 (int *)p.check_result_);
+                 (int *)p.check_result_,
+                 p.ctx_->stream_);
       break;
     default:
       abort();
@@ -1877,12 +1884,14 @@ struct CudnnCatClassifierFwd : public CudnnOperation {
     case CUDNN_DATA_FLOAT:
       catclassifier_fwd_float_i32(x_->dims_[0],
                                   (const float *)x_->deviceMem(),
-                                  (int32_t *)y_->deviceMem(), x_->dims_[1]);
+                                  (int32_t *)y_->deviceMem(), x_->dims_[1],
+                                  p.ctx_->stream_);
       break;
     case CUDNN_DATA_HALF:
       catclassifier_fwd_half_i32(x_->dims_[0],
                                  (const __half *)x_->deviceMem(),
-                                 (int32_t *)y_->deviceMem(), x_->dims_[1]);
+                                 (int32_t *)y_->deviceMem(), x_->dims_[1],
+                                 p.ctx_->stream_);
       break;
     default:
       abort();
@@ -1926,7 +1935,9 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
                                   (const int32_t *)fwd_->y_->deviceMem(),
                                   (const int32_t *)dy_->deviceMem(),
                                   loss_ ? (float *)loss_->deviceMem() : NULL,
-                                  c, scale);
+                                  c, scale,
+                                  p.ctx_->stream_);
+
       break;
     case CUDNN_DATA_HALF:
       catclassifier_bwd_half_i32(n,
@@ -1935,7 +1946,9 @@ struct CudnnCatClassifierBwd : public CudnnOperation {
                                  (const int32_t *)fwd_->y_->deviceMem(),
                                  (const int32_t *)dy_->deviceMem(),
                                  loss_ ? (float *)loss_->deviceMem() : NULL,
-                                 c, scale * p.mp_scaling_);
+                                 c, scale * p.mp_scaling_,
+                                 p.ctx_->stream_);
+
       break;
     default:
       abort();
@@ -2036,7 +2049,8 @@ struct CudnnConvert : public CudnnOperation {
   const std::shared_ptr<CudnnContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, y_;
   const float scale_;
-  void (*algo_)(const void *src, void *dst, int elements, float scale);
+  void (*algo_)(const void *src, void *dst, int elements, float scale,
+                cudaStream_t stream);
 
   CudnnConvert(CudnnProgram &p,
                std::shared_ptr<CudaTensor> x,
@@ -2068,7 +2082,8 @@ struct CudnnConvert : public CudnnOperation {
   }
 
   void exec(CudnnProgram &p) {
-    algo_(x_->deviceMem(), y_->deviceMem(), x_->elements_, scale_);
+    algo_(x_->deviceMem(), y_->deviceMem(), x_->elements_, scale_,
+          p.ctx_->stream_);
   }
 
 };

@@ -7,29 +7,38 @@
 namespace saga {
 
 void catclassifier_fwd_float_i32(int n, const float *p,
-                                 int32_t *y, unsigned int c);
+                                 int32_t *y, unsigned int c,
+                                 cudaStream_t stream);
 
 void catclassifier_fwd_half_i32(int n, const __half *p,
-                                int32_t *y, unsigned int c);
+                                int32_t *y, unsigned int c,
+                                cudaStream_t stream);
 
 void catclassifier_bwd_float_i32(int n, const float *x, float *dx,
                                  const int32_t *y, const int32_t *dy,
-                                 float *loss, unsigned int c, float scale);
+                                 float *loss, unsigned int c, float scale,
+                                 cudaStream_t stream);
 
 void catclassifier_bwd_half_i32(int n, const __half *x, __half *dx,
                                 const int32_t *y, const int32_t *dy,
-                                float *loss, unsigned int c, float scale);
+                                float *loss, unsigned int c, float scale,
+                                cudaStream_t stream);
 
-void convert_u8_float(const void *src, void *dst, int elements, float scale);
+void convert_u8_float(const void *src, void *dst, int elements, float scale,
+                      cudaStream_t stream);
 
-void convert_u8_half(const void *src, void *dst, int elements, float scale);
+void convert_u8_half(const void *src, void *dst, int elements, float scale,
+                     cudaStream_t stream);
 
-void convert_float_half(const void *src, void *dst, int elements, float scale);
+void convert_float_half(const void *src, void *dst, int elements, float scale,
+                        cudaStream_t stream);
 
 void adam_float(int n, float *weights, const float *dweights, float *t,
-                float b1t, float b2t, float lr);
+                float b1t, float b2t, float lr,
+                cudaStream_t stream);
 
 void adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
-                float *t, float b1t, float b2t, float lr, int *range);
+                float *t, float b1t, float b2t, float lr, int *range,
+                cudaStream_t stream);
 
 }

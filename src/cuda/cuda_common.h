@@ -44,6 +44,7 @@ public:
   std::shared_ptr<Program> createProgram(const Graph &graph,
                                          const ProgramConfig &pc);
 
+  cudaStream_t stream_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
 };

@@ -66,32 +66,36 @@ catclassifier_bwd(int n, const T *x, T *dx, const L *y, const L *dy,
 
 
 void
-catclassifier_fwd_float_i32(int n, const float *x, int32_t *y, unsigned int c)
+catclassifier_fwd_float_i32(int n, const float *x, int32_t *y, unsigned int c,
+                            cudaStream_t stream)
 {
-  catclassifier_fwd<<<(n+255)/256, 256>>>(n, x, y, c);
+  catclassifier_fwd<<<(n+255)/256, 256, 0, stream>>>(n, x, y, c);
 }
 
 void
 catclassifier_bwd_float_i32(int n, const float *x, float *dx,
                             const int32_t *y, const int32_t *dy,
-                            float *loss, unsigned int c, float scale)
+                            float *loss, unsigned int c, float scale,
+                            cudaStream_t stream)
 {
-  catclassifier_bwd<<<(n+255)/256, 256>>>(n, x, dx, y, dy, loss, c, scale);
+  catclassifier_bwd<<<(n+255)/256, 256, 0, stream>>>(n, x, dx, y, dy, loss, c, scale);
 }
 
 
 void
-catclassifier_fwd_half_i32(int n, const __half *x, int32_t *y, unsigned int c)
+catclassifier_fwd_half_i32(int n, const __half *x, int32_t *y, unsigned int c,
+                           cudaStream_t stream)
 {
-  catclassifier_fwd<<<(n+255)/256, 256>>>(n, x, y, c);
+  catclassifier_fwd<<<(n+255)/256, 256, 0, stream>>>(n, x, y, c);
 }
 
 void
 catclassifier_bwd_half_i32(int n, const __half *x, __half *dx,
                            const int32_t *y, const int32_t *dy,
-                           float *loss, unsigned int c, float scale)
+                           float *loss, unsigned int c, float scale,
+                           cudaStream_t stream)
 {
-  catclassifier_bwd<<<(n+255)/256, 256>>>(n, x, dx, y, dy, loss, c, scale);
+  catclassifier_bwd<<<(n+255)/256, 256, 0, stream>>>(n, x, dx, y, dy, loss, c, scale);
 }
 
 
@@ -111,23 +115,27 @@ convert(int n, const S *src, D *dst, float scale)
 
 
 void
-convert_u8_float(const void *src, void *dst, int elements, float scale)
+convert_u8_float(const void *src, void *dst, int elements, float scale,
+                 cudaStream_t stream)
 {
-  convert<<<(elements+255)/256, 256>>>(elements, (const uint8_t *)src, (float *)dst, scale);
+  convert<<<(elements+255)/256, 256, 0, stream>>>(elements, (const uint8_t *)src,
+                                                  (float *)dst, scale);
 }
 
 void
-convert_u8_half(const void *src, void *dst, int elements, float scale)
+convert_u8_half(const void *src, void *dst, int elements, float scale,
+                cudaStream_t stream)
 {
-  convert<<<(elements+255)/256, 256>>>(elements, (const uint8_t *)src,
-                                       (__half *)dst, scale);
+  convert<<<(elements+255)/256, 256, 0, stream>>>(elements, (const uint8_t *)src,
+                                                  (__half *)dst, scale);
 }
 
 void
-convert_float_half(const void *src, void *dst, int elements, float scale)
+convert_float_half(const void *src, void *dst, int elements, float scale,
+                   cudaStream_t stream)
 {
-  convert<<<(elements+255)/256, 256>>>(elements, (const float *)src,
-                                       (__half *)dst, scale);
+  convert<<<(elements+255)/256, 256, 0, stream>>>(elements, (const float *)src,
+                                                  (__half *)dst, scale);
 }
 
 //------------------------------------------------------------------------
@@ -199,17 +207,17 @@ adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
 
 void
 adam_float(int n, float *weights, const float *dweights, float *t,
-           float b1t, float b2t, float lr)
+           float b1t, float b2t, float lr, cudaStream_t stream)
 {
-  adam_kernel<<<(n+255)/256, 256>>>(n, weights, dweights, t, b1t, b2t, lr);
+  adam_kernel<<<(n+255)/256, 256, 0, stream>>>(n, weights, dweights, t, b1t, b2t, lr);
 }
 
 void
 adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
-           float *t, float b1t, float b2t, float lr, int *range)
+           float *t, float b1t, float b2t, float lr, int *range, cudaStream_t stream)
 {
-  adam_kernel_mp<<<(n+255)/256, 256>>>(n, alpha, weights, dweights, t, b1t, b2t,
-                                       lr, range);
+  adam_kernel_mp<<<(n+255)/256, 256, 0, stream>>>(n, alpha, weights, dweights, t, b1t, b2t,
+                                                  lr, range);
 }
 
 };
