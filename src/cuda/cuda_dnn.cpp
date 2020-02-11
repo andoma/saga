@@ -36,27 +36,6 @@
 
 namespace saga {
 
-class CudnnContext : public Context,
-                     public std::enable_shared_from_this<CudnnContext> {
-public:
-  CudnnContext()
-    : cudnn_(NULL)
-    , cublas_(NULL)
-  {}
-
-  ~CudnnContext()
-  {}
-
-  int init();
-
-  std::shared_ptr<Program> createProgram(const Graph &graph,
-                                         const ProgramConfig &pc);
-
-  cudnnHandle_t cudnn_;
-  cublasHandle_t cublas_;
-};
-
-
 int
 CudnnContext::init()
 {
@@ -263,6 +242,7 @@ CudnnProgram::lower_tensor(std::shared_ptr<Tensor> src,
 
   auto t = std::make_shared<CudaTensor>(src->data_type_,
                                         dims, tensorFormat(src->data_type_),
+                                        ctx_,
                                         src->name_);
 
   t->copyFrom(*src);
@@ -286,6 +266,7 @@ CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
   auto t = std::make_shared<CudaTensor>(src->data_type_,
                                         src->dims_.n(batch_size_),
                                         tensor_format,
+                                        ctx_,
                                         src->name_);
 
   t->copyFrom(*src);
@@ -1502,6 +1483,7 @@ sum_transform(CudnnProgram &p, std::shared_ptr<Node> n)
 
   strides[0] = xvec.size() * strides[1];
   auto t = std::make_shared<CudaTensor>(y->data_type_, d, (const int *)strides,
+                                        p.ctx_,
                                         y->namePostfix("sum"));
 
   int64_t offset = 0;
@@ -1510,6 +1492,7 @@ sum_transform(CudnnProgram &p, std::shared_ptr<Node> n)
                                                   xh->dims_,
                                                   offset,
                                                   (const int *)strides + 1,
+                                                  p.ctx_,
                                                   xh->namePostfix("sum.alias"));
     offset += strides[0];
   }
@@ -1522,6 +1505,7 @@ sum_transform(CudnnProgram &p, std::shared_ptr<Node> n)
                                          d,
                                          0,
                                          (const int *)strides,
+                                         p.ctx_,
                                          y->namePostfix("sum"));
 
   p.tensors_[ya] = ya;
@@ -2356,7 +2340,8 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
     , y_(p.lower_tensor_batch(n.outputs_.get("y")))
     , grid_(std::make_shared<CudaTensor>(Tensor::DataType::FLOAT,
                                          Dims{ y_->dims_[0], 2, y_->dims_[2], y_->dims_[3]},
-                                         CUDNN_TENSOR_NHWC))
+                                         CUDNN_TENSOR_NHWC,
+                                         p.ctx_))
     , y_beta_(n.attributes_.get("y.beta", 0.0f))
   {
     int dims[4] = {

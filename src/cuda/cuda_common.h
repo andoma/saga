@@ -1,3 +1,5 @@
+// -*-c++-*-
+
 #pragma once
 
 #include <cudnn.h>
@@ -24,4 +26,27 @@
   }
 
 
+namespace saga {
 
+class CudnnContext : public Context,
+                     public std::enable_shared_from_this<CudnnContext> {
+public:
+  CudnnContext()
+    : cudnn_(NULL)
+    , cublas_(NULL)
+  {}
+
+  ~CudnnContext()
+  {}
+
+  int init();
+
+  std::shared_ptr<Program> createProgram(const Graph &graph,
+                                         const ProgramConfig &pc);
+
+  cudnnHandle_t cudnn_;
+  cublasHandle_t cublas_;
+};
+
+
+}

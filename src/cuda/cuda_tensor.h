@@ -28,6 +28,7 @@
 
 #include "saga.h"
 
+#include "cuda_common.h"
 
 namespace saga {
 
@@ -39,6 +40,7 @@ class CudaTensor : public Tensor {
 public:
   CudaTensor(DataType data_type, const Dims &size,
              cudnnTensorFormat_t format,
+             const std::shared_ptr<CudnnContext> &ctx,
              const std::optional<const std::string> &name = std::nullopt);
 
   CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
@@ -59,6 +61,7 @@ public:
   CudaTensor(DataType data_type,
              const Dims &size,
              const int *strides,
+             const std::shared_ptr<CudnnContext> &ctx,
              const std::optional<const std::string> &name);
 
   CudaTensor(const CudaTensor &t,

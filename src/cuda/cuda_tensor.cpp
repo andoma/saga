@@ -29,6 +29,7 @@
 #include "saga.h"
 #include "tensor.h"
 
+#include "context.h"
 #include "cuda_common.h"
 #include "cuda_tensor.h"
 
@@ -38,8 +39,10 @@ namespace saga {
 class CudaTensorStorage : public TensorStorage {
 
 public:
-  CudaTensorStorage(Tensor::DataType data_type, size_t size)
+  CudaTensorStorage(Tensor::DataType data_type, size_t size,
+                    const std::shared_ptr<CudnnContext> &ctx)
     : TensorStorage(data_type)
+    , ctx_(ctx)
     , element_size_(Tensor::DataTypeSize(data_type))
   {
     chkCuda(cudaMallocManaged(&data_, size, cudaMemAttachGlobal));
@@ -57,7 +60,9 @@ public:
     return r;
   }
 
+  const std::shared_ptr<CudnnContext> ctx_;
   const size_t element_size_;
+
 };
 
 
@@ -151,6 +156,7 @@ cudnnDataType_from_dataType(Tensor::DataType data_type)
 
 CudaTensor::CudaTensor(DataType data_type, const Dims &size,
                        cudnnTensorFormat_t format,
+                       const std::shared_ptr<CudnnContext> &ctx,
                        const std::optional<const std::string> &name)
   : Tensor(data_type, size, name)
   , type_(cudnnDataType_from_dataType(data_type))
@@ -167,7 +173,7 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size,
   size_t bytes;
   chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes));
 
-  storage_ = std::make_shared<CudaTensorStorage>(data_type, bytes);
+  storage_ = std::make_shared<CudaTensorStorage>(data_type, bytes, ctx);
 }
 
 
@@ -244,6 +250,7 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
 CudaTensor::CudaTensor(DataType data_type,
                        const Dims &size,
                        const int *strides,
+                       const std::shared_ptr<CudnnContext> &ctx,
                        const std::optional<const std::string> &name)
   : Tensor(data_type, size, name)
   , type_(cudnnDataType_from_dataType(data_type))
@@ -259,14 +266,14 @@ CudaTensor::CudaTensor(DataType data_type,
   size_t bytes;
   chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes));
 
-  storage_ = std::make_shared<CudaTensorStorage>(data_type, bytes);
+  storage_ = std::make_shared<CudaTensorStorage>(data_type, bytes, ctx);
 }
 
 
 CudaTensor::CudaTensor(const CudaTensor &o,
                        cudnnTensorFormat_t format,
                        const std::optional<const std::string> &postfix)
-  : CudaTensor(o.data_type_, o.dims_, format,
+  : CudaTensor(o.data_type_, o.dims_, format, o.storage_->ctx_,
                postfix ? o.namePostfix(*postfix) : std::nullopt)
 {
 }
@@ -292,7 +299,8 @@ CudaTensor::CudaTensor(const CudaTensor &o,
   size_t bytes;
   chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes));
 
-  storage_ = std::make_shared<CudaTensorStorage>(data_type_, bytes);
+  storage_ = std::make_shared<CudaTensorStorage>(data_type_, bytes,
+                                                 o.storage_->ctx_);
 }
 
 
