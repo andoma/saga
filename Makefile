@@ -26,9 +26,9 @@ SRCS-lib += \
 HAVE_CUDA := $(subst 0,yes,$(subst 1,no,$(shell $(PKG_CONFIG) cuda-${CUDA_VERSION} cudart-${CUDA_VERSION}; echo $$?)))
 
 SRCS-lib-$(HAVE_CUDA) += \
-	src/cuda_dnn.cpp \
-	src/cuda_tensor.cpp \
-	src/cuda_kernels.cu \
+	src/cuda/cuda_dnn.cpp \
+	src/cuda/cuda_tensor.cpp \
+	src/cuda/cuda_kernels.cu \
 
 CPPFLAGS-$(HAVE_CUDA) += $(shell pkg-config --cflags cuda-${CUDA_VERSION} cudart-${CUDA_VERSION})
 LDFLAGS-$(HAVE_CUDA)  += $(shell pkg-config --libs   cuda-${CUDA_VERSION} cudart-${CUDA_VERSION})
