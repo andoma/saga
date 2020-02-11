@@ -123,7 +123,7 @@ public:
                              const void *data, size_t size) {
     const size_t o = offsetForElement(element) * storage_->element_size_;
     char *dst = (char *)storage_->data_;
-    cudaMemcpyAsync(dst + o, data, size, cudaMemcpyHostToDevice, 0);
+    cudaMemcpy(dst + o, data, size, cudaMemcpyHostToDevice);
   }
 
   Dims strides_;
