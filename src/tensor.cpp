@@ -42,6 +42,8 @@
 #include "saga.h"
 #include "tensor.h"
 
+#include "turbo_colormap.h"
+
 namespace saga {
 
 //------------------------------------------------------------------------
@@ -340,104 +342,142 @@ Tensor::print(const char *prefix, int elements_per_rank)
 }
 
 
+std::shared_ptr<Tensor>
+Tensor::toRGB(std::optional<std::pair<float, float>> range)
+{
+  if(dims_.size() != 4)
+    return nullptr;
+
+  const int in = dims_[0];
+  const int ic = dims_[1];
+  const int ih = dims_[2];
+  const int iw = dims_[3];
+
+  float min, max;
+
+  if(range) {
+    min = (*range).first;
+    max = (*range).second;
+  } else {
+    auto s = stats();
+    min = s.min;
+    max = s.max;
+  }
+
+  const float offset = -min;
+  const float scale = 255.0f / (max - min);
+
+  auto src = access();
+  if(src == nullptr)
+    return nullptr;
+
+  Dims odims = dims_;
+
+  if(ic > 3) {
+    odims.push_back(3);
+  } else {
+    odims = Dims{in,1,ih,iw,3};
+  }
+
+  auto ot = makeCPUTensor(Tensor::DataType::U8, odims);
+  auto dst = ot->access();
+
+  uint8_t *p = (uint8_t *)dst->data();
+
+  int oc = odims[1];
+  for(int n = 0; n < in; n++) {
+    for(int c = 0; c < oc; c++) {
+      for(int y = 0; y < ih; y++) {
+        for(int x = 0; x < iw; x++) {
+
+          float r, g, b;
+          int i;
+          switch(ic) {
+          case 3:
+            r = (src->get({n,0,y,x}) + offset) * scale;
+            g = (src->get({n,1,y,x}) + offset) * scale;
+            b = (src->get({n,2,y,x}) + offset) * scale;
+            break;
+          case 2:
+            r = (src->get({n,0,y,x}) + offset) * scale;
+            g = (src->get({n,1,y,x}) + offset) * scale;
+            b = 0;
+            break;
+          case 1:
+            r = (src->get({n,0,y,x}) + offset) * scale;
+            g = r;
+            b = r;
+            break;
+          default:
+            r = (src->get({n,c,y,x}) + offset) * scale;
+            i = std::clamp(r, 0.0f, 255.0f);
+            *p++ = turbo_srgb_bytes[i][0];
+            *p++ = turbo_srgb_bytes[i][1];
+            *p++ = turbo_srgb_bytes[i][2];
+            continue;
+          }
+
+          *p++ = std::clamp(r, 0.0f, 255.0f);
+          *p++ = std::clamp(g, 0.0f, 255.0f);
+          *p++ = std::clamp(b, 0.0f, 255.0f);
+        }
+      }
+    }
+  }
+  return ot;
+}
+
 
 void
-Tensor::printRGB(const char *prefix, float scale, float offset)
+Tensor::printRGB(const char *prefix)
 {
   printf("%s: %s\n", prefix, info().c_str());
 
-  auto ta = access();
-  if(ta == nullptr) {
-    printf("%s: Abstract (no data)\n", prefix);
+  auto rgb = toRGB();
+  if(rgb == NULL) {
+    printf("%s: Too few dimensions or abstract\n", prefix);
     return;
   }
 
-  if(dims_.size() < 3) {
-    // We format 1d tensor vertically instead of a long horizontal line
-    printf("%s: Too few dimensions\n", prefix);
-    return;
-  }
+  const int n = rgb->dims_[0];
+  const int c = rgb->dims_[1];
+  const int h = rgb->dims_[2];
+  const int w = rgb->dims_[3];
 
-  size_t dim_offset = dims_.size() - 3;
+  auto ta = rgb->access();
+  const auto strides = ta->strides();
+  const uint8_t *pixels = (const uint8_t *)ta->data();
 
-  const int c = dims_[dim_offset];
-
-  for(int n = 0; n < dims_[0]; n++) {
-    printf("%s: [%d]", prefix, n);
-    float min =  INFINITY;
-    float max = -INFINITY;
-
-    for(int x = 0; x < dims_[dim_offset + 2]; x++) {
-      printf("=");
-    }
-    printf("\n");
-
-    for(int y = 0; y < dims_[dim_offset + 1]; y++) {
-      printf("%s: [%d]", prefix, n);
-
-      const int dblrow = y < dims_[dim_offset + 1] - 1;
-
-      for(int x = 0; x < dims_[dim_offset + 2]; x++) {
-        float fr, fg, fb;
-
-        switch(c) {
-        default:
-          fr = ta->get({n,0,y,x});
-          fg = ta->get({n,1,y,x});
-          fb = ta->get({n,2,y,x});
-          break;
-        case 2:
-          fr = ta->get({n,0,y,x});
-          fg = ta->get({n,1,y,x});
-          fb = 0;
-          break;
-        case 1:
-          fr = ta->get({n,0,y,x});
-          fg = fr;
-          fb = fr;
-        }
-        min = std::min({min, fr, fg, fb});
-        max = std::max({max, fr, fg, fb});
-
-        fr = fr * scale + offset;
-        fg = fg * scale + offset;
-        fb = fb * scale + offset;
-
-        if(dblrow) {
-          float br, bg, bb;
-
-          switch(c) {
-          default:
-            br = ta->get({n,0,y+1,x});
-            bg = ta->get({n,1,y+1,x});
-            bb = ta->get({n,2,y+1,x});
-            break;
-          case 2:
-            br = ta->get({n,0,y+1,x});
-            bg = ta->get({n,1,y+1,x});
-            bb = 0;
-            break;
-          case 1:
-            br = ta->get({n,0,y+1,x});
-            bg = br;
-            bb = br;
-          }
-          min = std::min({min, br, bg, bb});
-          max = std::max({max, br, bg, bb});
-
-          br = br * scale + offset;
-          bg = bg * scale + offset;
-          bb = bb * scale + offset;
-          printf("\033[48;2;%d;%d;%dm", (int)br, (int)bg, (int)bb);
-
-        }
-        printf("\033[38;2;%d;%d;%dm▀", (int)fr, (int)fg, (int)fb);
+  for(int a = 0; a < n; a++) {
+    for(int b = 0; b < c; b++) {
+      printf("%s: [%d,%d]", prefix, a, b);
+      for(int x = 0; x < w; x++) {
+        printf("=");
       }
+      printf("\n");
 
-      if(dblrow)
-        y++;
+      const uint8_t *img = pixels + a * strides[0] + b * strides[1];
 
-      printf("\033[0m\n");
+      for(int y = 0; y < h; y += 2) {
+        printf("%s: [%d,%d]", prefix, a, b);
+
+        const uint8_t *r1 = img + strides[2] * y;
+        const uint8_t *r2 = y < h - 1 ? r1 + strides[2] : NULL;
+
+        for(int x = 0; x < w; x++) {
+          if(r2) {
+            const uint8_t r = *r2++;
+            const uint8_t g = *r2++;
+            const uint8_t b = *r2++;
+            printf("\033[48;2;%d;%d;%dm", r, g, b);
+          }
+          const uint8_t r = *r1++;
+          const uint8_t g = *r1++;
+          const uint8_t b = *r1++;
+          printf("\033[38;2;%d;%d;%dm▀", r, g, b);
+        }
+        printf("\033[0m\n");
+      }
     }
   }
 }
