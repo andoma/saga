@@ -218,7 +218,7 @@ Tensor::info() const
 static void
 print1dTensor(const char *prefix, Tensor &t, TensorAccess &ta)
 {
-  for(int64_t i = 0; i < t.dims_[0]; i++) {
+  for(int i = 0; i < t.dims_[0]; i++) {
     printf("%s: [%5d]: %f\n", prefix, (int)i, ta.get({i}));
   }
 }
@@ -231,7 +231,7 @@ Tensor::stats()
   if(ta == nullptr) {
     return Stats({});
   }
-  std::vector<int64_t> c(dims_.size(), 0);
+  Dims c(dims_.size(), 0);
 
   double max = -INFINITY;
   double min = INFINITY;
@@ -311,7 +311,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
   }
 
   const size_t rank = dims_.size();
-  std::vector<int64_t> c(rank, 0);
+  Dims c(rank, 0);
 
   const char *lf = "";
 
@@ -319,7 +319,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
     if(c[rank - 1] == 0) {
       printf("%s%s: [", lf, prefix);
       for(size_t j = 0; j < c.size(); j++) {
-        printf("%s%3" PRId64, j ? "," : "", c[j]);
+        printf("%s%3d", j ? "," : "", c[j]);
       }
       printf("]");
       lf = "\n";
@@ -494,8 +494,8 @@ Tensor::copyFrom(Tensor &t)
 
   assert(t.elements_ == elements_);
 
-  std::vector<int64_t> c_s(t.dims_.size(), 0);
-  std::vector<int64_t> c_d(dims_.size(), 0);
+  Dims c_s(t.dims_.size(), 0);
+  Dims c_d(dims_.size(), 0);
 
   // This is very slow
   for(int64_t i = 0; i < elements_; i++) {
@@ -535,8 +535,8 @@ Tensor::sse(Tensor &t)
 
   assert(t.elements_ == elements_);
 
-  std::vector<int64_t> c_a(t.dims_.size(), 0);
-  std::vector<int64_t> c_b(dims_.size(), 0);
+  Dims c_a(t.dims_.size(), 0);
+  Dims c_b(dims_.size(), 0);
 
   double r = 0;
   for(int64_t i = 0; i < elements_; i++) {
@@ -589,15 +589,15 @@ public:
     return NULL;
   }
 
-  virtual double get(const std::vector<int64_t> &element) {
+  virtual double get(const Dims &element) {
     return distribution_(generator_);
   };
 
-  virtual void set(const std::vector<int64_t> &element, double value) {
+  virtual void set(const Dims &element, double value) {
 
   }
 
-  virtual void copyBytesFrom(const std::vector<int64_t> &element,
+  virtual void copyBytesFrom(const Dims &element,
                              const void *data, size_t size)
   {
 
@@ -750,7 +750,7 @@ public:
     return storage_->data_;
   }
 
-  size_t offsetForElement(const std::vector<int64_t> &element) const {
+  size_t offsetForElement(const Dims &element) const {
     size_t offset = offset_;
     for(size_t i = 0; i < element.size() && i < strides_.size(); i++) {
       offset += element[i] * strides_[i];
@@ -758,15 +758,15 @@ public:
     return offset;
   }
 
-  virtual double get(const std::vector<int64_t> &element) {
+  virtual double get(const Dims &element) {
     return storage_->get(offsetForElement(element));
   };
 
-  virtual void set(const std::vector<int64_t> &element, double value) {
+  virtual void set(const Dims &element, double value) {
     storage_->set(offsetForElement(element), value);
   }
 
-  virtual void copyBytesFrom(const std::vector<int64_t> &element,
+  virtual void copyBytesFrom(const Dims &element,
                              const void *data, size_t size)
   {
     const size_t o = offsetForElement(element) * storage_->element_size_;

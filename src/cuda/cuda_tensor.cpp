@@ -99,7 +99,7 @@ public:
 
   void *data() { return storage_->data_; }
 
-  int64_t offsetForElement(const std::vector<int64_t> &element) const {
+  int64_t offsetForElement(const Dims &element) const {
     size_t offset = offset_;
     for(size_t i = 0; i < element.size() && i < strides_.size(); i++) {
       offset += element[i] * strides_[i];
@@ -107,7 +107,7 @@ public:
     return offset;
   }
 
-  virtual double get(const std::vector<int64_t> &element) {
+  virtual double get(const Dims &element) {
     if(!sync_) {
       cudaStreamSynchronize(storage_->ctx_->stream_);
       sync_ = true;
@@ -115,11 +115,11 @@ public:
     return storage_->get(offsetForElement(element));
   };
 
-  virtual void set(const std::vector<int64_t> &element, double value) {
+  virtual void set(const Dims &element, double value) {
     storage_->set(offsetForElement(element), value);
   }
 
-  virtual void copyBytesFrom(const std::vector<int64_t> &element,
+  virtual void copyBytesFrom(const Dims &element,
                              const void *data, size_t size) {
     const size_t o = offsetForElement(element) * storage_->element_size_;
     char *dst = (char *)storage_->data_;
@@ -215,11 +215,8 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensor> alias,
   assert(data_type == type_);
   assert((size_t)rank == size.size());
 
-  for(int i = 0; i < rank; i++) {
-    dimsA[i] = size[i];
-  }
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank, dimsA, stridesA));
+  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank, &size[0], stridesA));
 
   for(int i = 0; i < rank && i < (ssize_t)offset_element.size(); i++) {
     offset_ += offset_element[i] * stridesA[i];
@@ -236,14 +233,9 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
   , offset_(offset)
   , storage_(storage)
 {
-  const size_t rank = size.size();
-  int dimsA[rank];
-  for(size_t i = 0; i < rank; i++)
-    dimsA[i] = size[i];
-
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank,
-                                      dimsA, strides));
+  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, size.size(),
+                                      &size[0], strides));
 }
 
 
@@ -255,14 +247,9 @@ CudaTensor::CudaTensor(DataType data_type,
   : Tensor(data_type, size, name)
   , type_(cudnnDataType_from_dataType(data_type))
 {
-  const size_t rank = size.size();
-  int dimsA[rank];
-  for(size_t i = 0; i < rank; i++)
-    dimsA[i] = size[i];
-
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank,
-                                      dimsA, strides));
+  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, size.size(),
+                                      &size[0], strides));
   size_t bytes;
   chkCUDNN(cudnnGetTensorSizeInBytes(desc_, &bytes));
 

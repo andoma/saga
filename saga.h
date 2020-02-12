@@ -70,8 +70,8 @@ public:
 
 class Tensors;
 
-class Dims : public std::vector<int64_t> {
-  using std::vector<int64_t>::vector;
+class Dims : public std::vector<int> {
+  using std::vector<int>::vector;
 public:
   Dims n(int64_t v) const {
     Dims d = *this;
@@ -90,11 +90,11 @@ public:
   virtual Dims strides() = 0;
   virtual void *data() = 0;
 
-  virtual void copyBytesFrom(const std::vector<int64_t> &element,
+  virtual void copyBytesFrom(const Dims &element,
                              const void *data, size_t size) = 0;
 
-  virtual double get(const std::vector<int64_t> &element) = 0;
-  virtual void set(const std::vector<int64_t> &element, double value) = 0;
+  virtual double get(const Dims &element) = 0;
+  virtual void set(const Dims &element, double value) = 0;
 
   TensorAccess(TensorAccess const&) = delete;
   TensorAccess& operator=(TensorAccess const&) = delete;

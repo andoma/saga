@@ -202,7 +202,7 @@ reshape_y(const Node &n, const std::optional<const std::string> &name)
   auto ta = shape->access();
 
   Dims dims;
-  for(int64_t i = 0; i < shape->dims_[0]; i++) {
+  for(int i = 0; i < shape->dims_[0]; i++) {
     const int64_t v = ta->get({i});
     if(v == 0) {
       dims.push_back(x->dims_[i]);
