@@ -2,6 +2,9 @@
 
 #pragma once
 
+#include <memory>
+#include <mutex>
+
 #include <cudnn.h>
 #include <cublas_v2.h>
 
@@ -47,6 +50,8 @@ public:
   cudaStream_t stream_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
+
+  std::mutex mutex_;
 };
 
 

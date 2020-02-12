@@ -115,13 +115,11 @@ public:
   }
 
 
-  void infer();
-  void train();
-
-  void print() const;
-  void debug(bool);
-
-  std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t);
+  std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
+  void infer() override;
+  void train() override;
+  void print() const override;
+  void debug(bool) override;
 
   void requetstWorkspace(size_t size) {
     workspace_requested_ = std::max(workspace_requested_, size);
@@ -156,6 +154,8 @@ public:
   void *check_result_;
   float mp_scaling_;
 
+  std::shared_ptr<Tensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
+
   cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
 
   std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
@@ -189,7 +189,7 @@ public:
 };
 
 std::shared_ptr<Tensor>
-CudnnProgram::resolveTensor(std::shared_ptr<Tensor> src)
+CudnnProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
 {
   if(src == nullptr)
     return nullptr;
@@ -199,6 +199,15 @@ CudnnProgram::resolveTensor(std::shared_ptr<Tensor> src)
     return it->second;
   }
   return nullptr;
+}
+
+
+
+std::shared_ptr<Tensor>
+CudnnProgram::resolveTensor(std::shared_ptr<Tensor> src)
+{
+  std::scoped_lock lock(ctx_->mutex_);
+  return resolveTensor_locked(src);
 }
 
 
@@ -305,6 +314,8 @@ public:
 void
 CudnnProgram::infer()
 {
+  std::scoped_lock lock(ctx_->mutex_);
+
   for(const auto &op : infer_operations_) {
     op->exec(*this);
   }
@@ -313,6 +324,8 @@ CudnnProgram::infer()
 void
 CudnnProgram::train()
 {
+  std::scoped_lock lock(ctx_->mutex_);
+
   for(const auto &op : train_operations_) {
     op->exec(*this);
   }
@@ -337,6 +350,8 @@ CudnnProgram::train()
 void
 CudnnProgram::print() const
 {
+  std::scoped_lock lock(ctx_->mutex_);
+
   printf("\n\nInference:\n");
   for(const auto &op : infer_operations_) {
     op->print();
@@ -2603,13 +2618,13 @@ print_nodes(CudnnProgram &p,
     printf("%s:\n", n->type_.c_str());
 
     for(const auto &t : n->inputs_) {
-      auto l = p.resolveTensor(t.second);
+      auto l = p.resolveTensor_locked(t.second);
       printf("\t Input: %s: %s\n",
              t.first.c_str(), l ? l->info().c_str() : t.second->info().c_str());
     }
 
     for(const auto &t : n->outputs_) {
-      auto l = p.resolveTensor(t.second);
+      auto l = p.resolveTensor_locked(t.second);
       printf("\tOutput: %s: %s\n",
              t.first.c_str(), l ? l->info().c_str() : t.second->info().c_str());
     }
@@ -2668,6 +2683,8 @@ std::shared_ptr<Program>
 CudnnContext::createProgram(const Graph &g,
                             const ProgramConfig &pc)
 {
+  std::scoped_lock lock(mutex_);
+
   auto p = std::make_shared<CudnnProgram>(shared_from_this(),
                                           pc.tensor_layout,
                                           pc.batch_size,
