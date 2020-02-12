@@ -73,21 +73,21 @@ public:
 
   ~CudaTensor();
 
-  std::unique_ptr<TensorAccess> access();
+  virtual std::string info() const override;
+
+  std::unique_ptr<TensorAccess> access() override;
+
+  std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size) override;
+
+  std::shared_ptr<Tensor> grad() const override {
+    return grad_;
+  }
 
   cudnnTensorDescriptor_t desc() const {
     return desc_;
   }
 
   void *deviceMem() const;
-
-  virtual std::string info() const;
-
-  std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size);
-
-  std::shared_ptr<Tensor> grad() const {
-    return grad_;
-  }
 
   std::shared_ptr<CudaTensor> makeGrad();
 
