@@ -31,5 +31,11 @@ public:
 };
 
 
+void copy_tensor(void *dst,
+                 int dst_rank,
+                 const int *dst_sizes,
+                 const int *dst_strides,
+                 Tensor::DataType dst_datatype,
+                 Tensor &src);
 
 };
