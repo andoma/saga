@@ -14,10 +14,9 @@
 
 #include "saga.h"
 #include "test_classifier.h"
+#include "cli.h"
 
 using namespace saga;
-
-
 
 static void *
 load(const std::string &path)
@@ -96,7 +95,7 @@ loadOutputTensor(Tensor &t, const LabeledImage *lis)
 }
 
 
-extern int
+static int
 cifar_main(int argc, char **argv)
 {
   argc--;
@@ -142,3 +141,11 @@ cifar_main(int argc, char **argv)
 
   return 0;
 }
+
+
+SAGA_CLI_CMD("cifar",
+             "cifar <PATH> [OPTIONS ...]",
+             "Infer/Train on cifar dataset",
+             cifar_main);
+
+

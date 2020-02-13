@@ -11,6 +11,7 @@
 #include <numeric>
 
 #include "saga.h"
+#include "cli.h"
 #include "test_classifier.h"
 
 using namespace saga;
@@ -112,7 +113,7 @@ loadOutputTensor(Tensor &t, const LabeledImage *lis)
 
 
 
-extern int
+static int
 mnist_main(int argc, char **argv)
 {
   argv++;
@@ -167,3 +168,11 @@ mnist_main(int argc, char **argv)
                   });
   return 0;
 }
+
+
+SAGA_CLI_CMD("mnist",
+             "minst <PATH> [OPTIONS ...]",
+             "Infer/Train on mnist dataset",
+             mnist_main);
+
+

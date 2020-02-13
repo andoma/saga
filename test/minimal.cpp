@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "saga.h"
-
+#include "cli.h"
 
 using namespace saga;
 
@@ -127,3 +127,9 @@ minimal_main(int argc, char **argv)
 
   return 0;
 }
+
+
+SAGA_CLI_CMD("minimal",
+             "minimal [OPTIONS ...]",
+             "Run some minimal tests",
+             minimal_main);

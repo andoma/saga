@@ -5,6 +5,7 @@
 #include <libgen.h>
 
 #include "saga.h"
+#include "cli.h"
 
 using namespace saga;
 
@@ -102,7 +103,7 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
 
 
 
-int
+static int
 test_onnx_main(int argc, char **argv)
 {
   int opt;
@@ -143,3 +144,9 @@ test_onnx_main(int argc, char **argv)
 
   return 0;
 }
+
+
+SAGA_CLI_CMD("onnx",
+             "onnx [OPTIONS ...] [PATH]",
+             "Load onnx model zoo",
+             test_onnx_main);

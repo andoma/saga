@@ -1,52 +1,39 @@
 #include <string.h>
+#include <stdio.h>
 
 #include "saga.h"
+#include "test/cli.h"
 
 
+std::vector<saga::CliCmd> saga::clicmds;
 
-
-extern int mnist_main(int argc, char **argv);
-
-extern int cifar_main(int argc, char **argv);
-
-extern int test_concat_main(int argc, char **argv);
-
-extern int test_onnx_main(int argc, char **argv);
-
-extern int test_fc_main(int argc, char **argv);
-
-extern int minimal_main(int argc, char **argv);
-
-extern int util_showtensors(int argc, char **argv);
-
+static int
+usage(void)
+{
+  printf("\nUsage: saga <cmd> ...\n\n");
+  printf("Available commands:\n\n");
+  for(auto &c : saga::clicmds) {
+    printf("\t%-30s %s\n", c.argpattern, c.description);
+  }
+  printf("\n");
+  return 1;
+}
 
 
 int
 main(int argc, char **argv)
 {
-  if(argc < 2) {
-    fprintf(stderr, "Usage %s <cmd> ...\n", argv[0]);
-    return 1;
+  if(argc < 2)
+    return usage();
+
+  argv += 1;
+  argc -= 1;
+
+  for(auto &c : saga::clicmds) {
+    if(!strcmp(c.cmd, argv[0])) {
+      return c.fn(argc, argv);
+    }
   }
 
-  if(!strcmp(argv[1], "onnx")) {
-    argv += 1;
-    argc -= 1;
-    return test_onnx_main(argc, argv);
-  } else if(!strcmp(argv[1], "mnist")) {
-    argv += 1;
-    argc -= 1;
-    return mnist_main(argc, argv);
-  } else if(!strcmp(argv[1], "cifar")) {
-    argv += 1;
-    argc -= 1;
-    return cifar_main(argc, argv);
-  } else if(!strcmp(argv[1], "minimal")) {
-    argv += 1;
-    argc -= 1;
-    return minimal_main(argc, argv);
-  } else {
-    fprintf(stderr, "Unknown command: %s\n", argv[1]);
-    return 1;
-  }
+  return usage();
 }
