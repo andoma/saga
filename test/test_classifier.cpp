@@ -361,8 +361,9 @@ test_classifier(int argc, char **argv,
   auto tensor_layout = TensorLayout::Auto;
   const char *savepath = NULL;
   const char *loadpath = NULL;
+  std::shared_ptr<UI> ui;
 
-  while((opt = getopt(argc, argv, "ns:l:b:hm:r:vacC")) != -1) {
+  while((opt = getopt(argc, argv, "ns:l:b:hm:r:vacCu")) != -1) {
     switch(opt) {
     case 's':
       savepath = optarg;
@@ -393,6 +394,9 @@ test_classifier(int argc, char **argv,
       break;
     case 'C':
       tensor_layout = TensorLayout::NCHW;
+      break;
+    case 'u':
+      ui = createUI();
       break;
     }
   }
@@ -455,6 +459,9 @@ test_classifier(int argc, char **argv,
 
   int labels[batch_size];
 
+  if(ui)
+    ui->showGraph(g, p);
+
   while(g_run) {
     if(theta)
       fill_theta(theta.get(), batch_size);
@@ -500,13 +507,12 @@ test_classifier(int argc, char **argv,
            (t1 - t0) / 1e6,
            (t2 - t1) / 1e6,
            loss_sum / test_inputs);
-    if(percentage > 99)
+    if(!ui && percentage > 99)
       break;
   }
 
   if(savepath != NULL)
     g.saveTensors(savepath, p.get());
-
 }
 
 }

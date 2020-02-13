@@ -7,9 +7,9 @@ CUDA_VERSION ?= 10.2
 
 PKG_CONFIG ?= pkg-config
 
-CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O)
+CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O) -Isrc
 CXXFLAGS += --std=c++17 -march=native -fno-exceptions
-CXXFLAGS += -Wno-deprecated-declarations
+
 
 ###########################################
 # Lib
@@ -59,6 +59,28 @@ SRCS-prog += \
 	test/minimal.cpp \
 	test/test_classifier.cpp \
 
+
+##########################################
+# UI
+
+SRCS-prog += \
+	src/ui/ui.cpp \
+	ext/imgui/imgui.cpp \
+	ext/imgui/imgui_draw.cpp \
+	ext/imgui/imgui_widgets.cpp \
+	ext/imgui/examples/imgui_impl_glfw.cpp \
+	ext/imgui/examples/imgui_impl_opengl2.cpp \
+	ext/imnodes/ImNodes.cpp
+
+CXXFLAGS += -Iext/imgui -Iext/imgui/examples/
+
+
+${O}/ext/imnodes/%.o : CXXFLAGS := \
+	--std=c++17 -march=native -fno-exceptions \
+	-Iext/imgui \
+	-Wno-error=unused-variable \
+
+LDFLAGS += -lglfw -lGL
 
 ###########################################
 

@@ -327,4 +327,18 @@ public:
 
 std::shared_ptr<Context> createContext();
 
+
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
+
+class UI {
+public:
+  virtual ~UI() {}
+  virtual void showGraph(const Graph& g, std::shared_ptr<Program> p) = 0;
+};
+
+std::shared_ptr<UI> createUI(void);
+
+
+
 }
