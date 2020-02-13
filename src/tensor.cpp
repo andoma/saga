@@ -592,7 +592,7 @@ copy_tensor_half(uint16_t *dst, TensorAccess *ta, Dims &selem, int rank, const D
     assert(dst_stride == 1);
     for(int i = 0; i < n; i++) {
       selem[src_dim] = i;
-      dst[i] = _cvtss_sh(ta->get(selem), 0);
+      dst[i] = _cvtss_sh((float)ta->get(selem), 0);
     }
     return;
   }
