@@ -259,7 +259,7 @@ CudnnProgram::lower_tensor(std::shared_ptr<Tensor> src,
                                         ctx_,
                                         src->name_);
 
-  t->copyFrom(*src);
+  t->copyFromLocked(*src);
   tensors_[src] = t;
   return t;
 }
@@ -283,7 +283,7 @@ CudnnProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
                                         ctx_,
                                         src->name_);
 
-  t->copyFrom(*src);
+  t->copyFromLocked(*src);
   tensors_[src] = t;
   return t;
 }
@@ -408,8 +408,7 @@ struct CudnnAdam : public CudnnOperation {
       bytes = weights_->elements_ * 3 * sizeof(float);
       chkCuda(cudaMallocManaged(&temp_, bytes, cudaMemAttachGlobal));
       {
-        auto ta = weights->access();
-        const uint16_t *src = (const uint16_t *)ta->data();
+        const uint16_t *src = (const uint16_t *)weights->deviceMem();
         float *dst = temp_;
         for(int i = 0; i < weights->elements_; i++) {
           *dst++ = 0;

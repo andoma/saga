@@ -93,6 +93,8 @@ public:
 
   bool cpacked() const;
 
+  void copyFromLocked(Tensor &t);
+
   const cudnnDataType_t type_;
   int64_t offset_;
   std::shared_ptr<CudaTensorStorage> storage_;

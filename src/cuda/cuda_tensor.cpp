@@ -91,9 +91,12 @@ public:
       strides_.push_back(strides[i]);
     }
 
+    storage_->ctx_->mutex_.lock();
   }
 
-  ~CudaTensorAccess() {}
+  ~CudaTensorAccess() {
+    storage_->ctx_->mutex_.unlock();
+  }
 
   Dims strides() { return strides_; }
 
@@ -411,6 +414,30 @@ bool CudaTensor::cpacked() const
 
   return strides[1] == 1;
 }
+
+void
+CudaTensor::copyFromLocked(Tensor &t)
+{
+  const int max_rank = 8;
+  int dims[max_rank];
+  int strides[max_rank];
+  int rank;
+  cudnnDataType_t data_type;
+
+  chkCUDNN(cudnnGetTensorNdDescriptor(desc_, max_rank, &data_type,
+                                      &rank, dims, strides));
+
+  cudaStreamSynchronize(storage_->ctx_->stream_);
+
+  copy_tensor(storage_->deviceMem(offset_),
+              dims_.size(),
+              &dims_[0],
+              &strides[0],
+              data_type_,
+              t);
+}
+
+
 
 
 }
