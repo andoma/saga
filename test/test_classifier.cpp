@@ -346,7 +346,8 @@ test_classifier(int argc, char **argv,
                 size_t test_inputs,
                 std::function<void(void)> epoch_begin,
                 std::function<void(Tensor &x, Tensor &dy, size_t i)> load_train,
-                std::function<void(Tensor &x, int *labels, size_t i)> load_test)
+                std::function<void(Tensor &x, int *labels, size_t i)> load_test,
+                std::shared_ptr<UI> ui)
 {
   signal(SIGINT, stop);
 
@@ -361,7 +362,6 @@ test_classifier(int argc, char **argv,
   auto tensor_layout = TensorLayout::Auto;
   const char *savepath = NULL;
   const char *loadpath = NULL;
-  std::shared_ptr<UI> ui;
 
   while((opt = getopt(argc, argv, "ns:l:b:hm:r:vacCu")) != -1) {
     switch(opt) {
@@ -394,9 +394,6 @@ test_classifier(int argc, char **argv,
       break;
     case 'C':
       tensor_layout = TensorLayout::NCHW;
-      break;
-    case 'u':
-      ui = createUI();
       break;
     }
   }

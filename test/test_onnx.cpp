@@ -73,7 +73,8 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
 }
 
 static int
-test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
+test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose,
+         std::shared_ptr<UI> ui, bool no_prog)
 {
   char dirtmp[PATH_MAX];
   snprintf(dirtmp, sizeof(dirtmp), "%s", model_path);
@@ -104,14 +105,19 @@ test_one(const char *model_path, std::shared_ptr<Context> ctx, int verbose)
 
 
 static int
-test_onnx_main(int argc, char **argv)
+test_onnx_main(int argc, char **argv,
+               std::shared_ptr<UI> ui)
 {
   int opt;
   int verbose = 0;
-  while((opt = getopt(argc, argv, "v")) != -1) {
+  bool no_prog = false;
+  while((opt = getopt(argc, argv, "vn")) != -1) {
     switch(opt) {
     case 'v':
       verbose++;
+      break;
+    case 'n':
+      no_prog = true;
       break;
     }
   }
@@ -122,7 +128,7 @@ test_onnx_main(int argc, char **argv)
   auto ctx = createContext();
 
   if(argc == 1) {
-    return test_one(argv[0], ctx, verbose);
+    return test_one(argv[0], ctx, verbose, ui, no_prog);
   }
 
   if(argc != 0) {
@@ -130,15 +136,16 @@ test_onnx_main(int argc, char **argv)
     exit(1);
   }
 
-  if(test_one("models/squeezenet1.1/squeezenet1.1.onnx", ctx, verbose)) {
+  if(test_one("models/squeezenet1.1/squeezenet1.1.onnx", ctx, verbose,
+              ui, no_prog)) {
     exit(1);
   }
 
-  if(test_one("models/resnet50/model.onnx", ctx, verbose)) {
+  if(test_one("models/resnet50/model.onnx", ctx, verbose, ui, no_prog)) {
     exit(1);
   }
 
-  if(test_one("models/vgg19/vgg19.onnx", ctx, verbose)) {
+  if(test_one("models/vgg19/vgg19.onnx", ctx, verbose, ui, no_prog)) {
     exit(1);
   }
 

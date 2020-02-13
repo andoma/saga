@@ -2,11 +2,14 @@
 
 namespace saga {
 
+class UI;
+
 struct CliCmd {
   const char *cmd;
   const char *argpattern;
   const char *description;
-  int (*fn)(int argc, char **argv);
+  int (*fn)(int argc, char **argv,
+            std::shared_ptr<UI> ui);
 };
 
 extern std::vector<CliCmd> clicmds;

@@ -14,7 +14,6 @@
 
 #include "saga.h"
 
-#include <thread>
 #include <condition_variable>
 #include <vector>
 #include <functional>
@@ -31,30 +30,19 @@ class UIWindow;
 class IMUI : public UI {
 public:
 
-  IMUI()
-    : run_(true)
-    , thread_(&IMUI::spawn, this)
-  {}
-
   ~IMUI()
   {
-    run_ = false;
-    thread_.join();
   }
 
-  bool run_;
-  std::thread thread_;
   std::condition_variable work_cond_;
   std::mutex work_mutex_;
   std::vector<std::function<void(void)>> work_;
-  GLFWwindow *window_;
 
   std::vector<std::shared_ptr<UIWindow>> windows_;
 
-  static void spawn(IMUI *self) { self->loop(); }
-  void loop();
+  void run() override;
 
-  void showGraph(const Graph& g, std::shared_ptr<Program> p);
+  void showGraph(const Graph& g, std::shared_ptr<Program> p) override;
 
   void dispatch(std::function<void(void)> work) {
     work_mutex_.lock();
@@ -115,45 +103,48 @@ UITensor::draw(IMUI &ui)
   bool open = true;
   if(ImGui::Begin(info.c_str(), &open)) {
 
-    ImGui::SliderInt("Zoom", &zoom_, 1, 8);
     auto rgb = t_->toRGB();
-    auto ta = rgb->access();
+    if(rgb) {
+      ImGui::SliderInt("Zoom", &zoom_, 1, 8);
+      auto ta = rgb->access();
 
+      const int n = rgb->dims_[0];
+      const int c = rgb->dims_[1];
+      const int h = rgb->dims_[2];
+      const int w = rgb->dims_[3];
+      const size_t num_images = n * c;
 
-    const int n = rgb->dims_[0];
-    const int c = rgb->dims_[1];
-    const int h = rgb->dims_[2];
-    const int w = rgb->dims_[3];
-    const size_t num_images = n * c;
+      if(texs_.size() != num_images) {
+        glDeleteTextures(texs_.size(), &texs_[0]);
+        texs_.resize(num_images);
+        glGenTextures(num_images, &texs_[0]);
 
-    if(texs_.size() != num_images) {
-      glDeleteTextures(texs_.size(), &texs_[0]);
-      texs_.resize(num_images);
-      glGenTextures(num_images, &texs_[0]);
-
-      for(auto tex : texs_) {
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        for(auto tex : texs_) {
+          glBindTexture(GL_TEXTURE_2D, tex);
+          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+          glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        }
       }
-    }
 
-    const uint8_t *pixels = (const uint8_t *)ta->data();
-    ImVec2 size(w * zoom_ , h * zoom_);
-    Dims strides = ta->strides();
+      const uint8_t *pixels = (const uint8_t *)ta->data();
+      ImVec2 size(w * zoom_ , h * zoom_);
+      Dims strides = ta->strides();
 
-    int i = 0;
-    for(int y = 0; y < n; y++) {
-      for(int x = 0; x < c; x++) {
-        glBindTexture(GL_TEXTURE_2D, texs_[i]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE,
-                     pixels + y * strides[0] + x * strides[1]);
-        ImGui::Image((void *)(intptr_t)texs_[i], size);
-        i++;
-        if(x < c - 1)
-          ImGui::SameLine();
+      int i = 0;
+      for(int y = 0; y < n; y++) {
+        for(int x = 0; x < c; x++) {
+          glBindTexture(GL_TEXTURE_2D, texs_[i]);
+          glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                       pixels + y * strides[0] + x * strides[1]);
+          ImGui::Image((void *)(intptr_t)texs_[i], size);
+          i++;
+          if(x < c - 1)
+            ImGui::SameLine();
+        }
       }
+    } else {
+
     }
   }
   ImGui::End();
@@ -460,7 +451,7 @@ glfw_error_callback(int error, const char* description)
 
 
 void
-IMUI::loop()
+IMUI::run()
 {
   glfwSetErrorCallback(glfw_error_callback);
   if(!glfwInit()) {
@@ -472,6 +463,7 @@ IMUI::loop()
     fprintf(stderr, "Unable to open window\n");
     exit(1);
   }
+
   glfwMakeContextCurrent(window);
   glfwSwapInterval(1);
 
@@ -485,7 +477,7 @@ IMUI::loop()
 
   ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-  while(run_ && !glfwWindowShouldClose(window)) {
+  while(!glfwWindowShouldClose(window)) {
     handle();
     glfwPollEvents();
 

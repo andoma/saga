@@ -50,7 +50,7 @@ static const int table_xor[12] = {
 
 
 extern int
-minimal_main(int argc, char **argv)
+minimal_main(int argc, char **argv, std::shared_ptr<UI> ui)
 {
   int opt;
 

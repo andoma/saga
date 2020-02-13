@@ -114,7 +114,7 @@ loadOutputTensor(Tensor &t, const LabeledImage *lis)
 
 
 static int
-mnist_main(int argc, char **argv)
+mnist_main(int argc, char **argv, std::shared_ptr<UI> ui)
 {
   argv++;
   argc--;
@@ -165,7 +165,8 @@ mnist_main(int argc, char **argv)
                     for(int j = 0; j < x.dims_[0]; j++) {
                       labels[j] = test_data[i + j].label;
                     }
-                  });
+                  },
+                  ui);
   return 0;
 }
 

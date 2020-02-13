@@ -14,5 +14,6 @@ test_classifier(int argc, char **argv,
                 size_t test_inputs,
                 std::function<void(void)> epoch_begin,
                 std::function<void(Tensor &x, Tensor &dy, size_t i)> load_train,
-                std::function<void(Tensor &x, int *labels, size_t i)> load_test);
+                std::function<void(Tensor &x, int *labels, size_t i)> load_test,
+                std::shared_ptr<UI> ui);
 }

@@ -96,7 +96,7 @@ loadOutputTensor(Tensor &t, const LabeledImage *lis)
 
 
 static int
-cifar_main(int argc, char **argv)
+cifar_main(int argc, char **argv, std::shared_ptr<UI> ui)
 {
   argc--;
   argv++;
@@ -137,7 +137,8 @@ cifar_main(int argc, char **argv)
                     for(int j = 0; j < x.dims_[0]; j++) {
                       labels[j] = test_data[i + j].label;
                     }
-                  });
+                  },
+                  ui);
 
   return 0;
 }
