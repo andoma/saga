@@ -387,6 +387,7 @@ static const struct {
   { "concat",            concat_y },
   { "conv",              conv_y, conv_setup },
   { "dropout",           passthru_y },
+  { "elu",               passthru_y },
   { "fc",                fc_y, fc_setup },
   { "maxpool",           pooling_y },
   { "mul",               passthru_y },

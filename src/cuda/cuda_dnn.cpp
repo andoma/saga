@@ -1291,6 +1291,23 @@ relu_train(CudnnProgram &p, const Node &n)
 }
 
 
+static void
+elu_infer(CudnnProgram &p, const Node &n)
+{
+  p.infer(std::make_shared<CudnnActivationFwd>(p, n, CUDNN_ACTIVATION_ELU,
+                                               n.attributes_.get("alpha", 0.1f)));
+}
+
+static void
+elu_train(CudnnProgram &p, const Node &n)
+{
+  auto f = std::make_shared<CudnnActivationFwd>(p, n, CUDNN_ACTIVATION_ELU,
+                                                n.attributes_.get("alpha", 0.1f));
+  p.train(f);
+  p.bwd(std::make_shared<CudnnActivationBwd>(p, n, f));
+}
+
+
 //------------------------------------------------------------------------
 
 struct CudnnPoolingFwd : public CudnnOperation {
@@ -2504,6 +2521,7 @@ static const struct Operation {
   { "convert",          convert_infer,          convert_train },
   { "batchnorm_relu",   NULL,                   batchnorm_relu_train },
   { "dropout",          NULL,                   dropout_train },
+  { "elu",              elu_infer,              elu_train },
   { "fc",               fc_infer,               fc_train },
   { "maxpool",          maxpool_infer,          maxpool_train },
   { "mul",              mul_infer,              NULL },
