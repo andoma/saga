@@ -429,12 +429,20 @@ CudaTensor::copyFromLocked(Tensor &t)
 
   cudaStreamSynchronize(storage_->ctx_->stream_);
 
-  copy_tensor(storage_->deviceMem(offset_),
-              dims_.size(),
-              &dims_[0],
-              &strides[0],
-              data_type_,
-              t);
+  if(!copy_tensor(storage_->deviceMem(offset_),
+                  dims_.size(),
+                  &dims_[0],
+                  &strides[0],
+                  data_type_,
+                  t)) {
+    fprintf(stderr,
+            "Cuda Tensor copy failed\n"
+            "From: %s\n"
+            "  To: %s\n",
+            t.info().c_str(),
+            info().c_str());
+    abort();
+  }
 }
 
 
