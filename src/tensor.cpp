@@ -607,7 +607,7 @@ copy_tensor_half(uint16_t *dst, TensorAccess *ta, Dims &selem, int rank, const D
 
 
 
-void
+bool
 copy_tensor(void *dst,
             int dst_rank,
             const int *dst_sizes,
@@ -617,7 +617,7 @@ copy_tensor(void *dst,
 {
   auto ta = t.access();
   if(ta == nullptr)
-    return;
+    return false;
 
   int src_rank = t.dims_.size();
   auto src_strides = ta->strides();
@@ -642,7 +642,11 @@ copy_tensor(void *dst,
   for(const auto &d : dis) {
     elements *= d.size;
   }
-  assert(elements == t.elements_);
+
+  if(elements != t.elements_) {
+    return false;
+  }
+
 
   const void *src = ta->data();
 
@@ -665,9 +669,9 @@ copy_tensor(void *dst,
       break;
     default:
       fprintf(stderr, "%s can't handle %s\n", __FUNCTION__, datatype_str(datatype));
-      abort();
+      return false;
     }
-    return;
+    return true;
   }
 
   Dims selem(t.dims_.size(), 0);
@@ -689,9 +693,9 @@ copy_tensor(void *dst,
     break;
   default:
     fprintf(stderr, "%s can't handle %s\n", __FUNCTION__, datatype_str(datatype));
-    abort();
+    return false;
   }
-  return;
+  return true;
 }
 
 
@@ -700,12 +704,20 @@ void
 Tensor::copyFrom(Tensor &t)
 {
   auto dst = access();
-  copy_tensor(dst->data(),
-              dims_.size(),
-              &dims_[0],
-              &dst->strides()[0],
-              data_type_,
-              t);
+  if(!copy_tensor(dst->data(),
+                  dims_.size(),
+                  &dims_[0],
+                  &dst->strides()[0],
+                  data_type_,
+                  t)) {
+    fprintf(stderr,
+            "Tensor copy failed\n"
+            "From: %s\n"
+            "  To: %s\n",
+            t.info().c_str(),
+            info().c_str());
+    abort();
+  }
 }
 
 

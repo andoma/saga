@@ -31,7 +31,7 @@ public:
 };
 
 
-void copy_tensor(void *dst,
+bool copy_tensor(void *dst,
                  int dst_rank,
                  const int *dst_sizes,
                  const int *dst_strides,
