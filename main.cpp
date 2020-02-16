@@ -47,23 +47,20 @@ argthread(void *aux)
 }
 
 
+extern int optind;
 
 int
 main(int argc, char **argv)
 {
   std::shared_ptr<UI> ui;
-  int opt;
+  argv++;
+  argc--;
 
-  while((opt = getopt(argc, argv, "u")) != -1) {
-    switch(opt) {
-    case 'u':
-      ui = createUI();
-      break;
-    }
+  if(argc > 1 && !strcmp(argv[1], "-u")) {
+    ui = createUI();
+    argv++;
+    argc--;
   }
-
-  argv += optind;
-  argc -= optind;
 
   if(argc < 1)
     return usage();
