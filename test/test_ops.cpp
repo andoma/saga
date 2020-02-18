@@ -29,7 +29,7 @@ static const TensorData relu_input = {
 
 static const TensorData relu_output = {
   {1, 4},
-  {-100, 0, 100, 200}
+  {0, 0, 100, 200}
 };
 
 
@@ -85,6 +85,8 @@ test_op(std::shared_ptr<Context> ctx,
   double sse = y->sse(*ref_output);
 
   if(sse > 1e-6) {
+    printf("Test of %s failed sse:%f\n",
+           op, sse);
     for(auto it : inputs) {
       it.second->print(it.first.c_str());
     }
@@ -119,7 +121,6 @@ ops_main(int argc, char **argv, std::shared_ptr<UI> ui)
 
   test_op(ctx, "relu", {{"x", load_tensor(dt, relu_input)}}, {},
           load_tensor(dt, relu_output));
-
 
   return 0;
 }
