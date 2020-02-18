@@ -645,7 +645,7 @@ copy_tensor(void *dst,
 {
   auto ta = t.access();
   if(ta == nullptr)
-    return false;
+    return true;
 
   int src_rank = t.dims_.size();
   auto src_strides = ta->strides();
