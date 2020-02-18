@@ -46,6 +46,34 @@
 
 namespace saga {
 
+
+//------------------------------------------------------------------------
+Dims
+Dims::n(int64_t v) const {
+  Dims d = *this;
+  d[0] = v;
+  return d;
+}
+
+std::vector<int64_t>
+Dims::i64() const
+{
+  std::vector<int64_t> r(size());
+  for(size_t i = 0; i < size(); i++)
+    r[i] = (*this)[i];
+  return r;
+}
+
+size_t
+Dims::elements() const
+{
+  size_t elements = 1;
+  for(auto &d : *this)
+    elements *= d;
+  return elements;
+}
+
+
 //------------------------------------------------------------------------
 
 static double
