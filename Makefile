@@ -58,6 +58,7 @@ SRCS-prog += \
 	test/cifar.cpp \
 	test/minimal.cpp \
 	test/test_classifier.cpp \
+	test/test_ops.cpp \
 
 
 ###########################################
