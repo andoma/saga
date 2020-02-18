@@ -73,11 +73,9 @@ class Tensors;
 class Dims : public std::vector<int> {
   using std::vector<int>::vector;
 public:
-  Dims n(int64_t v) const {
-    Dims d = *this;
-    d[0] = v;
-    return d;
-  }
+  Dims n(int64_t v) const;
+  std::vector<int64_t> i64() const;
+  size_t elements() const;
 };
 
 
