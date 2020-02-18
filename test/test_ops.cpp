@@ -23,13 +23,15 @@ struct TensorData {
 
 
 static const TensorData relu_input = {
-  {1, 4},
-  {-100, 0, 100, 200}
+  {2, 4},
+  {-100, 0, 100, 200,
+   -1000, 0, 1000, 2000}
 };
 
 static const TensorData relu_output = {
-  {1, 4},
-  {0, 0, 100, 200}
+  {2, 4},
+  {0, 0, 100, 200,
+   0, 0, 1000, 2000}
 };
 
 
@@ -69,30 +71,28 @@ test_op(std::shared_ptr<Context> ctx,
   Graph g;
 
   auto n = g.addNode(op, inputs, attributes);
-
-  g.print();
-
   auto p = ctx->createProgram(g, {
       .inference = true,
-      .batch_size = 1,
+      .training = false,
+      .batch_size = ref_output->dims_[0],
       .initial_learning_rate = 1e-3,
       .tensor_layout = TensorLayout::Auto
     });
   auto y = p->resolveTensor(n->y());
-  p->print();
   p->infer();
 
   double sse = y->sse(*ref_output);
 
   if(sse > 1e-6) {
-    printf("Test of %s failed sse:%f\n",
-           op, sse);
+    printf("Test of %s FAILED sse:%f\n", op, sse);
     for(auto it : inputs) {
       it.second->print(it.first.c_str());
     }
     y->print("  Y");
     ref_output->print("REF");
     return 1;
+  } else {
+    printf("Test of %s OK\n", op);
   }
   return 0;
 }
