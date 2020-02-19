@@ -422,7 +422,7 @@ struct DnnlPrimitive : public DnnlOperation {
 };
 
 
-void
+static void __attribute__((unused))
 print_desc(const char *prefix, const dnnl_memory_desc_t *desc)
 {
   char tmp1[512];
@@ -448,11 +448,6 @@ conv_infer(DnnlProgram &p, const Node &n)
   auto w_desc = dnnl_desc_from_tensor(wh, 0, dnnl_format_tag_any);
   auto b_desc = dnnl_desc_from_tensor(bh, 1, dnnl_a);
   auto y_desc = p.dnnl_desc_from_tensor_any(yh);
-
-  print_desc("x", &x_desc);
-  print_desc("w", &w_desc);
-  print_desc("b", &b_desc);
-  print_desc("y", &y_desc);
 
   const int pad = n.attributes_.get("pad", 0);
   const int stride = n.attributes_.get("stride", 1);
@@ -496,9 +491,6 @@ relu_infer(DnnlProgram &p, const Node &n)
 
   auto x = p.lower_tensor_batch(xh);
   auto y = p.lower_tensor(yh, &x->desc_);
-
-  print_desc("x", &x->desc_);
-  print_desc("y", &y->desc_);
 
   dnnl_eltwise_desc_t relu_desc;
   chkDNNL(dnnl_eltwise_forward_desc_init(&relu_desc, dnnl_forward,
@@ -551,8 +543,6 @@ maxpool_infer(DnnlProgram &p, const Node &n)
                                      p.ctx_->engine_, NULL));
 
   auto y = p.lower_tensor(yh, pd, dnnl_query_dst_md);
-  print_desc("x", &x->desc_);
-  print_desc("y", &y->desc_);
 
   std::vector<dnnl_exec_arg_t> args;
   args.push_back({DNNL_ARG_SRC,     x->memory_});
@@ -587,8 +577,6 @@ reshape_infer(DnnlProgram &p, const Node &n)
                                              &dst_desc, p.ctx_->engine_,
                                              NULL));
 
-  print_desc("x", &x->desc_);
-  print_desc("y", &dst_desc);
 
   std::vector<dnnl_exec_arg_t> args;
   args.push_back({DNNL_ARG_SRC,     x->memory_});
@@ -642,13 +630,6 @@ fc_infer(DnnlProgram &p, const Node &n)
   auto w = p.lower_tensor(wh);
   auto b = bh ? p.lower_tensor(bh) : nullptr;
   auto y = p.lower_tensor_batch(yh);
-
-  print_desc("x", &x->desc_);
-  print_desc("w", &w->desc_);
-
-  if(b)
-    print_desc("b", &b->desc_);
-  print_desc("y", &y->desc_);
 
   dnnl_inner_product_desc_t desc;
   chkDNNL(dnnl_inner_product_forward_desc_init(&desc,
@@ -720,8 +701,6 @@ DnnlContext::createProgram(const Graph &g,
     for(const auto &n : g.nodes_) {
       auto op = find_operation(*n);
       if(op != NULL && op->create_infer) {
-        printf("Creating inference for %s\n", n->type_.c_str());
-        n->print();
         op->create_infer(*p, *n);
       } else {
         fprintf(stderr, "Unable to create inference operation for node %s\n",

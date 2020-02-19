@@ -259,7 +259,7 @@ DnnlTensor::slice(const Dims &offset, const Dims &size)
 void
 DnnlTensor::copyFromLocked(Tensor &t)
 {
-  printf("Copy %s\n  To %s\n", t.info().c_str(), info().c_str());
+  //  printf("Copy %s\n  To %s\n", t.info().c_str(), info().c_str());
   auto ta = t.access();
   if(ta == NULL)
     return;
