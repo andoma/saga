@@ -13,7 +13,7 @@
 
 using namespace saga;
 
-
+static int g_verbose = 0;
 
 
 struct TensorData {
@@ -548,6 +548,9 @@ test_op(std::shared_ptr<Context> ctx,
   auto y = p->resolveTensor(n->y());
   p->infer();
 
+  if(g_verbose)
+    p->print();
+
   if(!ref_output) {
     printf("Test of %s - No reference\n", op);
     for(auto it : inputs) {
@@ -580,13 +583,15 @@ extern int
 ops_main(int argc, char **argv)
 {
   int opt;
-
   auto dt = Tensor::DataType::FLOAT;
 
-  while((opt = getopt(argc, argv, "h")) != -1) {
+  while((opt = getopt(argc, argv, "hv")) != -1) {
     switch(opt) {
     case 'h':
       dt = Tensor::DataType::HALF;
+      break;
+    case 'v':
+      g_verbose++;
       break;
     }
   }
