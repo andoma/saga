@@ -570,48 +570,6 @@ reshape_infer(DnnlProgram &p, const Node &n)
 }
 
 //------------------------------------------------------------------------
-#if 0
-static void
-fc_infer(DnnlProgram &p, const Node &n)
-{
-  auto xh = n.inputs_.get("x");
-  auto wh = n.inputs_.get("w");
-  auto bh = n.inputs_.get("b");
-  auto yh = n.outputs_.get("y");
-
-  auto x_desc = p.dnnl_desc_from_tensor_any(xh);
-  auto w_desc = dnnl_desc_from_tensor(wh, 0, dnnl_format_tag_any);
-  auto b_desc = dnnl_desc_from_tensor(bh, 0, dnnl_ab);
-  auto y_desc = p.dnnl_desc_from_tensor_any(yh);
-
-  dnnl_matmul_desc_t desc;
-  chkDNNL(dnnl_matmul_desc_init(&desc,
-                                &x_desc,
-                                &w_desc, &b_desc, &y_desc));
-
-  dnnl_primitive_desc_t pd;
-  chkDNNL(dnnl_primitive_desc_create(&pd, &desc, NULL,
-                                     p.ctx_->engine_, NULL));
-
-  auto x = p.lower_tensor(xh, pd, dnnl_query_src_md);
-  auto w = p.lower_tensor(wh, pd, dnnl_query_weights_md);
-  auto y = p.lower_tensor(yh, pd, dnnl_query_dst_md);
-  auto b = p.lower_tensor(bh, &b_desc);
-
-  print_desc("x", &x->desc_);
-  print_desc("w", &w->desc_);
-  print_desc("b", &b->desc_);
-  print_desc("y", &y->desc_);
-
-  std::vector<dnnl_exec_arg_t> args;
-  args.push_back({DNNL_ARG_SRC,     x->memory_});
-  args.push_back({DNNL_ARG_WEIGHTS, w->memory_});
-  args.push_back({DNNL_ARG_BIAS,    b->memory_});
-  args.push_back({DNNL_ARG_DST,     y->memory_});
-
-  p.infer(std::make_shared<DnnlPrimitive>(pd, args));
-}
-#endif
 
 
 static void
@@ -621,30 +579,47 @@ fc_infer(DnnlProgram &p, const Node &n)
   auto wh = n.inputs_.get("w");
   auto bh = n.inputs_.get("b");
   auto yh = n.outputs_.get("y");
+
+  bool transW = n.attributes_.get("transW", false);
 
   dnnl_memory_desc_t w_desc;
-  dnnl_dims_t w_dims = {wh->dims_[1], wh->dims_[0]};
-  chkDNNL(dnnl_memory_desc_init_by_tag(&w_desc, 2,
-                                       w_dims,
-                                       dnnlDataType_from_dataType(wh->data_type_),
-                                       dnnl_ba));
+  if(transW) {
+    dnnl_dims_t w_dims = {wh->dims_[0], wh->dims_[1]};
+    chkDNNL(dnnl_memory_desc_init_by_tag(&w_desc, 2,
+                                         w_dims,
+                                         dnnlDataType_from_dataType(wh->data_type_),
+                                         dnnl_ab));
 
-  dnnl_memory_desc_t b_desc;
-  dnnl_dims_t b_dims = {bh->dims_[1]};
-  chkDNNL(dnnl_memory_desc_init_by_tag(&b_desc, 1,
-                                       b_dims,
-                                       dnnlDataType_from_dataType(bh->data_type_),
-                                       dnnl_a));
+  } else {
+    dnnl_dims_t w_dims = {wh->dims_[1], wh->dims_[0]};
+    chkDNNL(dnnl_memory_desc_init_by_tag(&w_desc, 2,
+                                         w_dims,
+                                         dnnlDataType_from_dataType(wh->data_type_),
+                                         dnnl_ba));
+  }
+
+  dnnl_memory_desc_t *b_desc = NULL, b_desc0;
+
+  if(bh) {
+    dnnl_dims_t b_dims = {yh->dims_[1]};
+    chkDNNL(dnnl_memory_desc_init_by_tag(&b_desc0, 1,
+                                         b_dims,
+                                         dnnlDataType_from_dataType(bh->data_type_),
+                                         dnnl_a));
+    b_desc = &b_desc0;
+  }
 
 
   auto x = p.lower_tensor_batch(xh);
   auto w = p.lower_tensor(wh);
-  auto b = p.lower_tensor(bh);
+  auto b = bh ? p.lower_tensor(bh) : nullptr;
   auto y = p.lower_tensor_batch(yh);
 
   print_desc("x", &x->desc_);
   print_desc("w", &w->desc_);
-  print_desc("b", &b->desc_);
+
+  if(b)
+    print_desc("b", &b->desc_);
   print_desc("y", &y->desc_);
 
   dnnl_inner_product_desc_t desc;
@@ -652,7 +627,7 @@ fc_infer(DnnlProgram &p, const Node &n)
                                                dnnl_forward_inference,
                                                &x->desc_,
                                                &w_desc,
-                                               &b_desc,
+                                               b_desc,
                                                &y->desc_));
 
   dnnl_primitive_desc_t pd;
@@ -662,8 +637,9 @@ fc_infer(DnnlProgram &p, const Node &n)
   std::vector<dnnl_exec_arg_t> args;
   args.push_back({DNNL_ARG_SRC,     x->memory_});
   args.push_back({DNNL_ARG_WEIGHTS, w->memory_});
-  args.push_back({DNNL_ARG_BIAS,    b->memory_});
   args.push_back({DNNL_ARG_DST,     y->memory_});
+  if(b)
+    args.push_back({DNNL_ARG_BIAS,    b->memory_});
 
   p.infer(std::make_shared<DnnlPrimitive>(pd, args));
 }
