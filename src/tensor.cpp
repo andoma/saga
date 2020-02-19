@@ -773,7 +773,7 @@ Tensor::sse(Tensor &t)
 
     for(ssize_t j = c_a.size() - 1; j >= 0; j--) {
       c_a[j]++;
-      if(c_a[j] == dims_[j]) {
+      if(c_a[j] == t.dims_[j]) {
         c_a[j] = 0;
       } else {
         break;
@@ -782,7 +782,7 @@ Tensor::sse(Tensor &t)
 
     for(ssize_t j = c_b.size() - 1; j >= 0; j--) {
       c_b[j]++;
-      if(c_b[j] == t.dims_[j]) {
+      if(c_b[j] == dims_[j]) {
         c_b[j] = 0;
       } else {
         break;
