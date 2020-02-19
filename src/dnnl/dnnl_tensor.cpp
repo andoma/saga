@@ -24,7 +24,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-
+#include <string.h>
 #include <sstream>
 #include "dnnl_tensor.h"
 #include "dnnl_debug.h"
@@ -85,7 +85,7 @@ public:
     for(; i < element.size(); i++)
       pos[i] = element[i];
 
-    for(; i < desc_.ndims; i++)
+    for(; i < (size_t)desc_.ndims; i++)
       pos[i] = 0;
 
     dnnl_dim_t offset = desc_.offset0;
@@ -108,7 +108,7 @@ public:
       }
     }
 
-    for(size_t d = 0; d < desc_.ndims; d++) {
+    for(int d = 0; d < desc_.ndims; d++) {
       offset += pos[d] * blk.strides[d];
     }
     return offset;
@@ -282,7 +282,7 @@ DnnlTensor::copyFromLocked(Tensor &t)
   int64_t *src_strides = &src_strides_vec[0];
   int64_t *src_dims    = &src_dims_vec[0];
 
-  int src_rank = t.dims_.size();
+  size_t src_rank = t.dims_.size();
   while(src_rank > dims_.size() && src_dims[0] == 1) {
     src_dims++;
     src_strides++;

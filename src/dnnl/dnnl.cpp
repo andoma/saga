@@ -25,6 +25,8 @@
  */
 
 #include <unistd.h>
+#include <string.h>
+
 #include "context.h"
 
 #include "dnnl_common.h"
@@ -316,10 +318,10 @@ dnnl_desc_from_tensor(std::shared_ptr<Tensor> t, size_t dimensions,
   assert(t->dims_.size() <= DNNL_MAX_NDIMS);
 
   int j = 0;
-  int k = 0;
+  size_t k = 0;
   if(dimensions) {
     if(dimensions > t->dims_.size()) {
-      for(int i = 0; i < dimensions - t->dims_.size(); i++)
+      for(size_t i = 0; i < dimensions - t->dims_.size(); i++)
         dims[j++] = 1;
     } else if(dimensions < t->dims_.size()) {
       k = t->dims_.size() - dimensions;
@@ -345,7 +347,7 @@ DnnlProgram::dnnl_desc_from_tensor_any(std::shared_ptr<Tensor> t)
 
   assert(t->dims_.size() <= DNNL_MAX_NDIMS);
 
-  for(int i = 0; i < t->dims_.size(); i++)
+  for(size_t i = 0; i < t->dims_.size(); i++)
     dims[i] = t->dims_[i];
 
   dims[0] = batch_size_;
@@ -365,7 +367,7 @@ DnnlProgram::dnnl_desc_from_tensor(std::shared_ptr<Tensor> t)
 
   assert(t->dims_.size() <= DNNL_MAX_NDIMS);
 
-  for(int i = 0; i < t->dims_.size(); i++)
+  for(size_t i = 0; i < t->dims_.size(); i++)
     dims[i] = t->dims_[i];
 
   dims[0] = batch_size_;
