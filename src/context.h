@@ -15,6 +15,4 @@ enum class ContextType {
 void registerContextFactory(ContextType type,
                             std::shared_ptr<Context> (*fn)(void));
 
-std::vector<std::shared_ptr<Context> (*)(void)> allContextFactories();
-
 };

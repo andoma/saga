@@ -25,7 +25,8 @@ NullContext::createProgram(const Graph &g,
 
 static std::map<ContextType, std::shared_ptr<Context> (*)(void)> allfactories;
 
-std::shared_ptr<Context> createContext()
+std::shared_ptr<Context>
+createContext()
 {
   auto it = allfactories.begin();
   if(it == allfactories.end()) {
@@ -35,23 +36,23 @@ std::shared_ptr<Context> createContext()
 }
 
 
+std::vector<std::shared_ptr<Context>>
+createContexts()
+{
+  std::vector<std::shared_ptr<Context>> r;
+
+  for(const auto &i : allfactories) {
+    r.push_back(i.second());
+  }
+  return r;
+}
+
+
 void
 registerContextFactory(ContextType type,
                        std::shared_ptr<Context> (*fn)(void))
 {
   allfactories[type] = fn;
 }
-
-
-std::vector<std::shared_ptr<Context> (*)(void)> allContextFactories()
-{
-  std::vector<std::shared_ptr<Context> (*)(void)> r;
-
-  for(const auto &i : allfactories) {
-    r.push_back(i.second);
-  }
-  return r;
-}
-
 
 }

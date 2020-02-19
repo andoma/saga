@@ -1,3 +1,4 @@
+#include <string.h>
 #include <limits.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -8,6 +9,10 @@
 #include "cli.h"
 
 using namespace saga;
+
+
+
+
 
 
 static int
@@ -150,3 +155,116 @@ SAGA_CLI_CMD("onnx",
              "onnx [OPTIONS ...] [PATH]",
              "Load onnx model zoo",
              test_onnx_main);
+
+
+
+static int
+test_tandem_onnx_main(int argc, char **argv)
+{
+  if(argc < 1) {
+    fprintf(stderr, "No path to model\n");
+    return 1;
+  }
+  const char *model_path = argv[1];
+  char dirtmp[PATH_MAX];
+  snprintf(dirtmp, sizeof(dirtmp), "%s", model_path);
+  char *base_path = dirname(dirtmp);
+
+  auto g = Graph::load(model_path);
+  if(g == NULL) {
+    fprintf(stderr, "Failed to load model graph %s\n", model_path);
+    return 1;
+  }
+
+  g->print();
+  auto ctxs = createContexts();
+
+  if(ctxs.size() < 2) {
+    fprintf(stderr, "No point in tandem mode with only a ingle runtime type\n");
+    return 1;
+  }
+
+  char input_path[PATH_MAX];
+  snprintf(input_path, sizeof(input_path), "%s/test_data_set_%d/input_0.pb",
+           base_path, 0);
+
+  if(access(input_path, R_OK)) {
+    fprintf(stderr, "Unable to find %s -- %s", input_path, strerror(errno));
+    return 1;
+  }
+
+  auto loaded_input = Tensor::loadProtoBuf(input_path);
+  if(!loaded_input) {
+    fprintf(stderr, "Failed to load input %s\n", input_path);
+    return 1;
+  }
+
+  char output_path[PATH_MAX];
+  snprintf(output_path, sizeof(output_path),
+           "%s/test_data_set_%d/output_0.pb",
+           base_path, 0);
+  auto loaded_output = Tensor::loadProtoBuf(output_path);
+  if(!loaded_output) {
+    fprintf(stderr, "Failed to load output %s\n", output_path);
+    return 1;
+  }
+
+  std::vector<std::shared_ptr<Program>> ps;
+  for(auto ctx : ctxs) {
+    auto p = ctx->createProgram(*g, {
+        .inference = true,
+        .training = false,
+        .batch_size = 1,
+        .initial_learning_rate = 0,
+        .tensor_layout = TensorLayout::Auto
+          });
+
+    auto input = p->resolveTensor(*g->inputs_.begin());
+    input->copyFrom(*loaded_input);
+    p->infer();
+    ps.push_back(p);
+  }
+
+
+  printf("Comparing tensors\n");
+
+  for(auto &n : g->nodes_) {
+    n->print();
+
+    for(auto &i : n->inputs_) {
+      auto t0 = ps[0]->resolveTensor(i.second);
+      auto t1 = ps[1]->resolveTensor(i.second);
+      if(!t0 || !t1)
+        continue;
+      double sse = t0->sse(*t1);
+
+      printf("%-3s : %f\n", i.first.c_str(), sse);
+
+      printf(" p0 : %s\n", t0->info().c_str());
+      printf(" p1 : %s\n", t1->info().c_str());
+      if(sse > 1) {
+        //        t0->print("p0");
+        //        t1->print("p1");
+        return 1;
+      }
+    }
+    for(auto &i : n->outputs_) {
+      auto t0 = ps[0]->resolveTensor(i.second);
+      auto t1 = ps[1]->resolveTensor(i.second);
+      if(!t0 || !t1)
+        continue;
+
+      printf("%s: %f\n",
+             i.first.c_str(),
+             t0->sse(*t1));
+    }
+  }
+  return 0;
+}
+
+
+
+SAGA_CLI_CMD("tandem-onnx",
+             "tandem-onnx <PATH>",
+             "Load onnx model and run on all context types",
+             test_tandem_onnx_main);
