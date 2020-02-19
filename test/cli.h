@@ -13,9 +13,12 @@ extern std::vector<CliCmd> clicmds;
 
 };
 
+#define SAGA_CLI_CMD_GLUE(x, y) x ## y
+#define SAGA_CLI_CMD_GLUE2(x, y) SAGA_CLI_CMD_GLUE(x, y)
 
-#define SAGA_CLI_CMD(cmd, argpattern, desc, fn)                     \
-  static void init_cli_cmd(void) __attribute__((constructor));      \
-  static void init_cli_cmd(void) {                                  \
-    clicmds.push_back(CliCmd{cmd, argpattern, desc, fn});           \
+#define SAGA_CLI_CMD(cmd, argpattern, desc, fn)                        \
+  static void  __attribute__((constructor))                            \
+  SAGA_CLI_CMD_GLUE2(init_cli_cmd, __COUNTER__)(void) {                \
+    clicmds.push_back(CliCmd{cmd, argpattern, desc, fn});              \
   }
+

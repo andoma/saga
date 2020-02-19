@@ -1,4 +1,6 @@
+#include <map>
 #include "saga.h"
+#include "context.h"
 
 
 namespace saga {
@@ -21,20 +23,34 @@ NullContext::createProgram(const Graph &g,
   return nullptr;
 }
 
-
-static std::shared_ptr<Context> (*createContextFn)(void);
+static std::map<ContextType, std::shared_ptr<Context> (*)(void)> allfactories;
 
 std::shared_ptr<Context> createContext()
 {
-  if(createContextFn)
-    return createContextFn();
-  return std::make_shared<NullContext>();
+  auto it = allfactories.begin();
+  if(it == allfactories.end()) {
+    return std::make_shared<NullContext>();
+  }
+  return it->second();
 }
 
+
 void
-registerContextFactory(std::shared_ptr<Context> (*fn)(void))
+registerContextFactory(ContextType type,
+                       std::shared_ptr<Context> (*fn)(void))
 {
-  createContextFn = fn;
+  allfactories[type] = fn;
+}
+
+
+std::vector<std::shared_ptr<Context> (*)(void)> allContextFactories()
+{
+  std::vector<std::shared_ptr<Context> (*)(void)> r;
+
+  for(const auto &i : allfactories) {
+    r.push_back(i.second);
+  }
+  return r;
 }
 
 

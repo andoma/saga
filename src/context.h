@@ -1,10 +1,20 @@
 // -*-c++-*-
 
 #include <memory>
-
+#include <vector>
 namespace saga {
+
 class Context;
 
-void registerContextFactory(std::shared_ptr<Context> (*fn)(void));
+// These are by priority, highest to lowest
+enum class ContextType {
+  CUDA,
+  DNNL,
+};
+
+void registerContextFactory(ContextType type,
+                            std::shared_ptr<Context> (*fn)(void));
+
+std::vector<std::shared_ptr<Context> (*)(void)> allContextFactories();
 
 };

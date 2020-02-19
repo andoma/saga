@@ -51,18 +51,18 @@ DnnlContext::~DnnlContext()
 }
 
 
-static
-std::shared_ptr<Context> createDnnlContext()
+static std::shared_ptr<Context>
+createDnnlContext()
 {
   return std::make_shared<DnnlContext>();
 }
 
 
 
-static void registerDnnlContext(void) __attribute__((constructor(110)));
-static void registerDnnlContext(void)
+static void  __attribute__((constructor))
+registerDnnlContext(void)
 {
-  registerContextFactory(&createDnnlContext);
+  registerContextFactory(ContextType::DNNL, &createDnnlContext);
 }
 
 

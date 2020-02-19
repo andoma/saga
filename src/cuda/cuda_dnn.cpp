@@ -75,12 +75,12 @@ std::shared_ptr<Context> createCudnnContext()
 }
 
 
-static void registerCudnnContext(void) __attribute__((constructor(200)));
-static void registerCudnnContext(void)
+static void __attribute__((constructor))
+registerCudnnContext(void)
 {
   if(getenv("SAGA_DISABLE_CUDA"))
     return;
-  registerContextFactory(&createCudnnContext);
+  registerContextFactory(ContextType::CUDA, &createCudnnContext);
 }
 
 
