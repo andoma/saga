@@ -7,7 +7,7 @@ CUDA_VERSION ?= 10.2
 
 PKG_CONFIG ?= pkg-config
 
-CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O)
+CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O) -Isrc
 CXXFLAGS += --std=c++17 -march=native -fno-exceptions
 CXXFLAGS += -Wno-deprecated-declarations
 
