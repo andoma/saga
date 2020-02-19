@@ -209,7 +209,9 @@ DnnlProgram::train()
 void
 DnnlProgram::print() const
 {
-  fprintf(stderr, "%s not implemented\n", __FUNCTION__);
+  for(const auto &op : infer_operations_) {
+    op->print();
+  }
 }
 
 void
@@ -397,18 +399,30 @@ struct DnnlPrimitive : public DnnlOperation {
 
   DnnlPrimitive(dnnl_primitive_desc_t desc,
                 const std::vector<dnnl_exec_arg_t> &args)
-    : args_(args)
+    : desc_(desc)
+    , args_(args)
   {
-    chkDNNL(dnnl_primitive_create(&prim_, desc));
+    chkDNNL(dnnl_primitive_create(&prim_, desc_));
   }
 
   ~DnnlPrimitive()
   {
     chkDNNL(dnnl_primitive_destroy(prim_));
+    chkDNNL(dnnl_primitive_desc_destroy(desc_));
   }
 
   void print() const {
-    printf("%s not implemented\n", __FUNCTION__);
+
+    dnnl_primitive_kind_t prim_kind = dnnl_undefined_primitive;
+    dnnl_prop_kind_t prop_kind = dnnl_prop_kind_undef;
+    const char *impl_info = "?";
+    dnnl_primitive_desc_query(desc_, dnnl_query_primitive_kind, 0, &prim_kind);
+    dnnl_primitive_desc_query(desc_, dnnl_query_prop_kind, 0, &prop_kind);
+    dnnl_primitive_desc_query(desc_, dnnl_query_impl_info_str, 0, &impl_info);
+    printf("%-20s %-20s %-20s\n",
+           dnnl_prim_kind2str(prim_kind),
+           dnnl_prop_kind2str(prop_kind),
+           impl_info);
   }
 
 
@@ -417,6 +431,7 @@ struct DnnlPrimitive : public DnnlOperation {
                                    args_.size(), &args_[0]));
   }
 
+  dnnl_primitive_desc_t desc_;
   dnnl_primitive_t prim_;
   std::vector<dnnl_exec_arg_t> args_;
 };
