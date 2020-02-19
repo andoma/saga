@@ -527,7 +527,7 @@ relu_infer(DnnlProgram &p, const Node &n)
 //------------------------------------------------------------------------
 
 static void
-maxpool_infer(DnnlProgram &p, const Node &n)
+pooling_infer(DnnlProgram &p, const Node &n, dnnl_alg_kind_t mode)
 {
   auto xh = n.inputs_.get("x");
   auto yh = n.outputs_.get("y");
@@ -549,7 +549,7 @@ maxpool_infer(DnnlProgram &p, const Node &n)
 
   dnnl_pooling_desc_t desc;
   chkDNNL(dnnl_pooling_forward_desc_init(&desc, dnnl_forward_inference,
-                                         dnnl_pooling_max,
+                                         mode,
                                          &x->desc_, &y_desc,
                                          strides, kernel, padding, NULL));
 
@@ -565,6 +565,19 @@ maxpool_infer(DnnlProgram &p, const Node &n)
 
   p.infer(std::make_shared<DnnlPrimitive>(pd, args));
 }
+
+static void
+maxpool_infer(DnnlProgram &p, const Node &n)
+{
+  pooling_infer(p, n, dnnl_pooling_max);
+}
+
+static void
+avgpool_infer(DnnlProgram &p, const Node &n)
+{
+  pooling_infer(p, n, dnnl_pooling_avg_include_padding);
+}
+
 
 //------------------------------------------------------------------------
 
@@ -722,6 +735,7 @@ static const struct Operation {
   { "fc",               fc_infer},
   { "dropout",          reshape_infer},
   { "concat",           concat_infer},
+  { "avgpool",          avgpool_infer},
 };
 
 static const Operation *
