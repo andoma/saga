@@ -324,5 +324,11 @@ DnnlTensor::copyFromLocked(Tensor &t)
 }
 
 
+void
+DnnlTensor::copyFrom(Tensor &t)
+{
+  // XXX: Add locking
+  copyFromLocked(t);
+}
 
 }

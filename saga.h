@@ -140,7 +140,7 @@ public:
     return nullptr;
   }
 
-  void copyFrom(Tensor &t);
+  virtual void copyFrom(Tensor &t);
 
   double sse(Tensor &t);
 

@@ -54,6 +54,8 @@ public:
     return grad_;
   }
 
+  void copyFrom(Tensor &t) override;
+
   void *deviceMem() const;
 
   std::shared_ptr<DnnlTensor> makeGrad();
