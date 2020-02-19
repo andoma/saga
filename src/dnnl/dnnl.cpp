@@ -653,6 +653,44 @@ fc_infer(DnnlProgram &p, const Node &n)
   p.infer(std::make_shared<DnnlPrimitive>(pd, args));
 }
 
+//------------------------------------------------------------------------
+
+static void
+concat_infer(DnnlProgram &p, const Node &n)
+{
+  const int axis = 1;
+
+  auto xhv = n.inputs_.getv("x");
+  auto yh = n.outputs_.get("y");
+  auto y_desc = p.dnnl_desc_from_tensor_any(yh);
+
+  dnnl_memory_desc_t src_descs[xhv.size()];
+  std::shared_ptr<DnnlTensor> xv[xhv.size()];
+
+  for(size_t i = 0; i < xhv.size(); i++) {
+    xv[i] = p.lower_tensor_batch(xhv[i]);
+    src_descs[i] = xv[i]->desc_;
+  }
+
+  dnnl_primitive_desc_t pd;
+  chkDNNL(dnnl_concat_primitive_desc_create(&pd, &y_desc, xhv.size(),
+                                            axis, src_descs, NULL,
+                                            p.ctx_->engine_));
+
+  std::vector<dnnl_exec_arg_t> args;
+
+  auto y = p.lower_tensor(yh, pd, dnnl_query_dst_md);
+
+  args.push_back({DNNL_ARG_DST, y->memory_});
+  for(size_t i = 0; i < xhv.size(); i++) {
+    args.push_back({DNNL_ARG_MULTIPLE_SRC + (int)i, xv[i]->memory_});
+  }
+
+  p.infer(std::make_shared<DnnlPrimitive>(pd, args));
+
+}
+
+
 
 
 //------------------------------------------------------------------------
@@ -668,6 +706,7 @@ static const struct Operation {
   { "reshape",          reshape_infer},
   { "fc",               fc_infer},
   { "dropout",          reshape_infer},
+  { "concat",           concat_infer},
 };
 
 static const Operation *
