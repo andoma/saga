@@ -2065,6 +2065,7 @@ concat_transform(CudnnProgram &p, const Node &n)
     auto x = std::make_shared<CudaTensor>(y, xh->dims_.n(p.batch_size_),
                                           element_offset,
                                           xh->namePostfix("alias"));
+    x->copyFromLocked(*xh);
     p.tensors_[xh] = x;
     x->grad_ = std::make_shared<CudaTensor>(dy, xh->dims_.n(p.batch_size_),
                                             element_offset,
