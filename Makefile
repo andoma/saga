@@ -1,4 +1,6 @@
-O=build
+-include local.mk
+
+O ?= build
 
 PROG=saga
 LIB=libsaga.a
@@ -19,6 +21,20 @@ SRCS-lib += \
 	src/graph.cpp \
 	src/node.cpp \
 	src/context.cpp \
+
+
+###########################################
+# Dnnl
+
+HAVE_DNNL ?= no
+
+SRCS-lib-$(HAVE_DNNL) += \
+	src/dnnl/dnnl.cpp \
+	src/dnnl/dnnl_tensor.cpp \
+
+
+CPPFLAGS-$(HAVE_DNNL) += -I${DNNL_PATH}/include
+LDFLAGS-$(HAVE_DNNL)  += -L${DNNL_PATH}/lib -ldnnl
 
 ###########################################
 # Cuda
