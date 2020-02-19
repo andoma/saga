@@ -517,6 +517,61 @@ static const TensorData concat_output = {
   }
 };
 
+// -----------------------------------------------
+
+static const TensorData batchnorm_input_x = {
+  {2, 2, 2, 2},
+  {
+    -0.407, -0.437, -0.418, -0.102, -0.180,  0.194,  0.365,  0.431,
+    0.353, -0.013, -0.275,  0.462, -0.402,  0.188, -0.339,  0.172,
+  }
+};
+
+static const TensorData batchnorm_input_b = {
+  {2},
+  {
+    -0.446,  0.042
+  }
+};
+
+static const TensorData batchnorm_input_s = {
+  {2},
+  {
+    0.381,  0.053
+  }
+};
+
+static const TensorData batchnorm_input_m = {
+  {2},
+  {
+    0.359, 0.383
+  }
+};
+
+static const TensorData batchnorm_input_v = {
+  {2},
+  {
+    0.314, 0.324
+  }
+};
+
+
+static const TensorData batchnorm_output = {
+  {2, 2, 2, 2},
+  {
+    -0.966813, -0.987211,
+    -0.974292, -0.759440,
+    -0.010421,  0.024402,
+    0.040324 , 0.046469,
+    -0.450080, -0.698928,
+    -0.877065, -0.375969,
+    -0.031091,  0.023844,
+    -0.025225,  0.022354
+  }
+};
+
+// -----------------------------------------------
+
 
 static std::shared_ptr<Tensor>
 load_tensor(Tensor::DataType dt, const TensorData &td)
@@ -688,6 +743,15 @@ ops_main(int argc, char **argv)
       {"x1", load_tensor(dt, concat_input_x1)},
         }, {},
     load_tensor(dt, concat_output));
+
+  r |= test_op(ctx, "batchnorm", {
+      {"x", load_tensor(dt, batchnorm_input_x)},
+      {"s", load_tensor(dt, batchnorm_input_s)},
+      {"b", load_tensor(dt, batchnorm_input_b)},
+      {"m", load_tensor(dt, batchnorm_input_m)},
+      {"v", load_tensor(dt, batchnorm_input_v)},
+        }, {{"epsilon", 5}},
+    load_tensor(dt, batchnorm_output));
 
   return r;
 }
