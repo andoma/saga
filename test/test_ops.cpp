@@ -240,7 +240,7 @@ static const TensorData conv_output = {
 };
 
 // -----------------------------------------------
-static const TensorData maxpool_input = {
+static const TensorData pooling_input = {
   {2, 2, 8, 8},
   {
 -0.331, -0.066,  0.420,  0.041, -0.213, -0.424,  0.443,  0.329,
@@ -300,13 +300,38 @@ static const TensorData maxpool_output = {
   }
 };
 
-
-
-
 static const TensorData maxpool_output_global = {
   {2, 2, 1, 1},
   { 0.498000, 0.499000, 0.487000,  0.491000
   }
+};
+
+
+static const TensorData avgpool_output = {
+  {2, 2, 4, 4},
+  {
+    -0.254750,  0.129250,  0.022000,  0.037500,
+    -0.143000, -0.046000, -0.042500, -0.061750,
+    0.086000,  0.212750,  0.041000,  0.186250,
+    -0.091750,  0.097500,  0.024500, -0.222500,
+    -0.047750, -0.255250,  0.167000,  0.202750,
+    -0.017500, -0.077000,  0.048500,  0.119000,
+    -0.068750, -0.034000,  0.063500,  0.095750,
+    0.074250, -0.215500, -0.101250,  0.196000,
+    -0.034750, -0.228250,  0.029000,  0.152500,
+    -0.274750, -0.065750,  0.033250,  0.152750,
+    0.051000,  0.318250,  0.266250, -0.006250,
+    -0.209250,  0.057000, -0.066750, -0.131750,
+    0.198750, -0.137500,  0.108000,  0.044750,
+    -0.032500,  0.036750, -0.011000,  0.201000,
+    0.152250, -0.422000, -0.063500, -0.074250,
+    -0.417750, -0.047750, -0.167500, -0.350250,
+  }
+};
+
+static const TensorData avgpool_output_global = {
+  {2, 2, 1, 1},
+  { -0.001594, 0.009359, 0.002656, -0.061406}
 };
 
 
@@ -613,14 +638,24 @@ ops_main(int argc, char **argv)
     load_tensor(dt, conv_output));
 
   r |= test_op(ctx, "maxpool", {
-      {"x", load_tensor(dt, maxpool_input)},
+      {"x", load_tensor(dt, pooling_input)},
         }, {{"size", 2}, {"stride", 2}},
     load_tensor(dt, maxpool_output));
 
   r |= test_op(ctx, "maxpool", {
-      {"x", load_tensor(dt, maxpool_input)},
+      {"x", load_tensor(dt, pooling_input)},
         }, {{"global", true}},
     load_tensor(dt, maxpool_output_global));
+
+  r |= test_op(ctx, "avgpool", {
+      {"x", load_tensor(dt, pooling_input)},
+        }, {{"size", 2}, {"stride", 2}},
+    load_tensor(dt, avgpool_output));
+
+  r |= test_op(ctx, "avgpool", {
+      {"x", load_tensor(dt, pooling_input)},
+        }, {{"global", true}},
+    load_tensor(dt, avgpool_output_global));
 
   r |= test_op(ctx, "fc", {
       {"x", load_tensor(dt, fc1_input_x)},
