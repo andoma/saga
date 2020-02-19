@@ -347,6 +347,10 @@ DnnlProgram::dnnl_desc_from_tensor_any(std::shared_ptr<Tensor> t)
   dnnl_memory_desc_t desc;
   dnnl_dims_t dims;
 
+  auto it = tensors_.find(t);
+  if(it != tensors_.end()) {
+    return it->second->desc_;
+  }
   assert(t->dims_.size() <= DNNL_MAX_NDIMS);
 
   for(size_t i = 0; i < t->dims_.size(); i++)
