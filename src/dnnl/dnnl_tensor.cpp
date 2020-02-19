@@ -116,12 +116,18 @@ public:
 
   virtual double get(const Dims &element) {
     if(!sync_) {
+      chkDNNL(dnnl_stream_wait(storage_->ctx_->stream_));
       sync_ = true;
     }
     return storage_->get(offsetForElement(element));
   };
 
   virtual void set(const Dims &element, double value) {
+    if(!sync_) {
+      chkDNNL(dnnl_stream_wait(storage_->ctx_->stream_));
+      sync_ = true;
+    }
+
     storage_->set(offsetForElement(element), value);
   }
 
