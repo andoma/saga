@@ -397,6 +397,10 @@ test_classifier(int argc, char **argv,
     }
   }
 
+  printf("Test classifer: DataType:%s BatchSize:%d\n",
+         dt == Tensor::DataType::HALF ? "fp16" : "fp32",
+         batch_size);
+
   argc -= optind;
   argv += optind;
 
