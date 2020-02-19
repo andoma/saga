@@ -566,7 +566,35 @@ maxpool_infer(DnnlProgram &p, const Node &n)
 static void
 reshape_infer(DnnlProgram &p, const Node &n)
 {
-  printf("%s not implemented\n", __FUNCTION__);
+  auto xh = n.inputs_.get("x");
+  auto yh = n.outputs_.get("y");
+
+  auto x = p.lower_tensor_batch(xh);
+  auto y = p.lower_tensor_batch(yh);
+
+  dnnl_memory_desc_t dst_desc;
+
+  dnnl_format_tag_t ft = (dnnl_format_tag_t)(dnnl_a + x->dims_.size() - 1);
+
+  chkDNNL(dnnl_memory_desc_init_by_tag(&dst_desc, x->dims_.size(),
+                                       &x->dims_.i64()[0],
+                                       dnnlDataType_from_dataType(x->data_type_),
+                                       ft));
+
+  dnnl_primitive_desc_t pd;
+  chkDNNL(dnnl_reorder_primitive_desc_create(&pd,
+                                             &x->desc_, p.ctx_->engine_,
+                                             &dst_desc, p.ctx_->engine_,
+                                             NULL));
+
+  print_desc("x", &x->desc_);
+  print_desc("y", &dst_desc);
+
+  std::vector<dnnl_exec_arg_t> args;
+  args.push_back({DNNL_ARG_SRC,     x->memory_});
+  args.push_back({DNNL_ARG_DST,     y->memory_});
+
+  p.infer(std::make_shared<DnnlPrimitive>(pd, args));
 }
 
 //------------------------------------------------------------------------
@@ -658,6 +686,7 @@ static const struct Operation {
   { "maxpool",          maxpool_infer},
   { "reshape",          reshape_infer},
   { "fc",               fc_infer},
+  { "dropout",          reshape_infer},
 };
 
 static const Operation *
