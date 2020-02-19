@@ -465,7 +465,12 @@ conv_infer(DnnlProgram &p, const Node &n)
 
   auto x_desc = p.dnnl_desc_from_tensor_any(xh);
   auto w_desc = dnnl_desc_from_tensor(wh, 0, dnnl_format_tag_any);
-  auto b_desc = dnnl_desc_from_tensor(bh, 1, dnnl_a);
+
+  dnnl_memory_desc_t *b_desc = NULL, b_desc0;
+  if(bh) {
+   b_desc0 = dnnl_desc_from_tensor(bh, 1, dnnl_a);
+   b_desc = &b_desc0;
+  }
   auto y_desc = p.dnnl_desc_from_tensor_any(yh);
 
   const int pad = n.attributes_.get("pad", 0);
@@ -478,7 +483,7 @@ conv_infer(DnnlProgram &p, const Node &n)
   chkDNNL(dnnl_convolution_forward_desc_init(&conv_desc,
                                              dnnl_forward_inference,
                                              dnnl_convolution_auto, &x_desc,
-                                             &w_desc, &b_desc, &y_desc,
+                                             &w_desc, b_desc, &y_desc,
                                              strides, padding, NULL));
 
   dnnl_primitive_desc_t pd;
@@ -488,12 +493,13 @@ conv_infer(DnnlProgram &p, const Node &n)
   auto x = p.lower_tensor(xh, pd, dnnl_query_src_md);
   auto w = p.lower_tensor(wh, pd, dnnl_query_weights_md);
   auto y = p.lower_tensor(yh, pd, dnnl_query_dst_md);
-  auto b = p.lower_tensor(bh, &b_desc);
+  auto b = bh ? p.lower_tensor(bh, b_desc) : NULL;
 
   std::vector<dnnl_exec_arg_t> args;
   args.push_back({DNNL_ARG_SRC,     x->memory_});
   args.push_back({DNNL_ARG_WEIGHTS, w->memory_});
-  args.push_back({DNNL_ARG_BIAS,    b->memory_});
+  if(b)
+    args.push_back({DNNL_ARG_BIAS,    b->memory_});
   args.push_back({DNNL_ARG_DST,     y->memory_});
 
   p.infer(std::make_shared<DnnlPrimitive>(pd, args));
@@ -783,22 +789,6 @@ DnnlContext::createProgram(const Graph &g,
     }
   }
   return p;
-
 }
 
-
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
