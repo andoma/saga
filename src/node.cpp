@@ -255,7 +255,7 @@ fc_y(const Node &n, const std::optional<const std::string> &name)
   auto w = n.inputs_.get("w");
   if(w == nullptr)
    return nullptr;
-  const int transW = n.attributes_.get("transW", 0);
+  const bool transW = n.attributes_.get("transW", false);
 
   return std::make_shared<Tensor>(w->data_type_,
                                   Dims({1, w->dims_[transW ? 0 : 1]}),
@@ -291,21 +291,21 @@ fc_setup(std::shared_ptr<Node> n,
 
   auto w = n->inputs_.get("w");
   auto b = n->inputs_.get("b");
+  const bool transW = n->attributes_.get("transW", false);
 
   if(!w) {
     const int outputs = n->attributes_.get("outputs", 1);
-    n->attributes_["transB"] = 1;
-
+    n->attributes_["transW"] = true;
 
     n->inputs_["w"] = w =
-      Tensor::find(x->data_type_, {x->dims_[1], outputs},
+      Tensor::find(x->data_type_, {outputs, x->dims_[1]},
                    0, sqrt(2.0 / x->dims_[1]),
                    named_tensors, node_tensor_name(n->name_, "w"));
   }
 
   if(!b && n->attributes_.get("bias", false)) {
     n->inputs_["b"] =
-      Tensor::find(x->data_type_, {1, w->dims_[1]},
+      Tensor::find(x->data_type_, {transW ? w->dims_[0] : w->dims_[1]},
                    0, 0,
                    named_tensors, node_tensor_name(n->name_, "b"));
   }

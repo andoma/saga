@@ -100,13 +100,13 @@ lecun(Graph &g, std::shared_ptr<Node> n, int output_classes)
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
   n = g.addNode("fc", {{"x", n->y()}},
-                {{"outputs", 1024}, {"bias", true}},
+                {{"outputs", 1024}, {"bias", true}, {"transW", true}},
                 "fc1");
 
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("fc", {{"x", n->y()}},
-                {{"outputs", output_classes}, {"bias", true}},
+                {{"outputs", output_classes}, {"bias", true}, {"transW", true}},
                 "fc2");
   return n;
 }
@@ -159,17 +159,17 @@ vgg19(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
     n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
   n = g.addNode("fc", {{"x", n->y()}},
-                {{"outputs", 4096}, {"bias", true}},
+                {{"outputs", 4096}, {"bias", true}, {"transW", true}},
                 "fc1");
   n = g.addNode("relu", {{"x", n->y()}}, {});
   n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
   n = g.addNode("fc", {{"x", n->y()}},
-                {{"outputs", 4096}, {"bias", true}},
+                {{"outputs", 4096}, {"bias", true}, {"transW", true}},
                 "fc2");
   n = g.addNode("relu", {{"x", n->y()}}, {});
   n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
   n = g.addNode("fc", {{"x", n->y()}},
-                {{"outputs", output_classes}, {"bias", true}},
+                {{"outputs", output_classes}, {"bias", true}, {"transW", true}},
                 "fc3");
    return n;
 }

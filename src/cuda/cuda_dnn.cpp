@@ -1634,7 +1634,7 @@ struct CudnnGemmFwd : public CudnnOperation {
   const int n_;
   const int num_inputs_;
   const int num_outputs_;
-  const int transW_;
+  const bool transW_;
   const float y_beta_;
 
   CudnnGemmFwd(CudnnProgram &p, const Node &n)
@@ -1646,7 +1646,7 @@ struct CudnnGemmFwd : public CudnnOperation {
     , n_(x_->dims_[0])
     , num_inputs_(x_->dims_[1])
     , num_outputs_(y_->dims_[1])
-    , transW_(n.attributes_.get("transW", 0))
+    , transW_(n.attributes_.get("transW", false))
     , y_beta_(n.attributes_.get("y.beta", 0.0f))
   {
     assert(y_beta_ == 0); // The trailing cudnnAddTensor operations doesn't support this
@@ -1666,14 +1666,14 @@ struct CudnnGemmFwd : public CudnnOperation {
 
     float alpha = 1.0f, beta = 0.0f;
     __half halpha = 1.0f, hbeta = 0.0f;
-    cublasOperation_t transA = CUBLAS_OP_T;
+    cublasOperation_t transA = transW_ ? CUBLAS_OP_T : CUBLAS_OP_N;
     cublasOperation_t transB = CUBLAS_OP_N;
     switch(x_->type_) {
     case CUDNN_DATA_FLOAT:
       chkCuda(cublasSgemm(ctx_->cublas_, transA, transB,
                           num_outputs_, n_, num_inputs_,
                           &alpha,
-                          (const float *)w_->deviceMem(), num_inputs_,
+                          (const float *)w_->deviceMem(), transW_ ? num_inputs_ : num_outputs_,
                           (const float *)x_->deviceMem(), num_inputs_,
                           &beta,
                           (float *)y_->deviceMem(), num_outputs_));
@@ -1682,7 +1682,7 @@ struct CudnnGemmFwd : public CudnnOperation {
       chkCuda(cublasHgemm(ctx_->cublas_, transA, transB,
                           num_outputs_, n_, num_inputs_,
                           &halpha,
-                          (const __half *)w_->deviceMem(), num_inputs_,
+                          (const __half *)w_->deviceMem(), transW_ ? num_inputs_ : num_outputs_,
                           (const __half *)x_->deviceMem(), num_inputs_,
                           &hbeta,
                           (__half *)y_->deviceMem(), num_outputs_));
@@ -1733,6 +1733,7 @@ struct CudnnGemmBwd : public CudnnOperation {
     , ones_(p.lower_tensor(Tensor::make(x_->data_type_, {n_,1}, 1, 0)))
     , dx_beta_(n.attributes_.get("dx.beta", 0.0f))
   {
+    assert(fwd->transW_ == true);
   }
 
   void print() const {

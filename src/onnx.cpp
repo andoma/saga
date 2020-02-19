@@ -584,7 +584,7 @@ make_gemm(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
   n->inputs_["w"] = find_tensor(g, np.input(1));
   n->inputs_["b"] = find_tensor(g, np.input(2));
   // Confusing but transB maps to second tensor which is Weight for us
-  n->attributes_["transW"] = attribs.get("transB", 0);
+  n->attributes_["transW"] = attribs.get("transB", 0) ? true : false;
   make_tensor_y(g, *n, np.output(0));
   return n;
 }

@@ -300,10 +300,58 @@ static const TensorData maxpool_output = {
   }
 };
 
-// -----------------------------------------------
+
+
+
+static const TensorData maxpool_output_global = {
+  {2, 2, 1, 1},
+  { 0.498000, 0.499000, 0.487000,  0.491000
+  }
+};
+
+
 
 // -----------------------------------------------
-static const TensorData fc_input_x = {
+static const TensorData fc1_input_x = {
+  {1, 2},
+  {
+    1, 100
+  }
+};
+
+static const TensorData fc1_input_w = {
+  {2, 3},
+  {
+    3, 5,
+    7, 9,
+    11, 13,
+  }
+};
+
+static const TensorData fc1_input_b = {
+  {3},
+  {
+    -1, 0, -1
+  }
+};
+
+static const TensorData fc1_output_no_bias = {
+  {1, 3},
+  {
+    903, 1105, 1307
+  }
+};
+
+static const TensorData fc1_output_bias = {
+  {1, 3},
+  {
+    902, 1105, 1306
+  }
+};
+
+
+// -----------------------------------------------
+static const TensorData fc2_input_x = {
   {1, 32},
   {
     0.375, -0.084, -0.082,  0.146, -0.372,  0.452, -0.348,  0.059,
@@ -313,8 +361,8 @@ static const TensorData fc_input_x = {
   }
 };
 
-static const TensorData fc_input_w = {
-  {32, 8},
+static const TensorData fc2_input_w = {
+  {8, 32},
   {
 -0.467,  0.417,  0.164,  0.388,  0.368,  0.204, -0.449, -0.264,
  0.339, -0.360,  0.000,  0.417, -0.498,  0.321,  0.339,  0.170,
@@ -351,21 +399,15 @@ static const TensorData fc_input_w = {
   }
 };
 
-static const TensorData fc_input_b = {
-  {1, 8},
+static const TensorData fc2_input_b = {
+  {8},
   {
     0.499,  0.053,  0.072,  0.112,  0.274, -0.069, -0.486, -0.291,
   }
 };
 
 
-static const TensorData maxpool_output_global = {
-  {2, 2, 1, 1},
-  { 0.498000, 0.499000, 0.487000,  0.491000
-  }
-};
-
-static const TensorData fc_output = {
+static const TensorData fc2_output = {
   {1, 8},
   {
     0.537842,  0.437617, 0.073430, -0.023650,
@@ -496,11 +538,24 @@ ops_main(int argc, char **argv)
     load_tensor(dt, maxpool_output_global));
 
   r |= test_op(ctx, "fc", {
-      {"x", load_tensor(dt, fc_input_x)},
-      {"w", load_tensor(dt, fc_input_w)},
-      {"b", load_tensor(dt, fc_input_b)},
-    }, {},
-    load_tensor(dt, fc_output));
+      {"x", load_tensor(dt, fc1_input_x)},
+      {"w", load_tensor(dt, fc1_input_w)},
+        }, {{"transW", false}},
+    load_tensor(dt, fc1_output_no_bias));
+
+  r |= test_op(ctx, "fc", {
+      {"x", load_tensor(dt, fc1_input_x)},
+      {"w", load_tensor(dt, fc1_input_w)},
+      {"b", load_tensor(dt, fc1_input_b)},
+        }, {{"transW", false}},
+    load_tensor(dt, fc1_output_bias));
+
+  r |= test_op(ctx, "fc", {
+      {"x", load_tensor(dt, fc2_input_x)},
+      {"w", load_tensor(dt, fc2_input_w)},
+      {"b", load_tensor(dt, fc2_input_b)},
+        }, {{"transW", true}},
+    load_tensor(dt, fc2_output));
 
   return r;
 }
