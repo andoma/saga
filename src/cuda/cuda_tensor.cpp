@@ -40,7 +40,7 @@ class CudaTensorStorage : public TensorStorage {
 
 public:
   CudaTensorStorage(Tensor::DataType data_type, size_t size,
-                    const std::shared_ptr<CudnnContext> &ctx)
+                    const std::shared_ptr<CudaContext> &ctx)
     : TensorStorage(data_type)
     , ctx_(ctx)
     , element_size_(Tensor::DataTypeSize(data_type))
@@ -60,7 +60,7 @@ public:
     return r;
   }
 
-  const std::shared_ptr<CudnnContext> ctx_;
+  const std::shared_ptr<CudaContext> ctx_;
   const size_t element_size_;
 
 };
@@ -159,7 +159,7 @@ cudnnDataType_from_dataType(Tensor::DataType data_type)
 
 CudaTensor::CudaTensor(DataType data_type, const Dims &size,
                        cudnnTensorFormat_t format,
-                       const std::shared_ptr<CudnnContext> &ctx,
+                       const std::shared_ptr<CudaContext> &ctx,
                        const std::optional<const std::string> &name)
   : Tensor(data_type, size, name)
   , type_(cudnnDataType_from_dataType(data_type))
@@ -245,7 +245,7 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
 CudaTensor::CudaTensor(DataType data_type,
                        const Dims &size,
                        const int *strides,
-                       const std::shared_ptr<CudnnContext> &ctx,
+                       const std::shared_ptr<CudaContext> &ctx,
                        const std::optional<const std::string> &name)
   : Tensor(data_type, size, name)
   , type_(cudnnDataType_from_dataType(data_type))
