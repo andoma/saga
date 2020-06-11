@@ -24,6 +24,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sstream>
 #include <iostream>
 #include <memory>
 #include <map>
@@ -35,12 +36,12 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-#include "common.h"
-
 #include "onnx/onnx.proto3.pb.h"
 
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/io/coded_stream.h>
+
+#include "saga.h"
 
 using namespace google::protobuf::io;
 using namespace std;
