@@ -159,7 +159,16 @@ public:
 
 
 
+void CudaRegisterOpFactory(const char *name,
+                           void (*mk_infer)(CudaProgram &p, const Node &n),
+                           void (*mk_train)(CudaProgram &p, const Node &n));
 
+#define CPPGLUE(a, b) a ## b
+#define CPPJOIN(a, b) CPPGLUE(a, b)
 
+#define REGISTER_CUDA_OP(name, infer, train) \
+  static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) { \
+ CudaRegisterOpFactory(name, infer, train); \
+}
 
 }

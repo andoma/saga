@@ -24,6 +24,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <map>
 #include <sstream>
 #include <x86intrin.h>
 #include "saga.h"
@@ -724,6 +725,9 @@ conv_train(CudaProgram &p, const Node &n)
     p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
 }
 
+REGISTER_CUDA_OP("conv", conv_infer, conv_train);
+
+
 
 //------------------------------------------------------------------------
 
@@ -885,6 +889,8 @@ batchnorm_train(CudaProgram &p, const Node &n)
   p.upd(std::make_shared<CudnnAdam>(p, f->s_, b->ds_));
   p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
 }
+
+REGISTER_CUDA_OP("batchnorm", batchnorm_infer, batchnorm_train);
 
 
 //------------------------------------------------------------------------
@@ -1105,6 +1111,8 @@ batchnorm_relu_transform(CudaProgram &p,
   return nn;
 }
 
+REGISTER_CUDA_OP("batchnorm_relu", NULL, batchnorm_relu_train);
+
 
 //------------------------------------------------------------------------
 
@@ -1207,6 +1215,9 @@ relu_train(CudaProgram &p, const Node &n)
   p.bwd(std::make_shared<CudnnActivationBwd>(p, n, f));
 }
 
+REGISTER_CUDA_OP("relu", relu_infer, relu_train);
+
+
 
 static void
 elu_infer(CudaProgram &p, const Node &n)
@@ -1224,6 +1235,7 @@ elu_train(CudaProgram &p, const Node &n)
   p.bwd(std::make_shared<CudnnActivationBwd>(p, n, f));
 }
 
+REGISTER_CUDA_OP("elu", elu_infer, elu_train);
 
 //------------------------------------------------------------------------
 
@@ -1344,6 +1356,8 @@ maxpool_train(CudaProgram &p, const Node &n)
   p.bwd(std::make_shared<CudnnPoolingBwd>(p, n, f));
 }
 
+REGISTER_CUDA_OP("maxpool", maxpool_infer, maxpool_train);
+
 static void
 avgpool_infer(CudaProgram &p, const Node &n)
 {
@@ -1358,6 +1372,7 @@ avgpool_train(CudaProgram &p, const Node &n)
   p.bwd(std::make_shared<CudnnPoolingBwd>(p, n, f));
 }
 
+REGISTER_CUDA_OP("avgpool", avgpool_infer, avgpool_train);
 
 //------------------------------------------------------------------------
 
@@ -1413,6 +1428,8 @@ sum_infer(CudaProgram &p, const Node &n)
 {
   p.infer(std::make_shared<CudnnSumFwd>(p, n));
 }
+
+REGISTER_CUDA_OP("sum", sum_infer, NULL);
 
 
 //------------------------------------------------------------------------
@@ -1768,6 +1785,8 @@ fc_train(CudaProgram &p, const Node &n)
     p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
 }
 
+REGISTER_CUDA_OP("fc", fc_infer, fc_train);
+
 
 //------------------------------------------------------------------------
 
@@ -1808,6 +1827,9 @@ softmax_infer(CudaProgram &p, const Node &n)
 {
   p.infer(std::make_shared<CudnnSoftmaxFwd>(p, n));
 }
+
+REGISTER_CUDA_OP("softmax", softmax_infer, NULL);
+
 
 //------------------------------------------------------------------------
 struct CudnnCatClassifierFwd : public CudaOperation {
@@ -1927,6 +1949,8 @@ catclassifier_train(CudaProgram &p, const Node &n)
   p.train(f);
   p.bwd(std::make_shared<CudnnCatClassifierBwd>(p, n, f));
 }
+
+REGISTER_CUDA_OP("catclassifier", catclassifier_infer, catclassifier_train);
 
 
 //------------------------------------------------------------------------
@@ -2060,6 +2084,9 @@ convert_train(CudaProgram &p, const Node &n)
   assert(y->grad_ == NULL); // No backprop here yet
 }
 
+REGISTER_CUDA_OP("convert", convert_infer, convert_train);
+
+
 //------------------------------------------------------------------------
 
 struct CudnnMathOp : public CudaOperation {
@@ -2138,6 +2165,9 @@ mul_infer(CudaProgram &p, const Node &n)
   p.infer(f);
 }
 
+
+REGISTER_CUDA_OP("add", add_infer, NULL);
+REGISTER_CUDA_OP("mul", mul_infer, NULL);
 
 
 
@@ -2289,6 +2319,7 @@ dropout_transform(CudaProgram &p, std::shared_ptr<Node> n)
   return {};
 }
 
+REGISTER_CUDA_OP("dropout", NULL, dropout_train);
 
 //------------------------------------------------------------------------
 
@@ -2368,6 +2399,10 @@ spatialtransform_infer(CudaProgram &p, const Node &n)
 }
 
 
+REGISTER_CUDA_OP("spatialtransform", spatialtransform_infer,
+                 spatialtransform_train);
+
+
 //------------------------------------------------------------------------
 
 struct CudnnPrintTensor : public CudaOperation {
@@ -2425,40 +2460,39 @@ struct CudnnHalt : public CudaOperation {
   }
 };
 
+
+
 //------------------------------------------------------------------------
 
-static const struct Operation {
-  const char *name;
-  void (*create_infer)(CudaProgram &p, const Node &n);
-  void (*create_train)(CudaProgram &p, const Node &n);
-} nodetypes[] = {
-  { "add",              add_infer,              NULL },
-  { "avgpool",          avgpool_infer,          avgpool_train },
-  { "batchnorm",        batchnorm_infer,        batchnorm_train },
-  { "catclassifier",    catclassifier_infer,    catclassifier_train },
-  { "conv",             conv_infer,             conv_train},
-  { "convert",          convert_infer,          convert_train },
-  { "batchnorm_relu",   NULL,                   batchnorm_relu_train },
-  { "dropout",          NULL,                   dropout_train },
-  { "elu",              elu_infer,              elu_train },
-  { "fc",               fc_infer,               fc_train },
-  { "maxpool",          maxpool_infer,          maxpool_train },
-  { "mul",              mul_infer,              NULL },
-  { "relu",             relu_infer,             relu_train },
-  { "softmax",          softmax_infer,          NULL },
-  { "spatialtransform", spatialtransform_infer, spatialtransform_train },
-  { "sum",              sum_infer,              NULL },
+struct OpFactory {
+  void (*mk_infer)(CudaProgram &p, const Node &n);
+  void (*mk_train)(CudaProgram &p, const Node &n);
 };
 
-static const Operation *
+static std::map<std::string, OpFactory> *cuda_op_factories;
+
+void CudaRegisterOpFactory(const char *name,
+                           void (*mk_infer)(CudaProgram &p, const Node &n),
+                           void (*mk_train)(CudaProgram &p, const Node &n))
+{
+  if(!cuda_op_factories)
+    cuda_op_factories = new  std::map<std::string, OpFactory>;
+
+  OpFactory f;
+  f.mk_infer = mk_infer;
+  f.mk_train = mk_train;
+  (*cuda_op_factories)[name] = f;
+}
+
+static const OpFactory *
 find_operation(const Node &n)
 {
-  for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
-    if(n.type_ == nodetypes[i].name) {
-      return &nodetypes[i];
-    }
-  }
-  return NULL;
+  if(!cuda_op_factories)
+    return nullptr;
+  auto it = cuda_op_factories->find(n.type_);
+  if(it == cuda_op_factories->end())
+    return nullptr;
+  return &it->second;
 }
 
 
@@ -2634,8 +2668,8 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc)
     train_nodes = compute_dx_beta(train_nodes);
     for(const auto &n : train_nodes) {
       auto op = find_operation(*n);
-      if(op != NULL && op->create_train) {
-        op->create_train(*p, *n);
+      if(op != NULL && op->mk_train) {
+        op->mk_train(*p, *n);
       } else {
         fprintf(stderr, "Unable to create training operation for node %s\n",
                 n->type_.c_str());
@@ -2651,8 +2685,8 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc)
     nodes = pass_remove_for_inference(*p, nodes);
     for(const auto &n : nodes) {
       auto op = find_operation(*n);
-      if(op != NULL && op->create_infer) {
-        op->create_infer(*p, *n);
+      if(op != NULL && op->mk_infer) {
+        op->mk_infer(*p, *n);
       } else {
         fprintf(stderr, "Unable to create inference operation for node %s\n",
                 n->type_.c_str());
