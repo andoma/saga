@@ -159,16 +159,34 @@ public:
 
 
 
+#define CPPGLUE(a, b) a ## b
+#define CPPJOIN(a, b) CPPGLUE(a, b)
+
 void CudaRegisterOpFactory(const char *name,
                            void (*mk_infer)(CudaProgram &p, const Node &n),
                            void (*mk_train)(CudaProgram &p, const Node &n));
-
-#define CPPGLUE(a, b) a ## b
-#define CPPJOIN(a, b) CPPGLUE(a, b)
 
 #define REGISTER_CUDA_OP(name, infer, train) \
   static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) { \
  CudaRegisterOpFactory(name, infer, train); \
 }
 
+typedef std::vector<std::shared_ptr<Node>> Nodes;
+
+enum CudaTransformType {
+  CUDA_TRANSFORM_ALL,
+  CUDA_TRANSFORM_TRAINING,
+  CUDA_TRANSFORM_INFERENCE,
+};
+
+
+
+void CudaRegisterTransform(CudaTransformType type,
+                           Nodes (*op)(CudaProgram &p, const Nodes &nodes));
+
+#define REGISTER_CUDA_TRANSFORM(prio, type, op)                         \
+  static void __attribute__((constructor(1000 + prio)))                 \
+  CPPJOIN(init, __LINE__)(void) {                                       \
+    CudaRegisterTransform(type, op);                                    \
+  }
 }

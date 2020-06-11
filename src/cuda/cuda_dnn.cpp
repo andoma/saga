@@ -2403,63 +2403,6 @@ REGISTER_CUDA_OP("spatialtransform", spatialtransform_infer,
                  spatialtransform_train);
 
 
-//------------------------------------------------------------------------
-
-struct CudnnPrintTensor : public CudaOperation {
-
-  const std::string prefix_;
-  const std::shared_ptr<Tensor> x_;
-
-  CudnnPrintTensor(const std::string &prefix, std::shared_ptr<Tensor> x)
-    : prefix_(prefix)
-    , x_(x)
-  {}
-
-  void exec(CudaProgram &p) {
-    if(!p.debug_)
-      return;
-    x_->print(prefix_.c_str(), 4);
-  }
-};
-
-//------------------------------------------------------------------------
-
-struct CudnnPrintStatsTensor : public CudaOperation {
-
-  const std::string prefix_;
-  const std::shared_ptr<Tensor> x_;
-
-  CudnnPrintStatsTensor(const std::string &prefix, std::shared_ptr<Tensor> x)
-    : prefix_(prefix)
-    , x_(x)
-  {}
-
-  void print() const {
-  }
-
-  void exec(CudaProgram &p) {
-    if(!p.debug_)
-      return;
-    printf("%s: %s\n", prefix_.c_str(), x_->info().c_str());
-    x_->printStats(prefix_.c_str());
-  }
-};
-
-
-//------------------------------------------------------------------------
-
-struct CudnnHalt : public CudaOperation {
-
-  CudnnHalt()
-  {
-  }
-
-  void exec(CudaProgram &p) {
-    fprintf(stderr, "Stopped by CudnnHalt\n");
-    exit(1);
-  }
-};
-
 
 
 //------------------------------------------------------------------------
@@ -2471,18 +2414,20 @@ struct OpFactory {
 
 static std::map<std::string, OpFactory> *cuda_op_factories;
 
-void CudaRegisterOpFactory(const char *name,
-                           void (*mk_infer)(CudaProgram &p, const Node &n),
-                           void (*mk_train)(CudaProgram &p, const Node &n))
+void
+CudaRegisterOpFactory(const char *name,
+                      void (*mk_infer)(CudaProgram &p, const Node &n),
+                      void (*mk_train)(CudaProgram &p, const Node &n))
 {
   if(!cuda_op_factories)
     cuda_op_factories = new  std::map<std::string, OpFactory>;
 
-  OpFactory f;
-  f.mk_infer = mk_infer;
-  f.mk_train = mk_train;
-  (*cuda_op_factories)[name] = f;
+  (*cuda_op_factories)[name] = OpFactory{
+    .mk_infer = mk_infer,
+    .mk_train = mk_train
+  };
 }
+
 
 static const OpFactory *
 find_operation(const Node &n)
@@ -2496,6 +2441,38 @@ find_operation(const Node &n)
 }
 
 
+
+struct CudaNodeTransform {
+  CudaTransformType type;
+  Nodes (*op)(CudaProgram &p, const Nodes &nodes);
+};
+
+
+static std::vector<CudaNodeTransform> *transforms;
+
+void
+CudaRegisterTransform(CudaTransformType type,
+                      Nodes (*op)(CudaProgram &p, const Nodes &nodes))
+{
+  if(!transforms)
+    transforms = new std::vector<CudaNodeTransform>;
+  transforms->push_back(CudaNodeTransform{ .type = type, .op = op});
+}
+
+
+static std::vector<std::shared_ptr<Node>>
+applyTransforms(CudaTransformType type,
+                CudaProgram &p, std::vector<std::shared_ptr<Node>> nodes)
+{
+  for(auto const &cnt : *transforms) {
+    if(type != cnt.type)
+      continue;
+    nodes = cnt.op(p, nodes);
+  }
+  return nodes;
+}
+
+
 static std::vector<std::shared_ptr<Node>>
 pass_remove_concat(CudaProgram &p,
                    const std::vector<std::shared_ptr<Node>> &nodes)
@@ -2505,7 +2482,7 @@ pass_remove_concat(CudaProgram &p,
   for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
     auto &n = nodes[i];
     if(n->type_ == "concat") {
-      concat_transform(p, *n);
+     concat_transform(p, *n);
     } else {
       r.insert(r.begin(), n);
     }
@@ -2513,6 +2490,7 @@ pass_remove_concat(CudaProgram &p,
   return r;
 }
 
+REGISTER_CUDA_TRANSFORM(100, CUDA_TRANSFORM_ALL, pass_remove_concat);
 
 static std::vector<std::shared_ptr<Node>>
 pass_reshape(CudaProgram &p,
@@ -2531,6 +2509,7 @@ pass_reshape(CudaProgram &p,
   return r;
 }
 
+REGISTER_CUDA_TRANSFORM(110, CUDA_TRANSFORM_ALL, pass_reshape);
 
 static std::vector<std::shared_ptr<Node>>
 pass_remove_for_inference(CudaProgram &p,
@@ -2548,6 +2527,9 @@ pass_remove_for_inference(CudaProgram &p,
   }
   return r;
 }
+
+REGISTER_CUDA_TRANSFORM(500, CUDA_TRANSFORM_INFERENCE,
+                        pass_remove_for_inference);
 
 static std::vector<std::shared_ptr<Node>>
 pass_merge_train_ops(CudaProgram &p,
@@ -2575,6 +2557,8 @@ pass_merge_train_ops(CudaProgram &p,
   return r;
 }
 
+REGISTER_CUDA_TRANSFORM(500, CUDA_TRANSFORM_TRAINING,
+                        pass_merge_train_ops);
 
 static void
 print_nodes(CudaProgram &p,
@@ -2621,8 +2605,30 @@ print_nodes(CudaProgram &p,
 }
 
 
+
+/**
+ * If the network forward path splits into multiple nodes such as...
+ *
+ *                        +---+
+ *                /=====> | B |
+ *  +---+        /        +---+
+ *  | A | ===== <
+ *  +---+        \        +---+
+ *                \=====> | C |
+ *                        +---+
+ *
+ * ... results of backpropagation from B, C must be added together before
+ * fed back into A.
+ *
+ * This code does so by adjusting the dx.beta to 1 for all nodes but
+ * the first one (to be executed during backprop).
+ *
+ * dx.beta = 1 means that before writing a value the node will read
+ * the current value and sum them together.
+ */
 static std::vector<std::shared_ptr<Node>>
-compute_dx_beta(const std::vector<std::shared_ptr<Node>> &nodes)
+compute_dx_beta(CudaProgram &p,
+                const std::vector<std::shared_ptr<Node>> &nodes)
 {
   std::vector<std::shared_ptr<Node>> r;
   std::unordered_set<std::shared_ptr<Tensor>> xset;
@@ -2633,8 +2639,10 @@ compute_dx_beta(const std::vector<std::shared_ptr<Node>> &nodes)
     if(x) {
 
       if(xset.find(x) == xset.end()) {
+        // First contributing node. dx.beta = 0 (default)
         xset.insert(x);
       } else {
+        // Other contributing nodes: Add to current value
         auto n2 = std::make_shared<Node>(*n);
         n2->attributes_["dx.beta"] = 1.0f;
         n = n2;
@@ -2644,6 +2652,7 @@ compute_dx_beta(const std::vector<std::shared_ptr<Node>> &nodes)
   }
   return r;
 }
+REGISTER_CUDA_TRANSFORM(1000, CUDA_TRANSFORM_TRAINING, compute_dx_beta);
 
 
 
@@ -2659,13 +2668,11 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc)
                                           pc.batch_size,
                                           pc.initial_learning_rate);
 
-  auto nodes = pass_remove_concat(*p, g.nodes_);
-
-  nodes = pass_reshape(*p, nodes);
+  auto nodes = applyTransforms(CUDA_TRANSFORM_ALL, *p, g.nodes_);
 
   if(pc.training) {
-    auto train_nodes = pass_merge_train_ops(*p, nodes);
-    train_nodes = compute_dx_beta(train_nodes);
+    auto train_nodes = applyTransforms(CUDA_TRANSFORM_TRAINING, *p, nodes);
+
     for(const auto &n : train_nodes) {
       auto op = find_operation(*n);
       if(op != NULL && op->mk_train) {
@@ -2682,8 +2689,8 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc)
   }
 
   if(pc.inference) {
-    nodes = pass_remove_for_inference(*p, nodes);
-    for(const auto &n : nodes) {
+    auto infer_nodes = applyTransforms(CUDA_TRANSFORM_INFERENCE, *p, nodes);
+    for(const auto &n : infer_nodes) {
       auto op = find_operation(*n);
       if(op != NULL && op->mk_infer) {
         op->mk_infer(*p, *n);
