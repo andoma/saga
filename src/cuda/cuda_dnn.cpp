@@ -24,7 +24,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <map>
 #include <sstream>
 #include <x86intrin.h>
 #include "saga.h"
@@ -36,262 +35,6 @@
 #include "cuda_kernels.h"
 
 namespace saga {
-
-int
-CudaContext::init()
-{
-  int device;
-  cudaGetDevice(&device);
-
-  struct cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, device);
-
-  chkCuda(cudaStreamCreate(&stream_));
-
-  printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s\n",
-         prop.name, prop.major, prop.minor,
-         prop.concurrentKernels ? "yes":"no",
-         prop.canMapHostMemory ? "yes":"no");
-
-
-  chkCUDNN(cudnnCreate(&cudnn_));
-  chkCUDNN(cudnnSetStream(cudnn_, stream_));
-
-  chkCuda(cublasCreate(&cublas_));
-  chkCuda(cublasSetStream(cublas_, stream_));
-  chkCuda(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
-  return 0;
-}
-
-
-static
-std::shared_ptr<Context> createCudaContext()
-{
-  auto ctx = std::make_shared<CudaContext>();
-
-  if(ctx->init())
-    return nullptr;
-
-  return ctx;
-}
-
-
-static void __attribute__((constructor))
-registerCudaContext(void)
-{
-  if(getenv("SAGA_DISABLE_CUDA"))
-    return;
-  registerContextFactory(ContextType::CUDA, &createCudaContext);
-}
-
-
-
-//------------------------------------------------------------------------
-
-
-void
-CudaProgram::infer(const std::shared_ptr<CudaOperation> &op)
-{
-  infer_operations_.push_back(op);
-}
-
-void
-CudaProgram::train(const std::shared_ptr<CudaOperation> &op)
-{
-  train_operations_.push_back(op);
-}
-
-void
-CudaProgram::bwd(const std::shared_ptr<CudaOperation> &op)
-{
-  bwd_operations_.insert(bwd_operations_.begin(), op);
-}
-
-void
-CudaProgram::upd(const std::shared_ptr<CudaOperation> &op)
-{
-  upd_operations_.push_back(op);
-}
-
-
-std::shared_ptr<Tensor>
-CudaProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
-{
-  if(src == nullptr)
-    return nullptr;
-
-  auto it = tensors_.find(src);
-  if(it != tensors_.end()) {
-    return it->second;
-  }
-  return nullptr;
-}
-
-
-
-std::shared_ptr<Tensor>
-CudaProgram::resolveTensor(std::shared_ptr<Tensor> src)
-{
-  std::scoped_lock lock(ctx_->mutex_);
-  return resolveTensor_locked(src);
-}
-
-
-cudnnTensorFormat_t
-CudaProgram::tensorFormat(Tensor::DataType data_type)
-{
-  switch(tensor_layout_) {
-  case TensorLayout::Auto:
-
-    switch(data_type) {
-    case Tensor::DataType::HALF:
-      return CUDNN_TENSOR_NHWC;
-    default:
-      return CUDNN_TENSOR_NCHW;
-    }
-
-  case TensorLayout::NHWC:
-    return CUDNN_TENSOR_NHWC;
-
-  case TensorLayout::NCHW:
-    return CUDNN_TENSOR_NCHW;
-  }
-  abort();
-}
-
-
-
-std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
-                           size_t dimensions)
-{
-  if(src == nullptr)
-    return nullptr;
-
-  auto it = tensors_.find(src);
-  if(it != tensors_.end()) {
-    return it->second;
-  }
-
-  Dims dims = src->dims_;
-
-  if(dimensions) {
-    while(dims.size() < dimensions)
-      dims.insert(dims.begin(), 1);
-  }
-
-  auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                        dims, tensorFormat(src->data_type_),
-                                        ctx_,
-                                        src->name_);
-
-  t->copyFromLocked(*src);
-  tensors_[src] = t;
-  return t;
-}
-
-
-std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
-                                 cudnnTensorFormat_t tensor_format)
-{
-  if(src == nullptr)
-    return nullptr;
-
-  auto it = tensors_.find(src);
-  if(it != tensors_.end()) {
-    return it->second;
-  }
-
-  auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                        src->dims_.n(batch_size_),
-                                        tensor_format,
-                                        ctx_,
-                                        src->name_);
-
-  t->copyFromLocked(*src);
-  tensors_[src] = t;
-  return t;
-}
-
-
-std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
-{
-  return lower_tensor_batch(src, tensorFormat(src->data_type_));
-}
-
-
-
-
-
-
-//------------------------------------------------------------------------
-
-
-void
-CudaProgram::infer()
-{
-  std::scoped_lock lock(ctx_->mutex_);
-
-  for(const auto &op : infer_operations_) {
-    op->exec(*this);
-  }
-}
-
-void
-CudaProgram::train()
-{
-  std::scoped_lock lock(ctx_->mutex_);
-
-  for(const auto &op : train_operations_) {
-    op->exec(*this);
-  }
-  for(const auto &op : bwd_operations_) {
-    op->exec(*this);
-  }
-  for(const auto &op : upd_operations_) {
-    op->exec(*this);
-  }
-
-  cudaStreamSynchronize(ctx_->stream_);
-
-  if(*(int *)check_result_) {
-    mp_scaling_ *= 0.5;
-    *(int *)check_result_ = 0;
-  } else {
-    mp_scaling_ *= 1.01;
-  }
-}
-
-
-void
-CudaProgram::print() const
-{
-  std::scoped_lock lock(ctx_->mutex_);
-
-  printf("\n\nInference:\n");
-  for(const auto &op : infer_operations_) {
-    op->print();
-  }
-
-  printf("\n\nTraining:\n");
-  for(const auto &op : train_operations_) {
-    op->print();
-  }
-  for(const auto &op : bwd_operations_) {
-    op->print();
-  }
-  for(const auto &op : upd_operations_) {
-    op->print();
-  }
-}
-
-void
-CudaProgram::debug(bool on)
-{
-  debug_ = on;
-}
 
 
 //------------------------------------------------------------------------
@@ -1071,11 +814,16 @@ batchnorm_relu_train(CudaProgram &p, const Node &n)
   p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
 }
 
+REGISTER_CUDA_OP("batchnorm_relu", NULL, batchnorm_relu_train);
+
+
+
+
 
 static std::shared_ptr<Node>
-batchnorm_relu_transform(CudaProgram &p,
-                         std::shared_ptr<Node> bn,
-                         std::shared_ptr<Node> mp)
+batchnorm_relu_transform_node(CudaProgram &p,
+                              std::shared_ptr<Node> bn,
+                              std::shared_ptr<Node> mp)
 {
   auto x = bn->inputs_["x"];
   auto y = mp->outputs_["y"];
@@ -1111,8 +859,37 @@ batchnorm_relu_transform(CudaProgram &p,
   return nn;
 }
 
-REGISTER_CUDA_OP("batchnorm_relu", NULL, batchnorm_relu_train);
 
+
+
+
+static std::vector<std::shared_ptr<Node>>
+batchnorm_relu_transform(CudaProgram &p,
+                         const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+
+  if(nodes.size() < 2)
+    return nodes;
+
+  for(size_t i = 0; i < nodes.size(); i++) {
+    std::shared_ptr<Node> n = nodes[i];
+
+    if(i < nodes.size() - 1 &&
+       nodes[i + 0]->type_ == "batchnorm" &&
+       nodes[i + 1]->type_ == "relu") {
+      auto n2 = batchnorm_relu_transform_node(p, nodes[i], nodes[i + 1]);
+      if(n2) {
+        i++;
+        n = n2;
+      }
+    }
+    r.push_back(n);
+  }
+  return r;
+}
+
+REGISTER_CUDA_TRANSFORM(500, CUDA_TRANSFORM_TRAINING, batchnorm_relu_transform);
 
 //------------------------------------------------------------------------
 
@@ -1992,7 +1769,7 @@ struct CudnnTransform : public CudaOperation {
 //------------------------------------------------------------------------
 
 static void
-concat_transform(CudaProgram &p, const Node &n)
+concat_transform_node(CudaProgram &p, const Node &n)
 {
   const int axis = 1;
 
@@ -2012,6 +1789,27 @@ concat_transform(CudaProgram &p, const Node &n)
     element_offset[axis] += xh->dims_[axis];
   }
 }
+
+
+
+static std::vector<std::shared_ptr<Node>>
+concat_transform(CudaProgram &p,
+                 const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+
+  for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
+    auto &n = nodes[i];
+    if(n->type_ == "concat") {
+      concat_transform_node(p, *n);
+    } else {
+      r.insert(r.begin(), n);
+    }
+  }
+  return r;
+}
+
+REGISTER_CUDA_TRANSFORM(100, CUDA_TRANSFORM_ALL, concat_transform);
 
 
 //------------------------------------------------------------------------
@@ -2175,7 +1973,7 @@ REGISTER_CUDA_OP("mul", mul_infer, NULL);
 
 
 static std::vector<std::shared_ptr<Node>>
-reshape_transform(CudaProgram &p, std::shared_ptr<Node> n)
+reshape_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 {
   auto x = p.lower_tensor_batch(n->inputs_.get("x"), CUDNN_TENSOR_NCHW);
   auto dx = x->makeGrad();
@@ -2193,6 +1991,28 @@ reshape_transform(CudaProgram &p, std::shared_ptr<Node> n)
                                            x->namePostfix("reshape"));
   return {};
 }
+
+
+
+static std::vector<std::shared_ptr<Node>>
+reshape_transform(CudaProgram &p,
+                  const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+
+  for(size_t i = 0; i < nodes.size(); i++) {
+    auto &n = nodes[i];
+    if(n->type_ == "reshape") {
+      reshape_transform_node(p, n);
+    } else {
+      r.push_back(n);
+    }
+  }
+  return r;
+}
+
+REGISTER_CUDA_TRANSFORM(110, CUDA_TRANSFORM_ALL, reshape_transform);
+
 
 //------------------------------------------------------------------------
 
@@ -2292,11 +2112,8 @@ dropout_train(CudaProgram &p, const Node &n)
 
 
 
-
-
-
 static std::vector<std::shared_ptr<Node>>
-dropout_transform(CudaProgram &p, std::shared_ptr<Node> n)
+dropout_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 {
   auto y = n->outputs_.get("y");
   auto ly = p.tensors_[y];
@@ -2320,6 +2137,29 @@ dropout_transform(CudaProgram &p, std::shared_ptr<Node> n)
 }
 
 REGISTER_CUDA_OP("dropout", NULL, dropout_train);
+
+
+
+
+static std::vector<std::shared_ptr<Node>>
+dropout_transform(CudaProgram &p,
+                  const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+
+  for(size_t i = 0; i < nodes.size(); i++) {
+    auto &n = nodes[i];
+    if(n->type_ == "dropout") {
+      dropout_transform_node(p, n);
+    } else {
+      r.push_back(n);
+    }
+  }
+  return r;
+}
+
+REGISTER_CUDA_TRANSFORM(500, CUDA_TRANSFORM_INFERENCE, dropout_transform);
+
 
 //------------------------------------------------------------------------
 
@@ -2404,306 +2244,5 @@ REGISTER_CUDA_OP("spatialtransform", spatialtransform_infer,
 
 
 
-
-//------------------------------------------------------------------------
-
-struct OpFactory {
-  void (*mk_infer)(CudaProgram &p, const Node &n);
-  void (*mk_train)(CudaProgram &p, const Node &n);
-};
-
-static std::map<std::string, OpFactory> *cuda_op_factories;
-
-void
-CudaRegisterOpFactory(const char *name,
-                      void (*mk_infer)(CudaProgram &p, const Node &n),
-                      void (*mk_train)(CudaProgram &p, const Node &n))
-{
-  if(!cuda_op_factories)
-    cuda_op_factories = new  std::map<std::string, OpFactory>;
-
-  (*cuda_op_factories)[name] = OpFactory{
-    .mk_infer = mk_infer,
-    .mk_train = mk_train
-  };
-}
-
-
-static const OpFactory *
-find_operation(const Node &n)
-{
-  if(!cuda_op_factories)
-    return nullptr;
-  auto it = cuda_op_factories->find(n.type_);
-  if(it == cuda_op_factories->end())
-    return nullptr;
-  return &it->second;
-}
-
-
-
-struct CudaNodeTransform {
-  CudaTransformType type;
-  Nodes (*op)(CudaProgram &p, const Nodes &nodes);
-};
-
-
-static std::vector<CudaNodeTransform> *transforms;
-
-void
-CudaRegisterTransform(CudaTransformType type,
-                      Nodes (*op)(CudaProgram &p, const Nodes &nodes))
-{
-  if(!transforms)
-    transforms = new std::vector<CudaNodeTransform>;
-  transforms->push_back(CudaNodeTransform{ .type = type, .op = op});
-}
-
-
-static std::vector<std::shared_ptr<Node>>
-applyTransforms(CudaTransformType type,
-                CudaProgram &p, std::vector<std::shared_ptr<Node>> nodes)
-{
-  for(auto const &cnt : *transforms) {
-    if(type != cnt.type)
-      continue;
-    nodes = cnt.op(p, nodes);
-  }
-  return nodes;
-}
-
-
-static std::vector<std::shared_ptr<Node>>
-pass_remove_concat(CudaProgram &p,
-                   const std::vector<std::shared_ptr<Node>> &nodes)
-{
-  std::vector<std::shared_ptr<Node>> r;
-
-  for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
-    auto &n = nodes[i];
-    if(n->type_ == "concat") {
-     concat_transform(p, *n);
-    } else {
-      r.insert(r.begin(), n);
-    }
-  }
-  return r;
-}
-
-REGISTER_CUDA_TRANSFORM(100, CUDA_TRANSFORM_ALL, pass_remove_concat);
-
-static std::vector<std::shared_ptr<Node>>
-pass_reshape(CudaProgram &p,
-             const std::vector<std::shared_ptr<Node>> &nodes)
-{
-  std::vector<std::shared_ptr<Node>> r;
-
-  for(size_t i = 0; i < nodes.size(); i++) {
-    auto &n = nodes[i];
-    if(n->type_ == "reshape") {
-      reshape_transform(p, n);
-    } else {
-      r.push_back(n);
-    }
-  }
-  return r;
-}
-
-REGISTER_CUDA_TRANSFORM(110, CUDA_TRANSFORM_ALL, pass_reshape);
-
-static std::vector<std::shared_ptr<Node>>
-pass_remove_for_inference(CudaProgram &p,
-                          const std::vector<std::shared_ptr<Node>> &nodes)
-{
-  std::vector<std::shared_ptr<Node>> r;
-
-  for(size_t i = 0; i < nodes.size(); i++) {
-    auto &n = nodes[i];
-    if(n->type_ == "dropout") {
-      dropout_transform(p, n);
-    } else {
-      r.push_back(n);
-    }
-  }
-  return r;
-}
-
-REGISTER_CUDA_TRANSFORM(500, CUDA_TRANSFORM_INFERENCE,
-                        pass_remove_for_inference);
-
-static std::vector<std::shared_ptr<Node>>
-pass_merge_train_ops(CudaProgram &p,
-                     const std::vector<std::shared_ptr<Node>> &nodes)
-{
-  std::vector<std::shared_ptr<Node>> r;
-
-  if(nodes.size() < 2)
-    return nodes;
-
-  for(size_t i = 0; i < nodes.size(); i++) {
-    std::shared_ptr<Node> n = nodes[i];
-
-    if(i < nodes.size() - 1 &&
-       nodes[i + 0]->type_ == "batchnorm" &&
-       nodes[i + 1]->type_ == "relu") {
-      auto n2 = batchnorm_relu_transform(p, nodes[i], nodes[i + 1]);
-      if(n2) {
-        i++;
-        n = n2;
-      }
-    }
-    r.push_back(n);
-  }
-  return r;
-}
-
-REGISTER_CUDA_TRANSFORM(500, CUDA_TRANSFORM_TRAINING,
-                        pass_merge_train_ops);
-
-static void
-print_nodes(CudaProgram &p,
-            const std::vector<std::shared_ptr<Node>> &nodes)
-{
-  std::vector<std::shared_ptr<Node>> r;
-
-  for(size_t i = 0; i < nodes.size(); i++) {
-    auto &n = nodes[i];
-
-    printf("%s:\n", n->type_.c_str());
-
-    for(const auto &t : n->inputs_) {
-      auto l = p.resolveTensor_locked(t.second);
-      printf("\t Input: %s: %s\n",
-             t.first.c_str(), l ? l->info().c_str() : t.second->info().c_str());
-    }
-
-    for(const auto &t : n->outputs_) {
-      auto l = p.resolveTensor_locked(t.second);
-      printf("\tOutput: %s: %s\n",
-             t.first.c_str(), l ? l->info().c_str() : t.second->info().c_str());
-    }
-
-    for(const auto &a : n->attributes_) {
-      std::string value;
-
-      if(auto v = std::get_if<int>(&a.second)) {
-        value = std::to_string(*v);
-      } else if(auto v = std::get_if<float>(&a.second)) {
-        value = std::to_string(*v);
-      } else if(auto v = std::get_if<bool>(&a.second)) {
-        value = *v ? "true" : "false";
-      } else if(std::get_if<std::vector<int>>(&a.second)) {
-        value = "<vector>";
-      } else {
-        value = "?";
-      }
-
-      printf("\tAttrib: %s: %s\n",
-             a.first.c_str(), value.c_str());
-    }
-  }
-}
-
-
-
-/**
- * If the network forward path splits into multiple nodes such as...
- *
- *                        +---+
- *                /=====> | B |
- *  +---+        /        +---+
- *  | A | ===== <
- *  +---+        \        +---+
- *                \=====> | C |
- *                        +---+
- *
- * ... results of backpropagation from B, C must be added together before
- * fed back into A.
- *
- * This code does so by adjusting the dx.beta to 1 for all nodes but
- * the first one (to be executed during backprop).
- *
- * dx.beta = 1 means that before writing a value the node will read
- * the current value and sum them together.
- */
-static std::vector<std::shared_ptr<Node>>
-compute_dx_beta(CudaProgram &p,
-                const std::vector<std::shared_ptr<Node>> &nodes)
-{
-  std::vector<std::shared_ptr<Node>> r;
-  std::unordered_set<std::shared_ptr<Tensor>> xset;
-
-  for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
-    std::shared_ptr<Node> n = nodes[i];
-    auto &x = n->inputs_["x"];
-    if(x) {
-
-      if(xset.find(x) == xset.end()) {
-        // First contributing node. dx.beta = 0 (default)
-        xset.insert(x);
-      } else {
-        // Other contributing nodes: Add to current value
-        auto n2 = std::make_shared<Node>(*n);
-        n2->attributes_["dx.beta"] = 1.0f;
-        n = n2;
-      }
-    }
-    r.insert(r.begin(), n);
-  }
-  return r;
-}
-REGISTER_CUDA_TRANSFORM(1000, CUDA_TRANSFORM_TRAINING, compute_dx_beta);
-
-
-
-
-
-std::shared_ptr<Program>
-CudaContext::createProgram(const Graph &g, const ProgramConfig &pc)
-{
-  std::scoped_lock lock(mutex_);
-
-  auto p = std::make_shared<CudaProgram>(shared_from_this(),
-                                          pc.tensor_layout,
-                                          pc.batch_size,
-                                          pc.initial_learning_rate);
-
-  auto nodes = applyTransforms(CUDA_TRANSFORM_ALL, *p, g.nodes_);
-
-  if(pc.training) {
-    auto train_nodes = applyTransforms(CUDA_TRANSFORM_TRAINING, *p, nodes);
-
-    for(const auto &n : train_nodes) {
-      auto op = find_operation(*n);
-      if(op != NULL && op->mk_train) {
-        op->mk_train(*p, *n);
-      } else {
-        fprintf(stderr, "Unable to create training operation for node %s\n",
-                n->type_.c_str());
-        n->print();
-        exit(1);
-      }
-    }
-
-    assert(p->infer_operations_.empty());
-  }
-
-  if(pc.inference) {
-    auto infer_nodes = applyTransforms(CUDA_TRANSFORM_INFERENCE, *p, nodes);
-    for(const auto &n : infer_nodes) {
-      auto op = find_operation(*n);
-      if(op != NULL && op->mk_infer) {
-        op->mk_infer(*p, *n);
-      } else {
-        fprintf(stderr, "Unable to create inference operation for node %s\n",
-                n->type_.c_str());
-        n->print();
-        exit(1);
-      }
-    }
-  }
-  p->allocWorkspace();
-  return p;
-}
 }
 

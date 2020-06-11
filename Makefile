@@ -44,6 +44,7 @@ LDFLAGS-$(HAVE_DNNL)  += -L${DNNL_PATH}/lib -ldnnl
 HAVE_CUDA := $(subst 0,yes,$(subst 1,no,$(shell $(PKG_CONFIG) cuda-${CUDA_VERSION} cudart-${CUDA_VERSION}; echo $$?)))
 
 SRCS-lib-$(HAVE_CUDA) += \
+	src/cuda/cuda_common.cpp \
 	src/cuda/cuda_dnn.cpp \
 	src/cuda/cuda_tensor.cpp \
 	src/cuda/cuda_kernels.cu \
