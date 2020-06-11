@@ -1,15 +1,17 @@
 -include local.mk
 
+PREFIX ?= /usr/local
+
 O ?= build
 
 PROG=saga
-LIB=libsaga.a
+SONAME=libsaga.so.0
 
 CUDA_VERSION ?= 10.2
 
 PKG_CONFIG ?= pkg-config
 
-CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O) -Isrc
+CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O) -Isrc -fPIC
 CXXFLAGS += --std=c++17 -march=native -fno-exceptions
 CXXFLAGS += -Wno-deprecated-declarations
 
@@ -99,10 +101,12 @@ ${PROG}: ${OBJS} ${OBJS-prog} ${ALLDEPS}
 	@mkdir -p $(dir $@)
 	${CXX} -o $@ ${OBJS} ${OBJS-prog} ${LDFLAGS}
 
-${LIB}:  ${OBJS} ${ALLDEPS}
+${O}/${SONAME}: ${OBJS} ${ALLDEPS}
 	@mkdir -p $(dir $@)
-	ar rcs $@ ${OBJS}
-	ranlib $@
+	${CXX} -shared -Wl,-soname,${SONAME} -Wl,--no-undefined -o $@ ${OBJS} ${LDFLAGS}
+	strip --strip-all --discard-all $@
+
+solib: ${O}/${SONAME}
 
 ${O}/%.o: %.cu ${ALLDEPS}
 	@mkdir -p $(dir $@)
@@ -125,7 +129,13 @@ ${O}/%.proto3.pb.cc: %.proto3 ${ALLDEPS}
 clean:
 	rm -rf "${O}" "${PROG}"
 
-lib: ${LIB}
+install: ${O}/${SONAME}
+	@mkdir -p "${PREFIX}/include/" "${PREFIX}/lib/"
+	cp saga.h "${PREFIX}/include/saga.h"
+	cp "${O}/${SONAME}" "${PREFIX}/lib/"
+	ln -srf "${PREFIX}/lib/${SONAME}" "${PREFIX}/lib/libsaga.so"
+	if [ "x`id -u $$USER`" = "x0" ]; then ldconfig ; fi
+
 
 -include ${DEPS}
 
