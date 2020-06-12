@@ -1866,7 +1866,7 @@ static void
 convert_infer(CudaProgram &p, const Node &n)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
-  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"), *x);
   auto scale = n.attributes_.get("scale", 1.0f);
   p.infer(std::make_shared<CudnnConvert>(p, x, y, scale));
 }
@@ -1875,7 +1875,7 @@ static void
 convert_train(CudaProgram &p, const Node &n)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
-  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"), *x);
   auto scale = n.attributes_.get("scale", 1.0f);
   p.train(std::make_shared<CudnnConvert>(p, x, y, scale));
 

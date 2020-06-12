@@ -142,6 +142,9 @@ public:
 
   std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src);
 
+  std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src,
+                                                 const CudaTensor &blueprint);
+
   void infer(const std::shared_ptr<CudaOperation> &op);
   void train(const std::shared_ptr<CudaOperation> &op);
   void bwd(const std::shared_ptr<CudaOperation> &op);

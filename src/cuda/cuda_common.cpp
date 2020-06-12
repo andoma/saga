@@ -186,6 +186,23 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
   return t;
 }
 
+std::shared_ptr<CudaTensor>
+CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
+                                const CudaTensor &blueprint)
+{
+  if(src == nullptr)
+    return nullptr;
+
+  auto it = tensors_.find(src);
+  if(it != tensors_.end()) {
+    return it->second;
+  }
+
+  auto t = std::make_shared<CudaTensor>(src->data_type_, blueprint);
+  t->copyFromLocked(*src);
+  tensors_[src] = t;
+  return t;
+}
 
 std::shared_ptr<CudaTensor>
 CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,

@@ -71,6 +71,10 @@ public:
   CudaTensor(const CudaTensor &o,
              const std::optional<const std::string> &name);
 
+  CudaTensor(DataType data_type,
+             const CudaTensor &o,
+             const std::optional<const std::string> &name = std::nullopt);
+
   ~CudaTensor();
 
   virtual std::string info() const override;
