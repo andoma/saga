@@ -457,11 +457,12 @@ Tensor::toRGB(std::optional<std::pair<float, float>> range)
 
 
 void
-Tensor::printRGB(const char *prefix)
+Tensor::printRGB(const char *prefix,
+                 std::optional<std::pair<float, float>> range)
 {
   printf("%s: %s\n", prefix, info().c_str());
 
-  auto rgb = toRGB();
+  auto rgb = toRGB(range);
   if(rgb == NULL) {
     printf("%s: Too few dimensions or abstract\n", prefix);
     return;

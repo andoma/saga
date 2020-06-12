@@ -166,7 +166,8 @@ public:
   // Info / Debug / etc
   std::shared_ptr<Tensor> toRGB(std::optional<std::pair<float, float>> range = std::nullopt);
   void print(const char *prefix, int elements_per_rank = 0);
-  void printRGB(const char *prefix);
+  void printRGB(const char *prefix,
+                std::optional<std::pair<float, float>> range = std::nullopt);
   Stats stats();
   void printStats(const char *prefix);
   std::string statsString(void);
