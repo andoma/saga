@@ -91,6 +91,7 @@ public:
   virtual void copyBytesFrom(const Dims &element,
                              const void *data, size_t size) = 0;
 
+  virtual void *getAddr(const Dims &element) { return nullptr; }
   virtual double get(const Dims &element) = 0;
   virtual void set(const Dims &element, double value) = 0;
 

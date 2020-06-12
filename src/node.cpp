@@ -368,6 +368,28 @@ convert_y(const Node &n, const std::optional<const std::string> &name)
 
 
 //------------------------------------------------------------------------
+
+static std::shared_ptr<Tensor>
+jpegdecoder_y(const Node &n, const std::optional<const std::string> &name)
+{
+  auto x = n.inputs_.get("x");
+  if(x == nullptr)
+    return nullptr;
+  const int width = n.attributes_.get("width", 0);
+  if(width < 1)
+    return nullptr;
+  const int height = n.attributes_.get("height", 0);
+  if(height < 1)
+    return nullptr;
+  const int channels = n.attributes_.get("channels", 3);
+
+  return std::make_shared<Tensor>(Tensor::DataType::U8,
+                                  Dims({x->dims_[0],
+                                        channels, width, height}), name);
+}
+
+
+//------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
 static const struct {
@@ -389,6 +411,7 @@ static const struct {
   { "dropout",           passthru_y },
   { "elu",               passthru_y },
   { "fc",                fc_y, fc_setup },
+  { "jpegdecoder",       jpegdecoder_y },
   { "maxpool",           pooling_y },
   { "mul",               passthru_y },
   { "relu",              passthru_y },

@@ -994,6 +994,12 @@ public:
     storage_->set(offsetForElement(element), value);
   }
 
+  virtual void *getAddr(const Dims &element) {
+    const size_t o = offsetForElement(element) * storage_->element_size_;
+    char *p = (char *)storage_->data_;
+    return (void *)(p + o);
+  };
+
   virtual void copyBytesFrom(const Dims &element,
                              const void *data, size_t size)
   {

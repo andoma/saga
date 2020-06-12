@@ -47,11 +47,12 @@ SRCS-lib-$(HAVE_CUDA) += \
 	src/cuda/cuda_common.cpp \
 	src/cuda/cuda_dnn.cpp \
 	src/cuda/cuda_tensor.cpp \
+	src/cuda/cuda_jpeg.cpp \
 	src/cuda/cuda_kernels.cu \
 
 CPPFLAGS-$(HAVE_CUDA) += $(shell pkg-config --cflags cuda-${CUDA_VERSION} cudart-${CUDA_VERSION})
 LDFLAGS-$(HAVE_CUDA)  += $(shell pkg-config --libs   cuda-${CUDA_VERSION} cudart-${CUDA_VERSION})
-LDFLAGS-$(HAVE_CUDA)  += -lnvidia-ml -lcudnn -lcublas
+LDFLAGS-$(HAVE_CUDA)  += -lnvidia-ml -lcudnn -lcublas -lnvjpeg
 
 NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
 NVCC := /usr/local/cuda-${CUDA_VERSION}/bin/nvcc
