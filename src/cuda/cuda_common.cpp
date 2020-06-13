@@ -45,7 +45,8 @@ CudaContext::init()
   struct cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, device);
 
-  chkCuda(cudaStreamCreate(&stream_));
+  chkCuda(cudaStreamCreateWithFlags(&stream_,
+                                    cudaStreamNonBlocking));
 
   printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s\n",
          prop.name, prop.major, prop.minor,
