@@ -280,6 +280,11 @@ public:
   void print() const;
 
   std::pair<TensorMapping, TensorMapping> tensorMappings() const;
+
+  std::unordered_set<std::shared_ptr<Tensor>> inputTensors() const;
+
+  std::unordered_set<std::shared_ptr<Tensor>> outputTensors() const;
+
 };
 
 

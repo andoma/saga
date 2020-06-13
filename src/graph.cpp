@@ -55,6 +55,45 @@ Graph::addNode(const std::string &type,
 
 
 
+std::unordered_set<std::shared_ptr<Tensor>>
+Graph::inputTensors() const
+{
+  std::unordered_set<std::shared_ptr<Tensor>> inputs;
+
+  for(const auto &n : nodes_) {
+    for(auto &t : n->inputs_) {
+      inputs.insert(t.second);
+    }
+  }
+  for(const auto &n : nodes_) {
+    for(auto &t : n->outputs_) {
+      inputs.erase(t.second);
+    }
+  }
+  return inputs;
+}
+
+
+
+std::unordered_set<std::shared_ptr<Tensor>>
+Graph::outputTensors() const
+{
+  std::unordered_set<std::shared_ptr<Tensor>> outputs;
+
+  for(const auto &n : nodes_) {
+    for(auto &t : n->outputs_) {
+      outputs.insert(t.second);
+    }
+  }
+  for(const auto &n : nodes_) {
+    for(auto &t : n->inputs_) {
+      outputs.erase(t.second);
+    }
+  }
+  return outputs;
+}
+
+
 std::pair<TensorMapping, TensorMapping>
 Graph::tensorMappings() const
 {
