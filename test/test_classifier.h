@@ -12,7 +12,8 @@ test_classifier(int argc, char **argv,
                 int output_labels,
                 size_t train_inputs,
                 size_t test_inputs,
-                std::function<void(void)> epoch_begin,
-                std::function<void(Tensor &x, Tensor &dy, size_t i)> load_train,
-                std::function<void(Tensor &x, int *labels, size_t i)> load_test);
+                std::function<void(int batch_size, bool test)> epoch_begin,
+                std::function<void(TensorAccess &, long batch)> load_inputs,
+                std::function<int(long index)> get_labels);
+
 }

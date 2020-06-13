@@ -339,14 +339,14 @@ namespace saga {
 
 void
 test_classifier(int argc, char **argv,
-                std::shared_ptr<Tensor> input,
+                std::shared_ptr<Tensor> x,
                 float input_range,
                 int output_labels,
                 size_t train_inputs,
                 size_t test_inputs,
-                std::function<void(void)> epoch_begin,
-                std::function<void(Tensor &x, Tensor &dy, size_t i)> load_train,
-                std::function<void(Tensor &x, int *labels, size_t i)> load_test)
+                std::function<void(int batch_size, bool test)> epoch_begin,
+                std::function<void(TensorAccess &, long batch)> load_inputs,
+                std::function<int(long index)> get_label)
 {
   signal(SIGINT, stop);
 
@@ -419,7 +419,7 @@ test_classifier(int argc, char **argv,
     theta = makeCPUTensor(Tensor::DataType::FLOAT,
                           Dims({batch_size, 2, 3}), "theta");
 
-    n = convert(g, input, 1.0f / input_range, Tensor::DataType::FLOAT);
+    n = convert(g, x, 1.0f / input_range, Tensor::DataType::FLOAT);
     n = g.addNode("spatialtransform", {{"x", n->y()}, {"theta", theta}},
                   {});
 
@@ -427,17 +427,82 @@ test_classifier(int argc, char **argv,
       n = convert(g, n->y(), 1.0f, dt);
     }
   } else {
-    n = convert(g, input, 1.0f / input_range, dt);
+    n = convert(g, x, 1.0f / input_range, dt);
   }
 
-  n = make_network(g, n, mode, output_labels);
+  auto postconv = n->y();
 
+  n = make_network(g, n, mode, output_labels);
+  if(!n) {
+    fprintf(stderr, "Network type %s not available\n", mode.c_str());
+    exit(1);
+  }
   n = g.addNode("catclassifier", {{"x", n->y()}}, {});
-  auto y = n->y();
-  auto loss = n->outputs_["loss"];
 
   if(verbose)
     g.print();
+
+  double loss_sum = 0;
+  int correct = 0;
+  BatchTensorAccessors bta;
+
+  // Compute loss after minibatch completed
+
+  bta.push_back({
+      .phase  = Phase::POST,
+      .which  = Which::VALUES,
+      .mode   = Mode::TRAIN,
+      .tensor = n->outputs_["loss"],
+      .fn     = [&](TensorAccess &ta, long batch) {
+        for(int i = 0; i < batch_size; i++) {
+          loss_sum += ta.get({i});
+        }
+      }
+    });
+
+  // Load classes to train before batch starts
+
+  bta.push_back({
+      .phase  = Phase::PRE,
+      .which  = Which::GRADIENT,
+      .mode   = Mode::TRAIN,
+      .tensor = n->outputs_["y"],
+      .fn     = [&](TensorAccess &ta, long batch) {
+
+        const size_t offset = batch * batch_size;
+        for(int i = 0; i < batch_size; i++) {
+          ta.set({i}, get_label(offset + i));
+        }
+
+      }
+    });
+
+  // Load input tensors
+
+  bta.push_back({
+      .phase  = Phase::PRE,
+      .which  = Which::VALUES,
+      .mode   = Mode::ALL,
+      .tensor = x,
+      .fn     = load_inputs
+    });
+
+
+  // Check results after test
+
+  bta.push_back({
+      .phase  = Phase::POST,
+      .which  = Which::VALUES,
+      .mode   = Mode::INFER,
+      .tensor = n->outputs_["y"],
+      .fn     = [&](TensorAccess &ta, long batch) {
+        size_t base = batch * batch_size;
+        for(int i = 0; i < batch_size; i++) {
+          if(ta.get({i}) == get_label(base + i))
+            correct++;
+        }
+      }
+   });
 
   auto ctx = createContext();
   auto p = ctx->createProgram(g, {
@@ -446,54 +511,29 @@ test_classifier(int argc, char **argv,
       .batch_size = batch_size,
       .initial_learning_rate = learning_rate,
       .tensor_layout = tensor_layout
-    });
+   }, bta);
 
   if(verbose > 1)
     p->print();
 
-  auto x = p->resolveTensor(input);
-  y = p->resolveTensor(y);
-  auto dy = y->grad();
-  loss = p->resolveTensor(loss);
   theta = p->resolveTensor(theta);
-
-  int labels[batch_size];
+  postconv = p->resolveTensor(postconv);
 
   while(g_run) {
     if(theta)
       fill_theta(theta.get(), batch_size);
 
-    epoch_begin();
-
     // Train
+    epoch_begin(batch_size, false);
     const int64_t t0 = get_ts();
-    double loss_sum = 0;
-
-    for(size_t i = 0; i < train_inputs && g_run; i += batch_size) {
-      load_train(*x, *dy, i);
-      p->train();
-      auto la = loss->access();
-      for(int i = 0; i < batch_size; i++) {
-        loss_sum += la->get({i});
-      }
-    }
-
+    loss_sum = 0;
+    p->train(train_inputs / batch_size);
 
     // Test
+    epoch_begin(batch_size, true);
     const int64_t t1 = get_ts();
-    int correct = 0;
-    for(size_t i = 0; i < test_inputs && g_run; i += batch_size) {
-      load_test(*x, labels, i);
-      p->infer();
-
-      auto ta = y->access();
-
-      for(int j = 0; j < batch_size; j++) {
-        if(ta->get({j}) == labels[j])
-          correct++;
-      }
-    }
-
+    correct = 0;
+    p->infer(test_inputs / batch_size);
     if(!g_run)
       break;
 

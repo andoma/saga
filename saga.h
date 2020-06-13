@@ -68,6 +68,13 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
+enum class TensorLayout {
+  Auto,
+  NHWC,
+  NCHW,
+};
+
+
 class Tensors;
 
 class Dims : public std::vector<int> {
@@ -291,11 +298,42 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-enum class TensorLayout {
-  Auto,
-  NHWC,
-  NCHW,
+typedef std::function<void(TensorAccess &ta, long batch)> BatchTensorAccessFn;
+
+
+enum class Phase {
+  PRE, POST
 };
+
+enum class Which {
+  VALUES, GRADIENT
+};
+
+enum class Mode {
+  INFER, TRAIN, ALL
+};
+
+struct BatchTensorAccess {
+
+  BatchTensorAccess(Phase phase, Which which, Mode mode,
+                    std::shared_ptr<Tensor> tensor, BatchTensorAccessFn fn)
+    : phase(phase)
+    , which(which)
+    , mode(mode)
+    , tensor(tensor)
+    , fn(fn)
+  {}
+
+  Phase phase = Phase::PRE;
+  Which which = Which::VALUES;
+  Mode mode = Mode::ALL;
+
+  std::shared_ptr<Tensor> tensor;
+
+  BatchTensorAccessFn fn;
+};
+
+typedef std::vector<BatchTensorAccess> BatchTensorAccessors;
 
 
 struct ProgramConfig {
@@ -308,12 +346,24 @@ struct ProgramConfig {
 
 
 
+
+
+
+enum class BatchTensorAccessType {
+  PRE_BATCH,
+  PRE_BATCH_GRADIENT,
+  POST_BATCH,
+  POST_BATCH_GRADIENT,
+};
+
+
 class Program {
+
 public:
   virtual ~Program() {}
   virtual std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) = 0;
-  virtual void infer() = 0;
-  virtual void train() = 0;
+  virtual void infer(long batches = 1) = 0;
+  virtual void train(long batches = 1) = 0;
   virtual void print() const = 0;
   virtual void debug(bool on) = 0;
 };
@@ -326,7 +376,8 @@ class Context {
 public:
   virtual ~Context() {}
   virtual std::shared_ptr<Program> createProgram(const Graph &graph,
-                                                 const ProgramConfig &pc) = 0;
+                                                 const ProgramConfig &pc,
+                                                 const BatchTensorAccessors &accessors = {}) = 0;
 };
 
 

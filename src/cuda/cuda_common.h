@@ -50,8 +50,9 @@ public:
 
   int init();
 
-  std::shared_ptr<Program> createProgram(const Graph &graph,
-                                         const ProgramConfig &pc);
+  std::shared_ptr<Program> createProgram(const Graph &g,
+                                         const ProgramConfig &pc,
+                                         const BatchTensorAccessors &accessors);
 
   cudaStream_t stream_;
   cudnnHandle_t cudnn_;
@@ -60,6 +61,9 @@ public:
   std::mutex mutex_;
 };
 
+
+typedef std::vector<std::pair<std::shared_ptr<CudaTensor>,
+                              BatchTensorAccessFn>> CudaBatchAccessOps;
 
 
 
@@ -92,8 +96,8 @@ public:
 
 
   std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
-  void infer() override;
-  void train() override;
+  void infer(long batches) override;
+  void train(long batches) override;
   void print() const override;
   void debug(bool) override;
 
@@ -123,6 +127,11 @@ public:
   std::vector<std::shared_ptr<CudaOperation>> bwd_operations_;
   std::vector<std::shared_ptr<CudaOperation>> upd_operations_;
 
+  CudaBatchAccessOps infer_pre_;
+  CudaBatchAccessOps infer_post_;
+  CudaBatchAccessOps train_pre_;
+  CudaBatchAccessOps train_post_;
+
   void *workspace_;
   size_t workspace_size_;
   size_t workspace_requested_;
@@ -130,7 +139,7 @@ public:
   void *check_result_;
   float mp_scaling_;
 
-  std::shared_ptr<Tensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
+  std::shared_ptr<CudaTensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
 
   cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
 
@@ -149,6 +158,8 @@ public:
   void train(const std::shared_ptr<CudaOperation> &op);
   void bwd(const std::shared_ptr<CudaOperation> &op);
   void upd(const std::shared_ptr<CudaOperation> &op);
+
+  void issueOps(const CudaBatchAccessOps ops, long batch);
 
 };
 

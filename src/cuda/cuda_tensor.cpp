@@ -475,4 +475,78 @@ CudaTensor::copyFromLocked(Tensor &t)
 
 
 
+
+class CudaTensorBatchAccess : public TensorAccess {
+
+  static const int MAX_RANK = 8;
+
+public:
+  CudaTensorBatchAccess(CudaTensorStorage *storage,
+                        cudnnTensorDescriptor_t desc,
+                        int64_t offset)
+    : storage_(storage)
+    , offset_(offset)
+  {
+    int dims[MAX_RANK];
+    cudnnDataType_t data_type;
+
+    chkCUDNN(cudnnGetTensorNdDescriptor(desc, MAX_RANK, &data_type,
+                                        &rank_, dims, strides_));
+  }
+
+  int64_t offsetForElement(const Dims &element) const {
+    size_t offset = offset_;
+    for(int i = 0; i < (int)element.size() && i < rank_; i++) {
+      offset += element[i] * strides_[i];
+    }
+    return offset;
+  }
+
+  Dims strides() override {
+    abort();
+  }
+
+  void *data() override {
+    abort();
+  };
+
+  void copyBytesFrom(const Dims &element,
+                     const void *data, size_t size) override {
+    const size_t o = offsetForElement(element) * storage_->element_size_;
+    char *dst = (char *)storage_->data_;
+    cudaMemcpy(dst + o, data, size, cudaMemcpyHostToDevice);
+  }
+
+  void *getAddr(const Dims &element) override {
+    size_t off = offsetForElement(element) * storage_->element_size_;
+    return (void *)((char *)storage_->data_ + off);
+  };
+
+  double get(const Dims &element) override {
+    return storage_->get(offsetForElement(element));
+  };
+
+  void set(const Dims &element, double value) override {
+    storage_->set(offsetForElement(element), value);
+  }
+
+
+  CudaTensorStorage *storage_;
+  int64_t offset_;
+  int rank_;
+  int strides_[MAX_RANK];
+};
+
+
+void
+CudaProgram::issueOps(const CudaBatchAccessOps ops, long batch)
+{
+  for(const auto &op : ops) {
+    CudaTensorBatchAccess ta(op.first->storage_.get(),
+                             op.first->desc_,
+                             op.first->offset_);
+    op.second(ta, batch);
+  }
+}
+
 }

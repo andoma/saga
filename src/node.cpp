@@ -505,9 +505,6 @@ Node::make(const std::string &type,
 std::shared_ptr<Tensor>
 Node::y()
 {
-  auto it = outputs_.find("y");
-  if(it == outputs_.end())
-    return nullptr;
-  return it->second;
+  return outputs_.get("y");
 }
 }

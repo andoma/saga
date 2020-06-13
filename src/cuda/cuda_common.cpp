@@ -110,7 +110,7 @@ CudaProgram::upd(const std::shared_ptr<CudaOperation> &op)
 }
 
 
-std::shared_ptr<Tensor>
+std::shared_ptr<CudaTensor>
 CudaProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
 {
   if(src == nullptr)
@@ -140,6 +140,7 @@ CudaProgram::tensorFormat(Tensor::DataType data_type)
   case TensorLayout::Auto:
 
     switch(data_type) {
+    case Tensor::DataType::U8:
     case Tensor::DataType::HALF:
       return CUDNN_TENSOR_NHWC;
     default:
@@ -159,7 +160,7 @@ CudaProgram::tensorFormat(Tensor::DataType data_type)
 
 std::shared_ptr<CudaTensor>
 CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
-                           size_t dimensions)
+                          size_t dimensions)
 {
   if(src == nullptr)
     return nullptr;
@@ -239,41 +240,53 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
 
 
 
-//------------------------------------------------------------------------
-
-
 void
-CudaProgram::infer()
+CudaProgram::infer(long batches)
 {
-  std::scoped_lock lock(ctx_->mutex_);
+  for(long i = 0; i < batches; i++) {
 
-  for(const auto &op : infer_operations_) {
-    op->exec(*this);
+    std::scoped_lock lock(ctx_->mutex_);
+
+    issueOps(infer_pre_, i);
+
+    for(const auto &op : infer_operations_) {
+      op->exec(*this);
+    }
+
+    cudaStreamSynchronize(ctx_->stream_);
+
+    issueOps(infer_post_, i);
   }
 }
 
 void
-CudaProgram::train()
+CudaProgram::train(long batches)
 {
-  std::scoped_lock lock(ctx_->mutex_);
+  for(long i = 0; i < batches; i++) {
+    std::scoped_lock lock(ctx_->mutex_);
 
-  for(const auto &op : train_operations_) {
-    op->exec(*this);
-  }
-  for(const auto &op : bwd_operations_) {
-    op->exec(*this);
-  }
-  for(const auto &op : upd_operations_) {
-    op->exec(*this);
-  }
+    issueOps(train_pre_, i);
 
-  cudaStreamSynchronize(ctx_->stream_);
+    for(const auto &op : train_operations_) {
+      op->exec(*this);
+    }
+    for(const auto &op : bwd_operations_) {
+      op->exec(*this);
+    }
+    for(const auto &op : upd_operations_) {
+      op->exec(*this);
+    }
 
-  if(*(int *)check_result_) {
-    mp_scaling_ *= 0.5;
-    *(int *)check_result_ = 0;
-  } else {
-    mp_scaling_ *= 1.01;
+    cudaStreamSynchronize(ctx_->stream_);
+
+    issueOps(train_post_, i);
+
+    if(*(int *)check_result_) {
+      mp_scaling_ *= 0.5;
+      *(int *)check_result_ = 0;
+    } else {
+      mp_scaling_ *= 1.01;
+    }
   }
 }
 
@@ -305,8 +318,6 @@ CudaProgram::debug(bool on)
 {
   debug_ = on;
 }
-
-
 
 
 //------------------------------------------------------------------------
@@ -475,7 +486,9 @@ REGISTER_CUDA_TRANSFORM(1000, CUDA_TRANSFORM_TRAINING, compute_dx_beta);
 
 
 std::shared_ptr<Program>
-CudaContext::createProgram(const Graph &g, const ProgramConfig &pc)
+CudaContext::createProgram(const Graph &g,
+                           const ProgramConfig &pc,
+                           const BatchTensorAccessors &accessors)
 {
   std::scoped_lock lock(mutex_);
 
@@ -519,9 +532,47 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc)
     }
   }
   p->allocWorkspace();
+
+  for(const auto &a : accessors) {
+
+    auto it = p->tensors_.find(a.tensor);
+    if(it == p->tensors_.end()) {
+      fprintf(stderr, "Warning: A tensor in accessors were not found\n");
+      continue;
+    }
+
+    auto t = it->second;
+
+    if(a.which == Which::GRADIENT) {
+      t = t->grad_;
+      if(!t) {
+        fprintf(stderr, "Warning: No gradient found for %s\n",
+                it->second->info().c_str());
+        continue;
+      }
+    }
+
+    auto op = std::make_pair(t, a.fn);
+
+    if(a.phase == Phase::PRE) {
+
+      if(a.mode == Mode::INFER || a.mode == Mode::ALL)
+        p->infer_pre_.push_back(op);
+
+      if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
+        p->train_pre_.push_back(op);
+
+    } else {
+
+      if(a.mode == Mode::INFER || a.mode == Mode::ALL)
+        p->infer_post_.push_back(op);
+
+      if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
+        p->train_post_.push_back(op);
+    }
+  }
+
   return p;
 }
-
-
 
 }
