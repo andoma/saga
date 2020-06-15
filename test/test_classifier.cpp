@@ -450,7 +450,7 @@ test_classifier(int argc, char **argv,
 
   bta.push_back({
       .phase  = Phase::POST,
-      .which  = Which::VALUES,
+      .which  = Which::VALUE,
       .mode   = Mode::TRAIN,
       .tensor = n->outputs_["loss"],
       .fn     = [&](TensorAccess &ta, long batch) {
@@ -481,7 +481,7 @@ test_classifier(int argc, char **argv,
 
   bta.push_back({
       .phase  = Phase::PRE,
-      .which  = Which::VALUES,
+      .which  = Which::VALUE,
       .mode   = Mode::ALL,
       .tensor = x,
       .fn     = load_inputs
@@ -492,7 +492,7 @@ test_classifier(int argc, char **argv,
 
   bta.push_back({
       .phase  = Phase::POST,
-      .which  = Which::VALUES,
+      .which  = Which::VALUE,
       .mode   = Mode::INFER,
       .tensor = n->outputs_["y"],
       .fn     = [&](TensorAccess &ta, long batch) {

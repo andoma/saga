@@ -33,6 +33,12 @@ This project is still very much work in progress.
   * Concat is transformed to strided tensors
   * Element-wise sum is transformed to outputs with GEMM beta set to 1
 
+* Double buffered tensors at edge of graph
+  Allows updating next mini-batch and reading out values from previous
+  mini-batch while GPU is process current mini-batch. Ensuring 100% GPU
+  utilization
+
+
 * Can load (some) [ONNX](https://onnx.ai) models
 
 # Other

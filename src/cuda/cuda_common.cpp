@@ -208,7 +208,7 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
 
 std::shared_ptr<CudaTensor>
 CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
-                                 cudnnTensorFormat_t tensor_format)
+                                cudnnTensorFormat_t tensor_format)
 {
   if(src == nullptr)
     return nullptr;
@@ -239,48 +239,54 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
 
 
 
-
-
 void
 CudaProgram::infer(long batches)
 {
+  if(batches == 0)
+    return;
+
+  issueOps(infer_pre_, 0);
+  flipDoubleBufferedTensors();
+  cudaStreamSynchronize(ctx_->stream_);
   for(long i = 0; i < batches; i++) {
 
-    std::scoped_lock lock(ctx_->mutex_);
+    for(const auto &op : infer_operations_) op->exec(*this);
 
-    issueOps(infer_pre_, i);
+    if(i < batches - 1)
+      issueOps(infer_pre_, i + 1);
+    if(i > 0)
+      issueOps(infer_post_, i - 1);
 
-    for(const auto &op : infer_operations_) {
-      op->exec(*this);
-    }
-
+    flipDoubleBufferedTensors();
     cudaStreamSynchronize(ctx_->stream_);
-
-    issueOps(infer_post_, i);
   }
+  issueOps(infer_post_, batches - 1);
 }
+
 
 void
 CudaProgram::train(long batches)
 {
+  if(batches == 0)
+    return;
+
+  issueOps(train_pre_, 0);
+  flipDoubleBufferedTensors();
+  cudaStreamSynchronize(ctx_->stream_);
+
   for(long i = 0; i < batches; i++) {
-    std::scoped_lock lock(ctx_->mutex_);
 
-    issueOps(train_pre_, i);
+    for(const auto &op : train_operations_) op->exec(*this);
+    for(const auto &op : bwd_operations_)   op->exec(*this);
+    for(const auto &op : upd_operations_)   op->exec(*this);
 
-    for(const auto &op : train_operations_) {
-      op->exec(*this);
-    }
-    for(const auto &op : bwd_operations_) {
-      op->exec(*this);
-    }
-    for(const auto &op : upd_operations_) {
-      op->exec(*this);
-    }
+    if(i < batches - 1)
+      issueOps(train_pre_, i + 1);
+    if(i > 0)
+      issueOps(train_post_, i - 1);
 
+    flipDoubleBufferedTensors();
     cudaStreamSynchronize(ctx_->stream_);
-
-    issueOps(train_post_, i);
 
     if(*(int *)check_result_) {
       mp_scaling_ *= 0.5;
@@ -289,6 +295,8 @@ CudaProgram::train(long batches)
       mp_scaling_ *= 1.01;
     }
   }
+
+  issueOps(train_post_, batches - 1);
 }
 
 
@@ -483,6 +491,67 @@ compute_dx_beta(CudaProgram &p,
 REGISTER_CUDA_TRANSFORM(1000, CUDA_TRANSFORM_TRAINING, compute_dx_beta);
 
 
+void
+CudaProgram::addPrePostOp(std::shared_ptr<CudaTensor> t,
+                          const BatchTensorAccess &a)
+{
+  auto op = std::make_pair(t, a.fn);
+  if(a.phase == Phase::PRE) {
+
+    if(a.mode == Mode::INFER || a.mode == Mode::ALL)
+      infer_pre_.push_back(op);
+
+    if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
+      train_pre_.push_back(op);
+
+  } else {
+
+    if(a.mode == Mode::INFER || a.mode == Mode::ALL)
+      infer_post_.push_back(op);
+
+    if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
+      train_post_.push_back(op);
+  }
+}
+
+
+void
+CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
+{
+  for(const auto &a : accessors) {
+    if(a.which != Which::VALUE)
+      continue;
+
+    auto src = a.tensor;
+    auto dims = src->dims_.n(batch_size_);
+    auto t = std::make_shared<CudaTensor>(src->data_type_, dims,
+                                          tensorFormat(src->data_type_),
+                                          ctx_, src->name_, 2);
+
+    flips_.push_back(t->storage_);
+    t->copyFromLocked(*src);
+    tensors_[src] = t;
+    addPrePostOp(t, a);
+  }
+
+
+  for(const auto &a : accessors) {
+    if(a.which != Which::GRADIENT)
+      continue;
+
+    auto src = a.tensor;
+    auto dims = src->dims_.n(batch_size_);
+    auto g = std::make_shared<CudaTensor>(src->data_type_, dims,
+                                          tensorFormat(src->data_type_),
+                                          ctx_, src->name_, 2);
+    flips_.push_back(g->storage_);
+
+    auto t = lower_tensor_batch(src);
+    t->grad_ = g;
+    addPrePostOp(g, a);
+  }
+
+}
 
 
 
@@ -497,6 +566,8 @@ CudaContext::createProgram(const Graph &g,
                                           pc.tensor_layout,
                                           pc.batch_size,
                                           pc.initial_learning_rate);
+
+  p->setupAccessors(accessors);
 
   auto nodes = applyTransforms(CUDA_TRANSFORM_ALL, *p, g.nodes_);
 
@@ -534,44 +605,6 @@ CudaContext::createProgram(const Graph &g,
   }
   p->allocWorkspace();
 
-  for(const auto &a : accessors) {
-
-    auto it = p->tensors_.find(a.tensor);
-    if(it == p->tensors_.end()) {
-      fprintf(stderr, "Warning: A tensor in accessors were not found\n");
-      continue;
-    }
-
-    auto t = it->second;
-
-    if(a.which == Which::GRADIENT) {
-      t = t->grad_;
-      if(!t) {
-        fprintf(stderr, "Warning: No gradient found for %s\n",
-                it->second->info().c_str());
-        continue;
-      }
-    }
-
-    auto op = std::make_pair(t, a.fn);
-
-    if(a.phase == Phase::PRE) {
-
-      if(a.mode == Mode::INFER || a.mode == Mode::ALL)
-        p->infer_pre_.push_back(op);
-
-      if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
-        p->train_pre_.push_back(op);
-
-    } else {
-
-      if(a.mode == Mode::INFER || a.mode == Mode::ALL)
-        p->infer_post_.push_back(op);
-
-      if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
-        p->train_post_.push_back(op);
-    }
-  }
 
   return p;
 }

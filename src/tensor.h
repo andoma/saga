@@ -23,10 +23,15 @@ public:
     set_(data_, offset, value);
   }
 
+  void *data() const {
+    return data_;
+  }
+
   getfn_t *get_;
   setfn_t *set_;
   const Tensor::DataType data_type_;
   const size_t element_size_;
+protected:
   void *data_;
 };
 

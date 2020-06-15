@@ -306,7 +306,7 @@ enum class Phase {
 };
 
 enum class Which {
-  VALUES, GRADIENT
+  VALUE, GRADIENT
 };
 
 enum class Mode {
@@ -325,7 +325,7 @@ struct BatchTensorAccess {
   {}
 
   Phase phase = Phase::PRE;
-  Which which = Which::VALUES;
+  Which which = Which::VALUE;
   Mode mode = Mode::ALL;
 
   std::shared_ptr<Tensor> tensor;

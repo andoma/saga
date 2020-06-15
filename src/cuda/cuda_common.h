@@ -33,7 +33,7 @@ namespace saga {
 
 class CudaTensor;
 class CudaOperation;
-
+class CudaTensorStorage;
 
 
 
@@ -132,6 +132,8 @@ public:
   CudaBatchAccessOps train_pre_;
   CudaBatchAccessOps train_post_;
 
+  std::vector<std::shared_ptr<CudaTensorStorage>> flips_;
+
   void *workspace_;
   size_t workspace_size_;
   size_t workspace_requested_;
@@ -159,7 +161,13 @@ public:
   void bwd(const std::shared_ptr<CudaOperation> &op);
   void upd(const std::shared_ptr<CudaOperation> &op);
 
+  void setupAccessors(const BatchTensorAccessors &accessors);
+
+  void addPrePostOp(std::shared_ptr<CudaTensor> t, const BatchTensorAccess &a);
+
   void issueOps(const CudaBatchAccessOps ops, long batch);
+
+  void flipDoubleBufferedTensors();
 
 };
 

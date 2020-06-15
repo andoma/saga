@@ -34,14 +34,14 @@ namespace saga {
 
 class CudaTensorStorage;
 
-
 class CudaTensor : public Tensor {
 
 public:
   CudaTensor(DataType data_type, const Dims &size,
              cudnnTensorFormat_t format,
              const std::shared_ptr<CudaContext> &ctx,
-             const std::optional<const std::string> &name = std::nullopt);
+             const std::optional<const std::string> &name = std::nullopt,
+             int num_buffers = 1);
 
   CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
              const Dims &size, cudnnTensorFormat_t format,
