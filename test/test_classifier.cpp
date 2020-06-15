@@ -534,8 +534,6 @@ test_classifier(int argc, char **argv,
     const int64_t t1 = get_ts();
     correct = 0;
     p->infer(test_inputs / batch_size);
-    if(!g_run)
-      break;
 
     const int64_t t2 = get_ts();
     float percentage = 100.0 * correct / test_inputs;
@@ -544,7 +542,7 @@ test_classifier(int argc, char **argv,
            (t1 - t0) / 1e6,
            (t2 - t1) / 1e6,
            loss_sum / test_inputs);
-    if(percentage > 99)
+    if(percentage > 99 || !g_run)
       break;
   }
 
