@@ -39,19 +39,19 @@ namespace saga {
 int
 CudaContext::init()
 {
-  int device;
-  cudaGetDevice(&device);
+  cudaGetDevice(&deviceId_);
 
   struct cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, device);
+  cudaGetDeviceProperties(&prop, deviceId_);
 
   chkCuda(cudaStreamCreateWithFlags(&stream_,
                                     cudaStreamNonBlocking));
 
-  printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s\n",
+  printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s id:%d\n",
          prop.name, prop.major, prop.minor,
          prop.concurrentKernels ? "yes":"no",
-         prop.canMapHostMemory ? "yes":"no");
+         prop.canMapHostMemory ? "yes":"no",
+         deviceId_);
 
 
   chkCUDNN(cudnnCreate(&cudnn_));
@@ -495,9 +495,10 @@ void
 CudaProgram::addPrePostOp(std::shared_ptr<CudaTensor> t,
                           const BatchTensorAccess &a)
 {
-  auto op = std::make_pair(t, a.fn);
-  if(a.phase == Phase::PRE) {
+  auto op = CudaBatchAccessOp{.tensor_ = t, .fn_ = a.fn};
 
+  if(a.phase == Phase::PRE) {
+    op.prefetch_ = true;
     if(a.mode == Mode::INFER || a.mode == Mode::ALL)
       infer_pre_.push_back(op);
 

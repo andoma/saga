@@ -46,6 +46,7 @@ public:
     , ctx_(ctx)
     , element_size_(Tensor::DataTypeSize(data_type))
     , num_buffers_(num_buffers)
+    , size_(size)
   {
     if(num_buffers > 1) {
       printf("Allocated doublebuffered tensor\n");
@@ -88,9 +89,14 @@ public:
     index_++;
   }
 
+  void prefetchGPU() {
+    cudaMemPrefetchAsync(deviceMem(1), size_, ctx_->deviceId_, ctx_->stream_);
+  }
+
   const std::shared_ptr<CudaContext> ctx_;
   const size_t element_size_;
   const int num_buffers_;
+  const size_t size_;
 
   int index_;
 
@@ -589,10 +595,12 @@ void
 CudaProgram::issueOps(const CudaBatchAccessOps ops, long batch)
 {
   for(const auto &op : ops) {
-    CudaTensorBatchAccess ta(op.first->storage_.get(),
-                             op.first->desc_,
-                             op.first->offset_);
-    op.second(ta, batch);
+    CudaTensorBatchAccess ta(op.tensor_->storage_.get(),
+                             op.tensor_->desc_,
+                             op.tensor_->offset_);
+    op.fn_(ta, batch);
+    if(op.prefetch_)
+      op.tensor_->storage_->prefetchGPU();
   }
 }
 

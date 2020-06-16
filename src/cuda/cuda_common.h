@@ -57,13 +57,18 @@ public:
   cudaStream_t stream_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
-
+  int deviceId_;
   std::mutex mutex_;
 };
 
 
-typedef std::vector<std::pair<std::shared_ptr<CudaTensor>,
-                              BatchTensorAccessFn>> CudaBatchAccessOps;
+struct CudaBatchAccessOp {
+  std::shared_ptr<CudaTensor> tensor_;
+  BatchTensorAccessFn fn_;
+  bool prefetch_ = false;
+};
+
+typedef std::vector<CudaBatchAccessOp> CudaBatchAccessOps;
 
 
 
