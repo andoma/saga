@@ -48,9 +48,6 @@ public:
     , num_buffers_(num_buffers)
     , size_(size)
   {
-    if(num_buffers > 1) {
-      printf("Allocated doublebuffered tensor\n");
-    }
     for(int i = 0; i < num_buffers; i++) {
       chkCuda(cudaMallocManaged(&buffers_[i], size, cudaMemAttachGlobal));
       chkCuda(cudaMemset(buffers_[i], 0, size));
