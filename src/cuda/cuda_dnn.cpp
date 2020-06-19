@@ -761,8 +761,20 @@ struct CudnnBatchNormActivationBwd : public CudaOperation {
     , db_(fwd->b_->makeGrad())
     , dx_beta_(n.attributes_.get("dx.beta", 0.0f))
   {
+    size_t workspace;
 
-
+    chkCUDNN(cudnnGetBatchNormalizationBackwardExWorkspaceSize(ctx_->cudnn_,
+                                                               fwd_->mode_,
+                                                               fwd_->bnOps_,
+                                                               fwd_->x_->desc(),
+                                                               fwd_->y_->desc(),
+                                                               dy_->desc(),
+                                                               NULL,
+                                                               dx_->desc(),
+                                                               ds_->desc(),
+                                                               fwd->desc_,
+                                                               &workspace));
+    p.requetstWorkspace(workspace);
   }
 
   void print() const {
