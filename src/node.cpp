@@ -372,9 +372,6 @@ convert_y(const Node &n, const std::optional<const std::string> &name)
 static std::shared_ptr<Tensor>
 jpegdecoder_y(const Node &n, const std::optional<const std::string> &name)
 {
-  auto x = n.inputs_.get("x");
-  if(x == nullptr)
-    return nullptr;
   const int width = n.attributes_.get("width", 0);
   if(width < 1)
     return nullptr;
@@ -384,8 +381,7 @@ jpegdecoder_y(const Node &n, const std::optional<const std::string> &name)
   const int channels = n.attributes_.get("channels", 3);
 
   return std::make_shared<Tensor>(Tensor::DataType::U8,
-                                  Dims({x->dims_[0],
-                                        channels, width, height}), name);
+                                  Dims({1, channels, width, height}), name);
 }
 
 
@@ -499,6 +495,22 @@ Node::make(const std::string &type,
     auto &last = nodes.back();
     last->outputs_["y"] = last->inferTensor_y();
   }
+  return nodes;
+}
+
+
+
+std::vector<std::shared_ptr<Node>>
+Node::make(const std::string &type,
+           Loader loader,
+           const Attributes &attributes)
+{
+  auto n = std::make_shared<Node>(type);
+  n->loader_ = loader;
+  n->attributes_ = attributes;
+
+  n->outputs_["y"] = n->inferTensor_y();
+  std::vector<std::shared_ptr<Node>> nodes({n});
   return nodes;
 }
 

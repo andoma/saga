@@ -219,6 +219,10 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
+
+typedef std::function<size_t(long batch, int n,
+                             uint8_t *data, size_t capacity)> Loader;
+
 class Node {
 public:
 
@@ -242,6 +246,7 @@ public:
   Tensors inputs_;
   Attributes attributes_;
   Tensors outputs_;
+  Loader loader_;
 
   std::shared_ptr<Tensor> inferTensor_y(const std::optional<const std::string> &name = std::nullopt);
   void print() const;
@@ -251,6 +256,10 @@ public:
                                                  const Attributes &attributes,
                                                  Tensors &named_tensors,
                                                  const std::optional<const std::string> &name = std::nullopt);
+
+  static std::vector<std::shared_ptr<Node>> make(const std::string &type,
+                                                 Loader loader,
+                                                 const Attributes &attributes);
 
 
   std::shared_ptr<Tensor> y();
@@ -277,6 +286,10 @@ public:
                                 const Tensors &inputs,
                                 const Attributes &attributes,
                                 const std::optional<const std::string> &name = std::nullopt);
+
+  std::shared_ptr<Node> addNode(const std::string &type,
+                                Loader loader,
+                                const Attributes &attributes);
 
   static std::shared_ptr<Graph> load(const char *path);
 

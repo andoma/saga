@@ -69,6 +69,14 @@ public:
     return r;
   }
 
+  void *deviceMem(int64_t offset, int buffer_index)
+  {
+    void *buf = buffers_[buffer_index & (num_buffers_ - 1)];
+
+    void *r = (void *)((char *)buf + offset * element_size_);
+    return r;
+  }
+
   void *data(int buffer) const {
     return buffers_[(buffer + index_) & (num_buffers_ - 1)];
   }
@@ -417,6 +425,20 @@ CudaTensor::deviceMem() const
 {
   return storage_->deviceMem(offset_);
 };
+
+void *
+CudaTensor::deviceMem(int i) const
+{
+  return storage_->deviceMem(offset_, i);
+};
+
+
+int
+CudaTensor::flip() const
+{
+  storage_->flip();
+  return storage_->index_ & 1;
+}
 
 
 std::string

@@ -1,3 +1,7 @@
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
 #include <nvjpeg.h>
 
 #include "saga.h"
@@ -8,35 +12,71 @@
 #include "cuda_tensor.h"
 #include "cuda_kernels.h"
 
+#define JPEG_THREADS 8
 
 namespace saga {
 
-
-//------------------------------------------------------------------------
 struct CudaJpeg : public CudaOperation {
 
   const std::shared_ptr<CudaContext> ctx_;
-  const std::shared_ptr<CudaTensor> y_;
-  const std::shared_ptr<Tensor> x_;
-  const std::unique_ptr<nvjpegImage_t[]> output_images_;
+  const Loader loader_;
+  const int batch_size_;
+
+  std::unique_ptr<nvjpegImage_t[]> output_images_[2];
+  std::shared_ptr<CudaTensor> y_;
+
+  cudaStream_t stream_;
+  cudaEvent_t event_;
 
   nvjpegHandle_t handle_;
   nvjpegJpegState_t jpeg_handle_;
 
+  std::thread threads_[JPEG_THREADS];
+  std::mutex work_mutex_;
+  std::condition_variable_any work_cond_;
+  std::condition_variable_any complete_cond_;
+
+  int decode_;
+  int completed_;
+  long current_batch_;
 
   CudaJpeg(CudaProgram &p, const Node &n)
     : ctx_(p.ctx_)
-    , y_(p.lower_tensor_batch(n.outputs_.get("y")))
-    , x_(n.inputs_.get("x"))
-    , output_images_(std::make_unique<nvjpegImage_t[]>(y_->dims_[0]))
+    , loader_(n.loader_)
+    , batch_size_(p.batch_size_)
   {
-    const size_t batch_size = x_->dims_[0];
+
+    auto yh = n.outputs_.get("y");
+
+    auto it = p.tensors_.find(yh);
+    if(it == p.tensors_.end()) {
+
+      auto dims = yh->dims_.n(batch_size_);
+      y_ = std::make_shared<CudaTensor>(yh->data_type_, dims,
+                                        CUDNN_TENSOR_NHWC,
+                                        ctx_, yh->name_, 2);
+
+      p.tensors_[yh] = y_;
+    } else {
+      y_ = it->second;
+    }
+
+    output_images_[0] = std::make_unique<nvjpegImage_t[]>(batch_size_);
+    output_images_[1] = std::make_unique<nvjpegImage_t[]>(batch_size_);
+
+
+    decode_ = batch_size_;
+    completed_ = batch_size_;
+
+    chkCuda(cudaStreamCreateWithFlags(&stream_,
+                                      cudaStreamNonBlocking));
+    chkCuda(cudaEventCreate(&event_));
 
     nvjpegCreateSimple(&handle_);
     nvjpegJpegStateCreate(handle_, &jpeg_handle_);
 
     nvjpegDecodeBatchedInitialize(handle_, jpeg_handle_,
-                                  batch_size, 8, NVJPEG_OUTPUT_RGB);
+                                  batch_size_, JPEG_THREADS, NVJPEG_OUTPUT_RGBI);
 
     const int max_rank = 8;
     int dimsA[max_rank];
@@ -47,18 +87,35 @@ struct CudaJpeg : public CudaOperation {
     chkCUDNN(cudnnGetTensorNdDescriptor(y_->desc_, max_rank, &data_type,
                                         &rank, dimsA, stridesA));
 
-    uint8_t *ymem = (uint8_t *)y_->deviceMem();
+    for(int i = 0; i < 2; i++) {
+      uint8_t *ymem = (uint8_t *)y_->deviceMem(i);
 
-    for(size_t n = 0; n < batch_size; n++) {
-      for(size_t c = 0; c < 3; c++) {
-        output_images_[n].channel[c] = ymem + n * stridesA[0] + c * stridesA[1];
-        output_images_[n].pitch[c] = stridesA[2];
+      for(int n = 0; n < batch_size_; n++) {
+        for(int c = 0; c < 3; c++) {
+          output_images_[i][n].channel[c] = ymem + n * stridesA[0] + c * stridesA[1];
+          output_images_[i][n].pitch[c] = stridesA[2];
+        }
       }
     }
+
+
+    for(int i = 0; i < JPEG_THREADS; i++) {
+      threads_[i] = std::thread(&CudaJpeg::worker, this, i);
+    }
+
   }
 
   ~CudaJpeg()
   {
+    work_mutex_.lock();
+    decode_ = -1;
+    work_cond_.notify_all();
+    work_mutex_.unlock();
+
+    for(int i = 0; i < JPEG_THREADS; i++) {
+      threads_[i].join();
+    }
+
     nvjpegJpegStateDestroy(jpeg_handle_);
     nvjpegDestroy(handle_);
   }
@@ -67,24 +124,66 @@ struct CudaJpeg : public CudaOperation {
     printf("JPEG decoder\n");
   }
 
-  void exec(CudaProgram &p) {
+  void load(CudaProgram &p, long batch) override {
 
-    const int batch_size = x_->dims_[0];
+    int buffer_wr = y_->flip();
 
-    const uint8_t *data[batch_size];
-    size_t lengths[batch_size];
 
-    auto ta = x_->access();
+    work_mutex_.lock();
+    current_batch_ = batch;
+    completed_ = 0;
+    decode_ = 0;
+    work_cond_.notify_all();
 
-    for(int n = 0; n < batch_size; n++) {
-      const uint8_t *jpeg = (const uint8_t *)ta->getAddr(Dims{n});
-      size_t len = *(uint32_t *)jpeg;
-      data[n] = jpeg + sizeof(uint32_t);
-      lengths[n] = len;
+    while(completed_ != batch_size_) {
+      complete_cond_.wait(work_mutex_);
     }
 
-    nvjpegDecodeBatched(handle_, jpeg_handle_,
-                        data, lengths, &output_images_[0], ctx_->stream_);
+    work_mutex_.unlock();
+
+    nvjpegDecodeBatchedPhaseTwo(handle_, jpeg_handle_, stream_);
+
+    nvjpegDecodeBatchedPhaseThree(handle_, jpeg_handle_,
+                                  &output_images_[buffer_wr][0],
+                                  stream_);
+    chkCuda(cudaEventRecord(event_, stream_));
+  }
+
+  void exec(CudaProgram &p) {
+    chkCuda(cudaStreamWaitEvent(ctx_->stream_, event_, 0));
+  }
+
+
+  void worker(int id) {
+
+    uint8_t jpeg_buffer[65536];
+
+    work_mutex_.lock();
+    while(1) {
+      if(decode_ == batch_size_) {
+        work_cond_.wait(work_mutex_);
+        continue;
+      }
+
+      if(decode_ == -1)
+        break;
+
+      const int n = decode_++;
+
+      work_mutex_.unlock();
+
+      size_t l = loader_(current_batch_, n, jpeg_buffer, sizeof(jpeg_buffer));
+
+      if(l > 0) {
+        nvjpegDecodeBatchedPhaseOne(handle_, jpeg_handle_, jpeg_buffer,
+                                    l, n, id, ctx_->stream_);
+      }
+
+      work_mutex_.lock();
+      completed_++;
+      complete_cond_.notify_one();
+    }
+    work_mutex_.unlock();
   }
 
 };

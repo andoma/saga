@@ -180,6 +180,7 @@ public:
 class CudaOperation {
 public:
   virtual ~CudaOperation() {}
+  virtual void load(CudaProgram &p, long batch) {};
   virtual void exec(CudaProgram &p) = 0;
   virtual void print() const = 0;
 };

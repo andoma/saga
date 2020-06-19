@@ -93,6 +93,10 @@ public:
 
   void *deviceMem() const;
 
+  void *deviceMem(int buffer_index) const;
+
+  int flip() const;
+
   std::shared_ptr<CudaTensor> makeGrad();
 
   bool cpacked() const;

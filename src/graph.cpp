@@ -53,6 +53,18 @@ Graph::addNode(const std::string &type,
   return nodes_[nodes_.size() - 1];
 }
 
+std::shared_ptr<Node>
+Graph::addNode(const std::string &type,
+               Loader loader,
+               const Attributes &attributes)
+{
+  auto nodes = Node::make(type, loader, attributes);
+  nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
+  if(nodes_.size() == 0)
+    return nullptr;
+  return nodes_[nodes_.size() - 1];
+}
+
 
 
 std::unordered_set<std::shared_ptr<Tensor>>
