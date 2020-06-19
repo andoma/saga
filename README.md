@@ -15,6 +15,8 @@ This project is still very much work in progress.
 
 * Data augmentation using 2d affine transforms (scaling, rotation, translation)
 
+* Fully pipelined JPEG decoder using Nvidia's GPU accelerated decoding library
+
 * Supported layers:
   * Activation
   * Affine transformation
@@ -25,6 +27,7 @@ This project is still very much work in progress.
   * Dropout
   * Elementwise math operations
   * Fully conneceted
+  * JPEG decoder
   * Pooling
   * Softmax
   * Sum
@@ -37,7 +40,6 @@ This project is still very much work in progress.
   Allows updating next mini-batch and reading out values from previous
   mini-batch while GPU is process current mini-batch. Ensuring 100% GPU
   utilization
-
 
 * Can load (some) [ONNX](https://onnx.ai) models
 
