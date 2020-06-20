@@ -151,7 +151,7 @@ public:
   cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
 
   std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
-                                           size_t dimensions = 0);
+                                           size_t rank = 0);
 
   std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src,
                                                  cudnnTensorFormat_t format);

@@ -160,8 +160,7 @@ CudaProgram::tensorFormat(Tensor::DataType data_type)
 
 
 std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
-                          size_t dimensions)
+CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t rank)
 {
   if(src == nullptr)
     return nullptr;
@@ -173,8 +172,8 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
 
   Dims dims = src->dims_;
 
-  if(dimensions) {
-    while(dims.size() < dimensions)
+  if(rank) {
+    while(dims.size() < rank)
       dims.insert(dims.begin(), 1);
   }
 
