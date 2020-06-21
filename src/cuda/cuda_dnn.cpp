@@ -1001,7 +1001,8 @@ relu_train(CudaProgram &p, const Node &n)
   auto f = std::make_shared<CudnnActivationFwd>(p, n, CUDNN_ACTIVATION_RELU,
                                                 0.0f);
   p.train(f);
-  p.bwd(std::make_shared<CudnnActivationBwd>(p, n, f));
+  if(f->x_->grad_)
+    p.bwd(std::make_shared<CudnnActivationBwd>(p, n, f));
 }
 
 REGISTER_CUDA_OP("relu", relu_infer, relu_train);
@@ -1021,7 +1022,8 @@ elu_train(CudaProgram &p, const Node &n)
   auto f = std::make_shared<CudnnActivationFwd>(p, n, CUDNN_ACTIVATION_ELU,
                                                 n.attributes_.get("alpha", 0.1f));
   p.train(f);
-  p.bwd(std::make_shared<CudnnActivationBwd>(p, n, f));
+  if(f->x_->grad_)
+    p.bwd(std::make_shared<CudnnActivationBwd>(p, n, f));
 }
 
 REGISTER_CUDA_OP("elu", elu_infer, elu_train);
@@ -1142,7 +1144,8 @@ maxpool_train(CudaProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_MAX);
   p.train(f);
-  p.bwd(std::make_shared<CudnnPoolingBwd>(p, n, f));
+  if(f->x_->grad_)
+    p.bwd(std::make_shared<CudnnPoolingBwd>(p, n, f));
 }
 
 REGISTER_CUDA_OP("maxpool", maxpool_infer, maxpool_train);
@@ -1158,7 +1161,8 @@ avgpool_train(CudaProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnPoolingFwd>(p, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
   p.train(f);
-  p.bwd(std::make_shared<CudnnPoolingBwd>(p, n, f));
+  if(f->x_->grad_)
+    p.bwd(std::make_shared<CudnnPoolingBwd>(p, n, f));
 }
 
 REGISTER_CUDA_OP("avgpool", avgpool_infer, avgpool_train);
@@ -2119,7 +2123,8 @@ dropout_train(CudaProgram &p, const Node &n)
 {
   auto f = std::make_shared<CudnnDropoutFwd>(p, n);
   p.train(f);
-  p.bwd(std::make_shared<CudnnDropoutBwd>(p, n, f));
+  if(f->x_->grad_)
+    p.bwd(std::make_shared<CudnnDropoutBwd>(p, n, f));
 }
 
 
