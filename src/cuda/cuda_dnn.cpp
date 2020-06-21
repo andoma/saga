@@ -331,9 +331,9 @@ struct CudnnConvolutionBwd : public CudaOperation {
     : ctx_(p.ctx_)
     , fwd_(fwd)
     , dx_(fwd_->x_->grad_)
-    , dw_(fwd_->w_->makeGrad())
-    , db_(fwd_->b_ ? fwd_->b_->makeGrad() : nullptr)
-    , dy_(fwd_->y_->makeGrad())
+    , dw_(fwd_->w_->makePrivateGrad())
+    , db_(fwd_->b_ ? fwd_->b_->makePrivateGrad() : nullptr)
+    , dy_(fwd_->y_->makeSharedGrad())
     , dx_beta_(n.attributes_.get("dx.beta", 0.0f))
   {
 
@@ -582,11 +582,11 @@ struct CudnnBatchNormBwd : public CudaOperation {
                     const CudnnBatchNormTrain &fwd)
     : ctx_(p.ctx_)
     , x_(fwd.x_)
-    , dy_(fwd.y_->makeGrad())
-    , dx_(fwd.x_->makeGrad())
+    , dy_(fwd.y_->makeSharedGrad())
+    , dx_(fwd.x_->makeSharedGrad())
     , s_(fwd.s_)
-    , ds_(fwd.s_->makeGrad())
-    , db_(fwd.b_->makeGrad())
+    , ds_(fwd.s_->makePrivateGrad())
+    , db_(fwd.b_->makePrivateGrad())
     , sm_(fwd.sm_)
     , sv_(fwd.sv_)
     , epsilon_(fwd.epsilon_)
@@ -762,10 +762,10 @@ struct CudnnBatchNormActivationBwd : public CudaOperation {
                               std::shared_ptr<CudnnBatchNormActivationTrain> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dy_(fwd->y_->makeGrad())
-    , dx_(fwd->x_->makeGrad())
-    , ds_(fwd->s_->makeGrad())
-    , db_(fwd->b_->makeGrad())
+    , dy_(fwd->y_->makeSharedGrad())
+    , dx_(fwd->x_->makeSharedGrad())
+    , ds_(fwd->s_->makePrivateGrad())
+    , db_(fwd->b_->makePrivateGrad())
     , dx_beta_(n.attributes_.get("dx.beta", 0.0f))
   {
     size_t workspace;
@@ -965,8 +965,8 @@ struct CudnnActivationBwd : public CudaOperation {
                      const std::shared_ptr<CudnnActivationFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(fwd->x_->makeGrad())
-    , dy_(fwd->y_->makeGrad())
+    , dx_(fwd->x_->makeSharedGrad())
+    , dy_(fwd->y_->makeSharedGrad())
     , dx_beta_(n.attributes_.get("dx.beta", 0.0f))
   {
   }
@@ -1106,8 +1106,8 @@ struct CudnnPoolingBwd : public CudaOperation {
                   std::shared_ptr<CudnnPoolingFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(fwd->x_->makeGrad())
-    , dy_(fwd->y_->makeGrad())
+    , dx_(fwd->x_->makeSharedGrad())
+    , dy_(fwd->y_->makeSharedGrad())
     , dx_beta_(n.attributes_.get("dx.beta", 0.0f))
   {
   }
@@ -1455,10 +1455,10 @@ struct CudnnGemmBwd : public CudaOperation {
   CudnnGemmBwd(CudaProgram &p, const Node &n,
                std::shared_ptr<CudnnGemmFwd> fwd)
     : ctx_(p.ctx_)
-    , dx_(fwd->x_->makeGrad())
-    , dw_(fwd->w_->makeGrad())
-    , db_(fwd->b_->makeGrad())
-    , dy_(fwd->y_->makeGrad())
+    , dx_(fwd->x_->makeSharedGrad())
+    , dw_(fwd->w_->makePrivateGrad())
+    , db_(fwd->b_->makePrivateGrad())
+    , dy_(fwd->y_->makeSharedGrad())
     , x_(fwd->x_)
     , w_(fwd->w_)
     , n_(fwd->n_)
@@ -1680,8 +1680,8 @@ struct CudnnCatClassifierBwd : public CudaOperation {
                         std::shared_ptr<CudnnCatClassifierFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(fwd->x_->makeGrad())
-    , dy_(fwd->y_->makeGrad())
+    , dx_(fwd->x_->makeSharedGrad())
+    , dy_(fwd->y_->makeSharedGrad())
     , loss_(p.lower_tensor_batch(n.outputs_.get("loss")))
   {
   }
@@ -1797,7 +1797,7 @@ concat_transform_node(CudaProgram &p, const Node &n)
   const int axis = 1;
 
   auto y = p.lower_tensor_batch(n.outputs_.get("y"));
-  auto dy = y->makeGrad();
+  auto dy = y->makeSharedGrad();
   auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
 
   for(const auto &xh : n.inputs_.getv("x")) {
@@ -2009,7 +2009,7 @@ static std::vector<std::shared_ptr<Node>>
 reshape_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 {
   auto x = p.lower_tensor_batch(n->inputs_.get("x"), CUDNN_TENSOR_NCHW);
-  auto dx = x->makeGrad();
+  auto dx = x->makeSharedGrad();
   auto y = n->outputs_.get("y");
 
   auto yl = std::make_shared<CudaTensor>(x->storage_,
@@ -2108,8 +2108,8 @@ struct CudnnDropoutBwd : public CudaOperation {
                      const std::shared_ptr<CudnnDropoutFwd> fwd)
     : ctx_(p.ctx_)
     , fwd_(fwd)
-    , dx_(fwd->x_->makeGrad())
-    , dy_(fwd->y_->makeGrad())
+    , dx_(fwd->x_->makeSharedGrad())
+    , dy_(fwd->y_->makeSharedGrad())
     , dx_beta_(n.attributes_.get("dx.beta", 0.0f))
   {
     assert(dx_beta_ == 0);

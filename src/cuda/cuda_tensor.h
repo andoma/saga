@@ -97,7 +97,9 @@ public:
 
   int flip() const;
 
-  std::shared_ptr<CudaTensor> makeGrad();
+  std::shared_ptr<CudaTensor> makeSharedGrad();
+
+  std::shared_ptr<CudaTensor> makePrivateGrad();
 
   bool cpacked() const;
 

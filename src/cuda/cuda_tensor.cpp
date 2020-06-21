@@ -411,12 +411,19 @@ CudaTensor::slice(const Dims &offset, const Dims &size)
 
 
 std::shared_ptr<CudaTensor>
-CudaTensor::makeGrad()
+CudaTensor::makeSharedGrad()
 {
   if(!grad_)
-    grad_ = std::make_shared<CudaTensor>(*this, namePostfix("grad"));
+    grad_ = std::make_shared<CudaTensor>(*this, namePostfix("shared_grad"));
 
   return grad_;
+}
+
+
+std::shared_ptr<CudaTensor>
+CudaTensor::makePrivateGrad()
+{
+  return std::make_shared<CudaTensor>(*this, namePostfix("private_grad"));
 }
 
 
