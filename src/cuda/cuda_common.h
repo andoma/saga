@@ -192,12 +192,18 @@ public:
 
 void CudaRegisterOpFactory(const char *name,
                            void (*mk_infer)(CudaProgram &p, const Node &n),
-                           void (*mk_train)(CudaProgram &p, const Node &n));
+                           void (*mk_train)(CudaProgram &p, const Node &n),
+                           void (*lower_tensors)(CudaProgram &p, const Node &n));
 
-#define REGISTER_CUDA_OP(name, infer, train) \
+#define REGISTER_CUDA_OP(name, infer, train)                            \
   static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) { \
- CudaRegisterOpFactory(name, infer, train); \
-}
+    CudaRegisterOpFactory(name, infer, train, nullptr);                 \
+  }
+
+#define REGISTER_CUDA_OP3(name, infer, train, lower_tensors)            \
+  static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) { \
+    CudaRegisterOpFactory(name, infer, train, lower_tensors);           \
+  }
 
 typedef std::vector<std::shared_ptr<Node>> Nodes;
 

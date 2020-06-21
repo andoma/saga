@@ -338,6 +338,7 @@ CudaProgram::debug(bool on)
 struct OpFactory {
   void (*mk_infer)(CudaProgram &p, const Node &n);
   void (*mk_train)(CudaProgram &p, const Node &n);
+  void (*lower_tensors)(CudaProgram &p, const Node &n);
 };
 
 static std::map<std::string, OpFactory> *cuda_op_factories;
@@ -345,14 +346,16 @@ static std::map<std::string, OpFactory> *cuda_op_factories;
 void
 CudaRegisterOpFactory(const char *name,
                       void (*mk_infer)(CudaProgram &p, const Node &n),
-                      void (*mk_train)(CudaProgram &p, const Node &n))
+                      void (*mk_train)(CudaProgram &p, const Node &n),
+                      void (*lower_tensors)(CudaProgram &p, const Node &n))
 {
   if(!cuda_op_factories)
     cuda_op_factories = new  std::map<std::string, OpFactory>;
 
   (*cuda_op_factories)[name] = OpFactory{
     .mk_infer = mk_infer,
-    .mk_train = mk_train
+    .mk_train = mk_train,
+    .lower_tensors = lower_tensors
   };
 }
 
@@ -493,6 +496,21 @@ compute_dx_beta(CudaProgram &p,
   return r;
 }
 REGISTER_CUDA_TRANSFORM(1000, CUDA_TRANSFORM_TRAINING, compute_dx_beta);
+
+
+static std::vector<std::shared_ptr<Node>>
+lower_tensors(CudaProgram &p,
+              const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
+    auto op = find_operation(*nodes[i]);
+    if(op == NULL || op->lower_tensors == NULL)
+      continue;
+    op->lower_tensors(p, *nodes[i]);
+  }
+  return nodes;
+}
+REGISTER_CUDA_TRANSFORM(900, CUDA_TRANSFORM_ALL, lower_tensors);
 
 
 void

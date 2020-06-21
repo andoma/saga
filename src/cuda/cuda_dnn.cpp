@@ -468,7 +468,14 @@ conv_train(CudaProgram &p, const Node &n)
     p.upd(std::make_shared<CudnnAdam>(p, f->b_, b->db_));
 }
 
-REGISTER_CUDA_OP("conv", conv_infer, conv_train);
+static void
+conv_lower(CudaProgram &p, const Node &n)
+{
+  p.lower_tensor_batch(n.inputs_.get("x"));
+}
+
+
+REGISTER_CUDA_OP3("conv", conv_infer, conv_train, conv_lower);
 
 
 
@@ -1898,7 +1905,17 @@ convert_train(CudaProgram &p, const Node &n)
   assert(y->grad_ == NULL); // No backprop here yet
 }
 
-REGISTER_CUDA_OP("convert", convert_infer, convert_train);
+
+static void
+convert_lower(CudaProgram &p, const Node &n)
+{
+  auto y = p.resolveTensor_locked(n.outputs_.get("y"));
+  if(y)
+    p.lower_tensor_batch(n.inputs_.get("x"), *y);
+}
+
+
+REGISTER_CUDA_OP3("convert", convert_infer, convert_train, convert_lower);
 
 
 //------------------------------------------------------------------------
