@@ -384,6 +384,23 @@ jpegdecoder_y(const Node &n, const std::optional<const std::string> &name)
                                   Dims({1, channels, width, height}), name);
 }
 
+//------------------------------------------------------------------------
+
+static std::shared_ptr<Tensor>
+spatialtransform_y(const Node &n, const std::optional<const std::string> &name)
+{
+  auto o = n.inputs_.get("x");
+  if(o == nullptr)
+    return nullptr;
+
+  const int height = n.attributes_.get("height", o->dims_[2]);
+  const int width  = n.attributes_.get("width",  o->dims_[3]);
+
+  return std::make_shared<Tensor>(o->data_type_,
+                                  Dims({o->dims_[0], o->dims_[1],
+                                        height, width}));
+}
+
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
@@ -413,7 +430,7 @@ static const struct {
   { "relu",              passthru_y },
   { "reshape",           reshape_y },
   { "softmax",           passthru_y },
-  { "spatialtransform",  passthru_y },
+  { "spatialtransform",  spatialtransform_y },
   { "sum",               sum_y },
   { "convert",           convert_y },
 };
