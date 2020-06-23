@@ -270,12 +270,14 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensor> alias,
                                       &rank, dimsA, stridesA));
 
   assert(data_type == type_);
-  assert((size_t)rank == size.size());
+  for(size_t i = 0; i < size.size(); i++) {
+    dimsA[i] = size[i];
+  }
 
   chkCUDNN(cudnnCreateTensorDescriptor(&desc_));
-  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_, rank, &size[0], stridesA));
+  chkCUDNN(cudnnSetTensorNdDescriptor(desc_, type_,rank, dimsA, stridesA));
 
-  for(int i = 0; i < rank && i < (ssize_t)offset_element.size(); i++) {
+  for(size_t i = 0; i < size.size() && i < offset_element.size(); i++) {
     offset_ += offset_element[i] * stridesA[i];
   }
 }
