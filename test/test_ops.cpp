@@ -746,11 +746,11 @@ ops_main(int argc, char **argv)
 
   r |= test_op(ctx, "batchnorm", {
       {"x", load_tensor(dt, batchnorm_input_x)},
-      {"s", load_tensor(dt, batchnorm_input_s)},
-      {"b", load_tensor(dt, batchnorm_input_b)},
-      {"m", load_tensor(dt, batchnorm_input_m)},
-      {"v", load_tensor(dt, batchnorm_input_v)},
-        }, {{"epsilon", 5}},
+      {"s", load_tensor(Tensor::DataType::FLOAT, batchnorm_input_s)},
+      {"b", load_tensor(Tensor::DataType::FLOAT, batchnorm_input_b)},
+      {"m", load_tensor(Tensor::DataType::FLOAT, batchnorm_input_m)},
+      {"v", load_tensor(Tensor::DataType::FLOAT, batchnorm_input_v)},
+        }, {{"epsilon", 0.00001f}},
     load_tensor(dt, batchnorm_output));
 
   return r;
