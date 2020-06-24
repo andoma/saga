@@ -291,7 +291,6 @@ fc_setup(std::shared_ptr<Node> n,
 
   auto w = n->inputs_.get("w");
   auto b = n->inputs_.get("b");
-  const bool transW = n->attributes_.get("transW", false);
 
   if(!w) {
     const int outputs = n->attributes_.get("outputs", 1);
@@ -302,6 +301,8 @@ fc_setup(std::shared_ptr<Node> n,
                    0, sqrt(2.0 / x->dims_[1]),
                    named_tensors, node_tensor_name(n->name_, "w"));
   }
+
+  const bool transW = n->attributes_.get("transW", false);
 
   if(!b && n->attributes_.get("bias", false)) {
     n->inputs_["b"] =
