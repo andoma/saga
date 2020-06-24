@@ -18,12 +18,11 @@ namespace saga {
 
 struct CudaJpeg : public CudaOperation {
 
-  const std::shared_ptr<CudaContext> ctx_;
+  const std::shared_ptr<CudaTensor> y_;
   const Loader loader_;
   const int batch_size_;
 
   std::unique_ptr<nvjpegImage_t[]> output_images_[2];
-  std::shared_ptr<CudaTensor> y_;
 
   cudaStream_t stream_;
   cudaEvent_t event_;
@@ -40,30 +39,15 @@ struct CudaJpeg : public CudaOperation {
   int completed_;
   long current_batch_;
 
-  CudaJpeg(CudaProgram &p, const Node &n)
-    : ctx_(p.ctx_)
-    , loader_(n.loader_)
-    , batch_size_(p.batch_size_)
+  CudaJpeg(CudaProgram &p,
+           std::shared_ptr<CudaTensor> y,
+           Loader loader,
+           int batch_size)
+    : CudaOperation("jpegdec")
+    , y_(y), loader_(loader), batch_size_(batch_size)
   {
-
-    auto yh = n.outputs_.get("y");
-
-    auto it = p.tensors_.find(yh);
-    if(it == p.tensors_.end()) {
-
-      auto dims = yh->dims_.n(batch_size_);
-      y_ = std::make_shared<CudaTensor>(yh->data_type_, dims,
-                                        CUDNN_TENSOR_NHWC,
-                                        ctx_, yh->name_, 2);
-
-      p.tensors_[yh] = y_;
-    } else {
-      y_ = it->second;
-    }
-
     output_images_[0] = std::make_unique<nvjpegImage_t[]>(batch_size_);
     output_images_[1] = std::make_unique<nvjpegImage_t[]>(batch_size_);
-
 
     decode_ = batch_size_;
     completed_ = batch_size_;
@@ -120,11 +104,7 @@ struct CudaJpeg : public CudaOperation {
     nvjpegDestroy(handle_);
   }
 
-  void print() const {
-    printf("JPEG decoder\n");
-  }
-
-  void load(CudaProgram &p, long batch) override {
+  void exec(CudaProgram &p, long batch) override {
 
     int buffer_wr = y_->flip();
 
@@ -147,10 +127,6 @@ struct CudaJpeg : public CudaOperation {
                                   &output_images_[buffer_wr][0],
                                   stream_);
     chkCuda(cudaEventRecord(event_, stream_));
-  }
-
-  void exec(CudaProgram &p) {
-    chkCuda(cudaStreamWaitEvent(ctx_->stream_, event_, 0));
   }
 
 
@@ -176,7 +152,7 @@ struct CudaJpeg : public CudaOperation {
 
       if(l > 0) {
         nvjpegDecodeBatchedPhaseOne(handle_, jpeg_handle_, jpeg_buffer,
-                                    l, n, id, ctx_->stream_);
+                                    l, n, id, stream_);
       }
 
       work_mutex_.lock();
@@ -186,24 +162,67 @@ struct CudaJpeg : public CudaOperation {
     work_mutex_.unlock();
   }
 
+  std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
+    return {};
+  }
+
+  std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
+    return {y_};
+  }
+
+
+
+};
+
+struct CudaJpegSync : public CudaOperation {
+
+  const std::shared_ptr<CudaJpeg> j_;
+
+  CudaJpegSync(std::shared_ptr<CudaJpeg> j)
+    : CudaOperation("jpegsync")
+    , j_(j)
+  {}
+
+  void exec(CudaProgram &p, long batch)
+  {
+    chkCuda(cudaStreamWaitEvent(p.ctx_->stream_, j_->event_, 0));
+  }
+
+  std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
+    return {j_->y_};
+  }
+
+  std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
+    return {j_->y_};
+  }
+
 };
 
 
-static void
-jpegdecoder_infer(CudaProgram &p, const Node &n)
-{
-  p.infer(std::make_shared<CudaJpeg>(p, n));
-}
 
 
 static void
-jpegdecoder_train(CudaProgram &p, const Node &n)
+jpegdecoder_setup(CudaProgram &p, const Node &n, bool training)
 {
-  p.train(std::make_shared<CudaJpeg>(p, n));
+  assert(training);
+
+  // Lower into a double buffered tensor
+  auto yh = n.outputs_.get("y");
+  auto dims = yh->dims_.n(p.batch_size_);
+  auto y = std::make_shared<CudaTensor>(yh->data_type_, dims,
+                                        CUDNN_TENSOR_NHWC,
+                                        p.ctx_, yh->name_, 2);
+
+  p.tensors_[yh] = y;
+
+  auto j = std::make_shared<CudaJpeg>(p, y, n.loader_, p.batch_size_);
+  p.load_operations_.push_back(j);
+
+  p.train(std::make_shared<CudaJpegSync>(j));
 }
 
 
-REGISTER_CUDA_OP("jpegdecoder", jpegdecoder_infer, jpegdecoder_train);
+REGISTER_CUDA_OP("jpegdecoder", jpegdecoder_setup);
 
 
 };

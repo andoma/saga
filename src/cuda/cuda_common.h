@@ -43,6 +43,8 @@ public:
   CudaContext()
     : cudnn_(NULL)
     , cublas_(NULL)
+    , memory_unified_(0)
+    , memory_gpu_(0)
   {}
 
   ~CudaContext()
@@ -54,9 +56,14 @@ public:
                                          const ProgramConfig &pc,
                                          const BatchTensorAccessors &accessors);
 
+  void print() override;
+
   cudaStream_t stream_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
+  size_t memory_unified_;
+  size_t memory_gpu_;
+
   int deviceId_;
   std::mutex mutex_;
 };
@@ -96,6 +103,7 @@ public:
   ~CudaProgram()
   {
     chkCuda(cudaFree(workspace_));
+    ctx_->memory_gpu_ -= workspace_size_;
     chkCuda(cudaFree(check_result_));
   }
 
@@ -113,9 +121,13 @@ public:
   void allocWorkspace() {
     if(workspace_requested_ <= workspace_size_)
       return;
-    workspace_size_ = workspace_requested_;
+
     chkCuda(cudaFree(workspace_));
+    ctx_->memory_gpu_ -= workspace_size_;
+
+    workspace_size_ = workspace_requested_;
     chkCuda(cudaMalloc(&workspace_, workspace_size_));
+    ctx_->memory_gpu_ += workspace_size_;
   }
 
   const std::shared_ptr<CudaContext> ctx_;
@@ -127,8 +139,10 @@ public:
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
 
+  std::vector<std::shared_ptr<CudaOperation>> load_operations_;
   std::vector<std::shared_ptr<CudaOperation>> infer_operations_;
-  std::vector<std::shared_ptr<CudaOperation>> train_operations_;
+
+  std::vector<std::shared_ptr<CudaOperation>> fwd_operations_;
   std::vector<std::shared_ptr<CudaOperation>> bwd_operations_;
   std::vector<std::shared_ptr<CudaOperation>> upd_operations_;
 
@@ -179,10 +193,27 @@ public:
 
 class CudaOperation {
 public:
+  CudaOperation& operator=(CudaOperation const&) = delete;
+  CudaOperation(CudaOperation const&) = delete;
+
   virtual ~CudaOperation() {}
-  virtual void load(CudaProgram &p, long batch) {};
-  virtual void exec(CudaProgram &p) = 0;
-  virtual void print() const = 0;
+  virtual void exec(CudaProgram &p, long batch) = 0;
+
+  virtual std::vector<std::shared_ptr<CudaTensor>> getInputs() const = 0;
+  virtual std::vector<std::shared_ptr<CudaTensor>> getOutputs() const = 0;
+
+  void print() const;
+
+  std::string name() const { return kind_; }
+
+protected:
+
+  CudaOperation(std::string kind) : kind_(kind) {}
+
+  CudaOperation() = delete;
+
+private:
+  const std::string kind_;
 };
 
 
@@ -191,19 +222,14 @@ public:
 #define CPPJOIN(a, b) CPPGLUE(a, b)
 
 void CudaRegisterOpFactory(const char *name,
-                           void (*mk_infer)(CudaProgram &p, const Node &n),
-                           void (*mk_train)(CudaProgram &p, const Node &n),
-                           void (*lower_tensors)(CudaProgram &p, const Node &n));
+                           void (*setup)(CudaProgram &p, const Node &n,
+                                         bool training));
 
-#define REGISTER_CUDA_OP(name, infer, train)                            \
+#define REGISTER_CUDA_OP(name, setup)                                   \
   static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) { \
-    CudaRegisterOpFactory(name, infer, train, nullptr);                 \
+    CudaRegisterOpFactory(name, setup);                                 \
   }
 
-#define REGISTER_CUDA_OP3(name, infer, train, lower_tensors)            \
-  static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) { \
-    CudaRegisterOpFactory(name, infer, train, lower_tensors);           \
-  }
 
 typedef std::vector<std::shared_ptr<Node>> Nodes;
 

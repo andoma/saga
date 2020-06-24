@@ -177,7 +177,7 @@ vgg19(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 
 
 /*
- *  RTX 2070 batchsize 512
+ *  RTX 2070 batchsize 512 mnist dataset
 
    test     float   NCHW    2.68
    test+bn  float   NCHW    3.02
@@ -224,7 +224,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 
   n = g.addNode("conv", {{"x", n->y()}},
                 {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", !bn}},
-                "conv3");
+                "conv4");
   if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
@@ -233,7 +233,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 
   n = g.addNode("conv", {{"x", n->y()}},
                 {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", !bn}},
-                "conv3");
+                "conv5");
   if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
@@ -242,7 +242,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 
   n = g.addNode("conv", {{"x", n->y()}},
                 {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", !bn}},
-                "conv3");
+                "conv6");
   if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
@@ -251,7 +251,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 
   n = g.addNode("conv", {{"x", n->y()}},
                 {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", !bn}},
-                "conv3");
+                "conv7");
   if(bn)
     n = g.addNode("batchnorm", {{"x", n->y()}}, {});
   n = g.addNode("relu", {{"x", n->y()}}, {});
@@ -348,8 +348,6 @@ test_classifier(int argc, char **argv,
                 std::function<void(TensorAccess &, long batch)> load_inputs,
                 std::function<int(long index)> get_label)
 {
-  signal(SIGINT, stop);
-
   int batch_size = 64;
 
   int opt;
@@ -396,6 +394,9 @@ test_classifier(int argc, char **argv,
       break;
     }
   }
+
+  if(savepath)
+    signal(SIGINT, stop);
 
   printf("Test classifer: DataType:%s BatchSize:%d\n",
          dt == Tensor::DataType::HALF ? "fp16" : "fp32",
@@ -505,6 +506,8 @@ test_classifier(int argc, char **argv,
    });
 
   auto ctx = createContext();
+  ctx->print();
+
   auto p = ctx->createProgram(g, {
       .inference = true,
       .training = true,
@@ -515,6 +518,8 @@ test_classifier(int argc, char **argv,
 
   if(verbose > 1)
     p->print();
+
+  ctx->print();
 
   theta = p->resolveTensor(theta);
   postconv = p->resolveTensor(postconv);

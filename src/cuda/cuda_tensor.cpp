@@ -36,6 +36,8 @@
 
 namespace saga {
 
+#define ROUNDUP(x, y) (((x) | ((y) - 1)) + 1)
+
 class CudaTensorStorage : public TensorStorage {
 
 public:
@@ -49,8 +51,10 @@ public:
     , size_(size)
   {
     for(int i = 0; i < num_buffers; i++) {
+      assert(size == size_);
       chkCuda(cudaMallocManaged(&buffers_[i], size, cudaMemAttachGlobal));
       chkCuda(cudaMemset(buffers_[i], 0, size));
+      ctx_->memory_unified_ += ROUNDUP(size_, 4096);
     }
   }
 
@@ -58,6 +62,7 @@ public:
   {
     for(int i = 0; i < num_buffers_; i++) {
       chkCuda(cudaFree(buffers_[i]));
+      ctx_->memory_unified_ -= ROUNDUP(size_, 4096);
     }
   }
 

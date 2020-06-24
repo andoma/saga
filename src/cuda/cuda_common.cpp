@@ -95,7 +95,7 @@ CudaProgram::infer(const std::shared_ptr<CudaOperation> &op)
 void
 CudaProgram::train(const std::shared_ptr<CudaOperation> &op)
 {
-  train_operations_.push_back(op);
+  fwd_operations_.push_back(op);
 }
 
 void
@@ -178,7 +178,9 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t rank)
   }
 
   auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                        dims, tensorFormat(src->data_type_),
+                                        dims,
+                                        rank == 2 ? CUDNN_TENSOR_NCHW :
+                                        tensorFormat(src->data_type_),
                                         ctx_,
                                         src->name_);
 
@@ -246,11 +248,11 @@ CudaProgram::infer(long batches)
 
   issueOps(infer_pre_, 0);
   flipDoubleBufferedTensors();
-  for(const auto &op : infer_operations_) op->load(*this, 0);
+  for(const auto &op : load_operations_) op->exec(*this, 0);
   cudaStreamSynchronize(ctx_->stream_);
   for(long i = 0; i < batches; i++) {
 
-    for(const auto &op : infer_operations_) op->exec(*this);
+    for(const auto &op : infer_operations_) op->exec(*this, i);
 
     if(i < batches - 1)
       issueOps(infer_pre_, i + 1);
@@ -258,7 +260,8 @@ CudaProgram::infer(long batches)
       issueOps(infer_post_, i - 1);
 
     flipDoubleBufferedTensors();
-    for(const auto &op : infer_operations_) op->load(*this, i + 1);
+    if(i < batches - 1)
+      for(const auto &op : load_operations_) op->exec(*this, i + 1);
     cudaStreamSynchronize(ctx_->stream_);
   }
   issueOps(infer_post_, batches - 1);
@@ -273,14 +276,14 @@ CudaProgram::train(long batches)
 
   issueOps(train_pre_, 0);
   flipDoubleBufferedTensors();
-  for(const auto &op : train_operations_) op->load(*this, 0);
+  for(const auto &op : load_operations_) op->exec(*this, 0);
   cudaStreamSynchronize(ctx_->stream_);
 
   for(long i = 0; i < batches; i++) {
 
-    for(const auto &op : train_operations_) op->exec(*this);
-    for(const auto &op : bwd_operations_)   op->exec(*this);
-    for(const auto &op : upd_operations_)   op->exec(*this);
+    for(const auto &op : fwd_operations_) op->exec(*this, i);
+    for(const auto &op : bwd_operations_) op->exec(*this, i);
+    for(const auto &op : upd_operations_) op->exec(*this, i);
 
     if(i < batches - 1)
       issueOps(train_pre_, i + 1);
@@ -289,7 +292,7 @@ CudaProgram::train(long batches)
 
     flipDoubleBufferedTensors();
     if(i < batches - 1)
-      for(const auto &op : train_operations_) op->load(*this, i + 1);
+      for(const auto &op : load_operations_) op->exec(*this, i + 1);
     cudaStreamSynchronize(ctx_->stream_);
 
     if(*(int *)check_result_) {
@@ -303,6 +306,23 @@ CudaProgram::train(long batches)
   issueOps(train_post_, batches - 1);
 }
 
+void
+CudaOperation::print() const
+{
+  auto inputs = getInputs();
+  auto outputs = getOutputs();
+
+  printf("OP: %s\n", name().c_str());
+  for(auto const &t : inputs) {
+    if(t)
+      printf("\tI: %s\n", t->info().c_str());
+  }
+  for(auto const &t : outputs) {
+    if(t)
+      printf("\tO: %s\n", t->info().c_str());
+  }
+
+}
 
 void
 CudaProgram::print() const
@@ -315,7 +335,7 @@ CudaProgram::print() const
   }
 
   printf("\n\nTraining:\n");
-  for(const auto &op : train_operations_) {
+  for(const auto &op : fwd_operations_) {
     op->print();
   }
   for(const auto &op : bwd_operations_) {
@@ -324,6 +344,7 @@ CudaProgram::print() const
   for(const auto &op : upd_operations_) {
     op->print();
   }
+
 }
 
 void
@@ -336,27 +357,19 @@ CudaProgram::debug(bool on)
 //------------------------------------------------------------------------
 
 struct OpFactory {
-  void (*mk_infer)(CudaProgram &p, const Node &n);
-  void (*mk_train)(CudaProgram &p, const Node &n);
-  void (*lower_tensors)(CudaProgram &p, const Node &n);
+  void (*setup)(CudaProgram &p, const Node &n, bool training);
 };
 
 static std::map<std::string, OpFactory> *cuda_op_factories;
 
 void
 CudaRegisterOpFactory(const char *name,
-                      void (*mk_infer)(CudaProgram &p, const Node &n),
-                      void (*mk_train)(CudaProgram &p, const Node &n),
-                      void (*lower_tensors)(CudaProgram &p, const Node &n))
+                      void (*setup)(CudaProgram &p, const Node &n, bool train))
 {
   if(!cuda_op_factories)
     cuda_op_factories = new  std::map<std::string, OpFactory>;
 
-  (*cuda_op_factories)[name] = OpFactory{
-    .mk_infer = mk_infer,
-    .mk_train = mk_train,
-    .lower_tensors = lower_tensors
-  };
+  (*cuda_op_factories)[name] = OpFactory{.setup = setup };
 }
 
 
@@ -498,20 +511,6 @@ compute_dx_beta(CudaProgram &p,
 REGISTER_CUDA_TRANSFORM(1000, CUDA_TRANSFORM_TRAINING, compute_dx_beta);
 
 
-static std::vector<std::shared_ptr<Node>>
-lower_tensors(CudaProgram &p,
-              const std::vector<std::shared_ptr<Node>> &nodes)
-{
-  for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
-    auto op = find_operation(*nodes[i]);
-    if(op == NULL || op->lower_tensors == NULL)
-      continue;
-    op->lower_tensors(p, *nodes[i]);
-  }
-  return nodes;
-}
-REGISTER_CUDA_TRANSFORM(900, CUDA_TRANSFORM_ALL, lower_tensors);
-
 
 void
 CudaProgram::addPrePostOp(std::shared_ptr<CudaTensor> t,
@@ -599,8 +598,8 @@ CudaContext::createProgram(const Graph &g,
 
     for(const auto &n : train_nodes) {
       auto op = find_operation(*n);
-      if(op != NULL && op->mk_train) {
-        op->mk_train(*p, *n);
+      if(op != NULL && op->setup) {
+        op->setup(*p, *n, true);
       } else {
         fprintf(stderr, "Unable to create training operation for node %s\n",
                 n->type_.c_str());
@@ -616,8 +615,8 @@ CudaContext::createProgram(const Graph &g,
     auto infer_nodes = applyTransforms(CUDA_TRANSFORM_INFERENCE, *p, nodes);
     for(const auto &n : infer_nodes) {
       auto op = find_operation(*n);
-      if(op != NULL && op->mk_infer) {
-        op->mk_infer(*p, *n);
+      if(op != NULL && op->setup) {
+        op->setup(*p, *n, false);
       } else {
         fprintf(stderr, "Unable to create inference operation for node %s\n",
                 n->type_.c_str());
@@ -630,6 +629,19 @@ CudaContext::createProgram(const Graph &g,
 
 
   return p;
+}
+
+
+void
+CudaContext::print()
+{
+  printf("Managed memory: %zd kbyte\n", memory_unified_ / 1024);
+  printf("    GPU memory: %zd kbyte\n", memory_gpu_ / 1024);
+
+  size_t memfree = 0, memtotal = 0;
+  cudaMemGetInfo(&memfree, &memtotal);
+  printf("   Free memory: %zd kbyte\n", memfree / 1024);
+  printf("  Total memory: %zd kbyte\n", memtotal / 1024);
 }
 
 }

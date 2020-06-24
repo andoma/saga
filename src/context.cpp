@@ -13,6 +13,8 @@ public:
                                          const ProgramConfig &pc,
                                          const BatchTensorAccessors &access = {}) override;
 
+  void print() override {};
+
 };
 
 

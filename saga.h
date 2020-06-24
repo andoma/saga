@@ -391,6 +391,8 @@ public:
   virtual std::shared_ptr<Program> createProgram(const Graph &graph,
                                                  const ProgramConfig &pc,
                                                  const BatchTensorAccessors &accessors = {}) = 0;
+
+  virtual void print() = 0;
 };
 
 
