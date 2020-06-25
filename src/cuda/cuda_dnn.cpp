@@ -2168,7 +2168,7 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
 
   auto theta = p.lower_tensor(n.inputs_.get("theta"));
 
-  p.train(std::make_shared<CudnnSpatialTransformFwd>(p.ctx_, x, y, theta));
+  p.train(std::make_shared<CudnnSpatialTransformFwd>(p.ctx_, x, theta, y));
 }
 
 REGISTER_CUDA_OP("spatialtransform", spatialtransform_setup);
