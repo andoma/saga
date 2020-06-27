@@ -1262,7 +1262,7 @@ struct CudaCatClassifierBwd : public CudaOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
-    return {y_, loss_};
+    return {dx_, loss_};
   }
 
 };
