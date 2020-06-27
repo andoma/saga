@@ -36,7 +36,7 @@ firemodule(Graph &g, std::shared_ptr<Node> input,
                      name + "-s1x1");
 
   if(with_bn)
-    s = g.addNode("batchnorm", {{"x", s->y()}}, {});
+    s = g.addNode("batchnorm", {{"x", s->y()}}, {}, name + "-bn");
 
   s = g.addNode("relu", {{"x", s->y()}}, {});
 
@@ -202,7 +202,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
                 {{"size", 3}, {"activations", 32}, {"pad", 1}, {"bias", !bn}},
                 "conv1");
   if(bn)
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn1");
   n = g.addNode("relu", {{"x", n->y()}}, {});
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
@@ -210,14 +210,14 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
                 {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", !bn}},
                 "conv2");
   if(bn)
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn2");
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("conv", {{"x", n->y()}},
                 {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", !bn}},
                 "conv3");
   if(bn)
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn3");
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
@@ -226,7 +226,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
                 {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", !bn}},
                 "conv4");
   if(bn)
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn4");
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
@@ -235,7 +235,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
                 {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", !bn}},
                 "conv5");
   if(bn)
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn5");
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
@@ -244,7 +244,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
                 {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", !bn}},
                 "conv6");
   if(bn)
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn6");
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
@@ -253,7 +253,7 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
                 {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", !bn}},
                 "conv7");
   if(bn)
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn7");
   n = g.addNode("relu", {{"x", n->y()}}, {});
 
   n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
@@ -547,8 +547,8 @@ test_classifier(int argc, char **argv,
            (t1 - t0) / 1e6,
            (t2 - t1) / 1e6,
            loss_sum / test_inputs);
-    if(percentage > 99 || !g_run)
-      break;
+    //    if(percentage > 99 || !g_run)
+    //      break;
   }
 
   if(savepath != NULL)
