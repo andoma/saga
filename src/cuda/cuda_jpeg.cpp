@@ -40,6 +40,7 @@ struct CudaJpeg : public CudaOperation {
   long current_batch_;
 
   CudaJpeg(CudaProgram &p,
+           std::shared_ptr<CudaTensorStorageDoubleBuffered> s,
            std::shared_ptr<CudaTensor> y,
            Loader loader,
            int batch_size)
@@ -205,26 +206,24 @@ static void
 jpegdecoder_setup(CudaProgram &p, const Node &n, bool training)
 {
   assert(training);
-
+  abort();  // FIX FIX DOUBLE BUFFER
   // Lower into a double buffered tensor
   auto yh = n.outputs_.get("y");
   auto dims = yh->dims_.n(p.batch_size_);
   auto y = std::make_shared<CudaTensor>(yh->data_type_, dims,
                                         CUDNN_TENSOR_NHWC,
-                                        p.ctx_, yh->name_, 2);
+                                        p.ctx_, yh->name_);
 
   p.tensors_[yh] = y;
 
   auto j = std::make_shared<CudaJpeg>(p, y, n.loader_, p.batch_size_);
   p.load_operations_.push_back(j);
 
-  p.train(std::make_shared<CudaJpegSync>(j));
+  p.fwd(std::make_shared<CudaJpegSync>(j));
 }
 
 
 REGISTER_CUDA_OP("jpegdecoder", jpegdecoder_setup);
 
-
 };
-
 

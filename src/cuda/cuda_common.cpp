@@ -93,7 +93,7 @@ CudaProgram::infer(const std::shared_ptr<CudaOperation> &op)
 }
 
 void
-CudaProgram::train(const std::shared_ptr<CudaOperation> &op)
+CudaProgram::fwd(const std::shared_ptr<CudaOperation> &op)
 {
   fwd_operations_.push_back(op);
 }
@@ -281,9 +281,7 @@ CudaProgram::train(long batches)
 
   for(long i = 0; i < batches; i++) {
 
-    for(const auto &op : fwd_operations_) op->exec(*this, i);
-    for(const auto &op : bwd_operations_) op->exec(*this, i);
-    for(const auto &op : upd_operations_) op->exec(*this, i);
+    for(const auto &op : train_operations_) op->exec(*this, i);
 
     if(i < batches - 1)
       issueOps(train_pre_, i + 1);
@@ -307,21 +305,44 @@ CudaProgram::train(long batches)
 }
 
 void
-CudaOperation::print() const
+CudaOperation::print(bool full) const
 {
   auto inputs = getInputs();
   auto outputs = getOutputs();
 
-  printf("OP: %s\n", name().c_str());
-  for(auto const &t : inputs) {
-    if(t)
-      printf("\tI: %s\n", t->info().c_str());
-  }
-  for(auto const &t : outputs) {
-    if(t)
-      printf("\tO: %s\n", t->info().c_str());
-  }
+  if(full) {
 
+    printf("OP: %s\n", name().c_str());
+    for(auto const &t : inputs) {
+      if(t)
+        printf("\tI: %s\n", t->info().c_str());
+    }
+    for(auto const &t : outputs) {
+      if(t)
+        printf("\tO: %s\n", t->info().c_str());
+    }
+  } else {
+    const char *sep = "";
+    for(auto const &t : outputs) {
+      if(!t)
+        continue;
+
+      printf("%s%s", sep, t->shortname().c_str());
+      sep = ", ";
+    }
+
+    printf(" = %s(", name().c_str());
+
+    sep = "";
+    for(auto const &t : inputs) {
+      if(!t)
+        continue;
+
+      printf("%s%s", sep, t->shortname().c_str());
+      sep = ", ";
+    }
+    printf(")\n");
+  }
 }
 
 void
@@ -335,16 +356,12 @@ CudaProgram::print() const
   }
 
   printf("\n\nTraining:\n");
-  for(const auto &op : fwd_operations_) {
+  int index = 0;
+  for(const auto &op : train_operations_) {
+    printf("%3d: ", index);
     op->print();
+    index++;
   }
-  for(const auto &op : bwd_operations_) {
-    op->print();
-  }
-  for(const auto &op : upd_operations_) {
-    op->print();
-  }
-
 }
 
 void
@@ -514,9 +531,10 @@ REGISTER_CUDA_TRANSFORM(1000, CUDA_TRANSFORM_TRAINING, compute_dx_beta);
 
 void
 CudaProgram::addPrePostOp(std::shared_ptr<CudaTensor> t,
+                          std::shared_ptr<CudaTensorStorageDoubleBuffered> s,
                           const BatchTensorAccess &a)
 {
-  auto op = CudaBatchAccessOp{.tensor_ = t, .fn_ = a.fn};
+  auto op = CudaBatchAccessOp{.tensor_ = t, .storage_ = s, .fn_ = a.fn};
 
   if(a.phase == Phase::PRE) {
     op.prefetch_ = true;
@@ -546,14 +564,16 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
 
     auto src = a.tensor;
     auto dims = src->dims_.n(batch_size_);
-    auto t = std::make_shared<CudaTensor>(src->data_type_, dims,
-                                          tensorFormat(src->data_type_),
-                                          ctx_, src->name_, 2);
 
-    flips_.push_back(t->storage_);
+    auto fmt = tensorFormat(src->data_type_);
+    auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(src->data_type_,
+                                                               dims, fmt, ctx_);
+    auto t = std::make_shared<CudaTensor>(s, dims, fmt);
+
+    flips_.push_back(s);
     t->copyFromLocked(*src);
     tensors_[src] = t;
-    addPrePostOp(t, a);
+    addPrePostOp(t, s, a);
   }
 
 
@@ -563,17 +583,169 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
 
     auto src = a.tensor;
     auto dims = src->dims_.n(batch_size_);
-    auto g = std::make_shared<CudaTensor>(src->data_type_, dims,
-                                          tensorFormat(src->data_type_),
-                                          ctx_, src->name_, 2);
-    flips_.push_back(g->storage_);
+
+    auto fmt = tensorFormat(src->data_type_);
+    auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(src->data_type_,
+                                                               dims, fmt, ctx_);
+    auto g = std::make_shared<CudaTensor>(s, dims, fmt);
+    flips_.push_back(s);
 
     auto t = lower_tensor_batch(src);
     t->grad_ = g;
-    addPrePostOp(g, a);
+    addPrePostOp(g, s, a);
+  }
+}
+
+
+
+
+
+static size_t
+compute_memory_cost(const std::vector<std::shared_ptr<CudaOperation>> &ops,
+                    int tensor_count)
+{
+  std::vector<int> first_write(tensor_count, INT32_MAX);
+  std::vector<int> last_read(tensor_count, INT32_MIN);
+  std::vector<size_t> usage(tensor_count, 0);
+
+  for(size_t i = 0; i < ops.size(); i++) {
+    const auto &op = ops[i];
+    for(const auto &o : op->getInputs()) {
+      last_read[o->id()] = i;
+      usage[o->id()] = o->memoryUsage();
+    }
   }
 
+  for(ssize_t i = ops.size() - 1; i>= 0; i--) {
+    const auto &op = ops[i];
+    for(const auto &o : op->getOutputs()) {
+      first_write[o->id()] = i;
+      usage[o->id()] = o->memoryUsage();
+    }
+  }
+
+#if 0
+  int r = 0;
+  for(int i = 0; i < tensor_count; i++) {
+    if(last_read[i] > first_write[i])
+      r += last_read[i] - first_write[i];
+  }
+  return r;
+#else
+
+  size_t highest_mem_use = 0;
+  for(int i = 0; i < (int)ops.size(); i++) {
+
+    size_t s = 0;
+    for(int j = 0; j < tensor_count; j++) {
+      if(last_read[j] > first_write[j] &&
+         first_write[j] <= i &&
+         last_read[j] >= i) {
+        s += usage[j];
+      }
+    }
+
+    if(s > highest_mem_use) {
+      highest_mem_use = s;
+    }
+  }
+  return highest_mem_use;
+#endif
 }
+
+
+
+
+
+
+
+static std::unordered_set<int>
+input_tensor_set(const CudaOperation &op)
+{
+  std::unordered_set<int> r;
+  for(const auto &o : op.getInputs()) {
+    r.insert(o->id());
+  }
+  return r;
+}
+
+
+static bool
+writes_to_set(const CudaOperation &op, const std::unordered_set<int> &s)
+{
+  for(const auto &o : op.getOutputs()) {
+    if(s.find(o->id()) != s.end())
+      return true;
+  }
+  return false;
+}
+
+
+#if 0
+
+static void
+ops_print(const std::vector<std::shared_ptr<CudaOperation>> &ops)
+{
+  for(size_t i = 0; i < ops.size(); i++) {
+    const auto &op = ops[i];
+    printf("%3zd: ", i);
+    op->print();
+  }
+}
+#endif
+
+
+static std::vector<std::shared_ptr<CudaOperation>>
+op_motion(std::vector<std::shared_ptr<CudaOperation>> ops)
+{
+  int tensor_count = 0;
+  const size_t num_ops = ops.size();
+
+  for(size_t i = 0; i < ops.size(); i++) {
+    const auto &op = ops[i];
+    for(const auto &o : op->getInputs()) {
+      tensor_count = std::max(tensor_count, o->id() + 1);
+    }
+
+    for(const auto &o : op->getOutputs()) {
+      tensor_count = std::max(tensor_count, o->id() + 1);
+    }
+  }
+
+  size_t memory_cost = compute_memory_cost(ops, tensor_count);
+
+  for(ssize_t i = 0; i < (ssize_t)num_ops; i++) {
+    auto inputs = input_tensor_set(*ops[i]);
+
+    ssize_t j;
+    for(j = i - 1; j >= 0; j--) {
+      if(writes_to_set(*ops[j], inputs))
+        break;
+    }
+
+    if(j == -1)
+      continue;
+
+    j++;
+    if(j != i) {
+      auto copy = ops;
+      auto op = copy[i];
+      copy.erase(copy.begin() + i);
+      copy.insert(copy.begin() + j, op);
+
+      size_t new_mem_cost = compute_memory_cost(copy, tensor_count);
+      if(new_mem_cost < memory_cost) {
+        i = 0;
+        memory_cost = new_mem_cost;
+        ops = copy;
+      }
+    }
+  }
+  return ops;
+}
+
+
+
 
 
 
@@ -609,6 +781,20 @@ CudaContext::createProgram(const Graph &g,
     }
 
     assert(p->infer_operations_.empty());
+
+    p->train_operations_.insert(p->train_operations_.end(),
+                                p->fwd_operations_.begin(),
+                                p->fwd_operations_.end());
+    p->train_operations_.insert(p->train_operations_.end(),
+                                p->bwd_operations_.begin(),
+                                p->bwd_operations_.end());
+    p->train_operations_.insert(p->train_operations_.end(),
+                                p->upd_operations_.begin(),
+                                p->upd_operations_.end());
+
+    if(1)
+      p->train_operations_ = op_motion(p->train_operations_);
+
   }
 
   if(pc.inference) {
@@ -635,9 +821,6 @@ CudaContext::createProgram(const Graph &g,
 void
 CudaContext::print()
 {
-  printf("Managed memory: %zd kbyte\n", memory_unified_ / 1024);
-  printf("    GPU memory: %zd kbyte\n", memory_gpu_ / 1024);
-
   size_t memfree = 0, memtotal = 0;
   cudaMemGetInfo(&memfree, &memtotal);
   printf("   Free memory: %zd kbyte\n", memfree / 1024);

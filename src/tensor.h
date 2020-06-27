@@ -15,11 +15,11 @@ public:
 
   virtual ~TensorStorage() {};
 
-  double get(size_t offset) const {
+  virtual double get(size_t offset) const {
     return get_(data_, offset);
   }
 
-  void set(size_t offset, double value) {
+  virtual void set(size_t offset, double value) {
     set_(data_, offset, value);
   }
 

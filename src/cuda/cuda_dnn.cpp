@@ -104,13 +104,11 @@ struct CudnnAdam : public CudaOperation {
     default:
       abort();
     }
-    ctx_->memory_unified_ += bytes_;
   }
 
   ~CudnnAdam()
   {
     chkCuda(cudaFree(temp_));
-    ctx_->memory_unified_ -= bytes_;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
@@ -610,7 +608,7 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
 
     auto tr = std::make_shared<CudnnTransform>(x, xx, 0.0f);
     if(training)
-      p.train(tr);
+      p.fwd(tr);
     else
       p.infer(tr);
     printf("xx=%s\n", xx->info().c_str());
@@ -636,9 +634,9 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
     return;
   }
 
-  p.train(std::make_shared<CudnnConvolutionFwd>(p.ctx_, desc, x, w, y));
+  p.fwd(std::make_shared<CudnnConvolutionFwd>(p.ctx_, desc, x, w, y));
   if(b)
-    p.train(std::make_shared<CudnnAddTensor>(p.ctx_, b, y));
+    p.fwd(std::make_shared<CudnnAddTensor>(p.ctx_, b, y));
 
   auto dy = y->makeSharedGrad();
 
@@ -771,7 +769,7 @@ activation_setup(CudaProgram &p, const Node &n, bool training,
     return;
   }
 
-  p.train(fwd);
+  p.fwd(fwd);
 
   auto dx = x->grad_;
   if(!dx)
@@ -929,7 +927,7 @@ pooling_setup(CudaProgram &p, const Node &n, bool training,
     return;
   }
 
-  p.train(fwd);
+  p.fwd(fwd);
 
   auto dx = x->grad_;
   if(!dx)
@@ -1057,7 +1055,7 @@ fc_setup(CudaProgram &p, const Node &n, bool training)
     return;
   }
 
-  p.train(fwd);
+  p.fwd(fwd);
 
   assert(transW == true); // Fix this
 
@@ -1165,7 +1163,7 @@ convert_setup(CudaProgram &p, const Node &n, bool training)
     p.infer(op);
     return;
   }
-  p.train(op);
+  p.fwd(op);
 }
 
 REGISTER_CUDA_OP("convert", convert_setup);
@@ -1279,7 +1277,7 @@ catclassifier_setup(CudaProgram &p, const Node &n, bool training)
     p.infer(op);
     return;
   }
-  p.train(op);
+  p.fwd(op);
 
   auto dx = x->grad_;
   if(!dx)
@@ -1320,11 +1318,8 @@ struct CudnnDropoutFwd : public CudnnOperation {
     chkCUDNN(cudnnDropoutGetReserveSpaceSize(x_->desc(), &reserve_size_));
     chkCuda(cudaMalloc(&reserve_, reserve_size_));
 
-    p.ctx_->memory_gpu_ += reserve_size_;
-
     chkCUDNN(cudnnDropoutGetStatesSize(p.ctx_->cudnn_, &states_size_));
     chkCuda(cudaMalloc(&states_, states_size_));
-    p.ctx_->memory_gpu_ += states_size_;
 
     chkCUDNN(cudnnCreateDropoutDescriptor(&desc_));
     chkCUDNN(cudnnSetDropoutDescriptor(desc_, p.ctx_->cudnn_, prob,
@@ -1337,10 +1332,6 @@ struct CudnnDropoutFwd : public CudnnOperation {
 
     chkCuda(cudaFree(states_));
     chkCuda(cudaFree(reserve_));
-
-    ctx_->memory_gpu_ -= reserve_size_;
-    ctx_->memory_gpu_ -= states_size_;
-
   }
 
   cudnnStatus_t exec(CudaProgram &p) {
@@ -1404,7 +1395,7 @@ dropout_setup(CudaProgram &p, const Node &n, bool training)
   const float prob = n.attributes_.get("prob", 0.5f);
 
   auto fwd = std::make_shared<CudnnDropoutFwd>(p, x, y, prob);
-  p.train(fwd);
+  p.fwd(fwd);
 
   auto dx = x->grad_;
   if(!dx)
@@ -1660,7 +1651,7 @@ batchnorm_setup(CudaProgram &p, const Node &n, bool training)
   const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
   auto f = std::make_shared<CudnnBatchNormTrain>(x, s, b, m, v, y,
                                                  sm, sv, epsilon, expavgf);
-  p.train(f);
+  p.fwd(f);
 
   auto dx = x->makeSharedGrad();
   auto dy = y->makeSharedGrad();
@@ -1845,17 +1836,12 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
                                                                   x_->desc(),
                                                                   &reserve_size_));
     chkCuda(cudaMalloc(&reserve_, reserve_size_));
-
-    ctx_->memory_gpu_ += reserve_size_;
-
   }
 
   ~CudnnBatchNormActTrain()
   {
     chkCUDNN(cudnnDestroyActivationDescriptor(desc_));
     chkCuda(cudaFree(reserve_));
-    ctx_->memory_gpu_ -= reserve_size_;
-
   }
 
   cudnnStatus_t exec(CudaProgram &p) {
@@ -2010,7 +1996,7 @@ batchnorm_relu_setup(CudaProgram &p, const Node &n, bool training)
                                                     sm, sv, epsilon, expavgf,
                                                     ops, activation_mode,
                                                     activation_alpha);
-  p.train(f);
+  p.fwd(f);
 
   auto dx = x->makeSharedGrad();
   auto dy = y->makeSharedGrad();
@@ -2183,7 +2169,7 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
 
   auto theta = p.lower_tensor(n.inputs_.get("theta"));
 
-  p.train(std::make_shared<CudnnSpatialTransformFwd>(p.ctx_, x, theta, y));
+  p.fwd(std::make_shared<CudnnSpatialTransformFwd>(p.ctx_, x, theta, y));
 }
 
 REGISTER_CUDA_OP("spatialtransform", spatialtransform_setup);

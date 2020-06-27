@@ -34,6 +34,7 @@ namespace saga {
 class CudaTensor;
 class CudaOperation;
 class CudaTensorStorage;
+class CudaTensorStorageDoubleBuffered;
 
 
 
@@ -43,8 +44,7 @@ public:
   CudaContext()
     : cudnn_(NULL)
     , cublas_(NULL)
-    , memory_unified_(0)
-    , memory_gpu_(0)
+    , tensor_id_gen_(0)
   {}
 
   ~CudaContext()
@@ -61,16 +61,17 @@ public:
   cudaStream_t stream_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
-  size_t memory_unified_;
-  size_t memory_gpu_;
 
   int deviceId_;
   std::mutex mutex_;
+
+  int tensor_id_gen_;
 };
 
 
 struct CudaBatchAccessOp {
   std::shared_ptr<CudaTensor> tensor_;
+  std::shared_ptr<CudaTensorStorageDoubleBuffered> storage_;
   BatchTensorAccessFn fn_;
   bool prefetch_ = false;
 };
@@ -103,7 +104,6 @@ public:
   ~CudaProgram()
   {
     chkCuda(cudaFree(workspace_));
-    ctx_->memory_gpu_ -= workspace_size_;
     chkCuda(cudaFree(check_result_));
   }
 
@@ -123,11 +123,9 @@ public:
       return;
 
     chkCuda(cudaFree(workspace_));
-    ctx_->memory_gpu_ -= workspace_size_;
 
     workspace_size_ = workspace_requested_;
     chkCuda(cudaMalloc(&workspace_, workspace_size_));
-    ctx_->memory_gpu_ += workspace_size_;
   }
 
   const std::shared_ptr<CudaContext> ctx_;
@@ -141,6 +139,7 @@ public:
 
   std::vector<std::shared_ptr<CudaOperation>> load_operations_;
   std::vector<std::shared_ptr<CudaOperation>> infer_operations_;
+  std::vector<std::shared_ptr<CudaOperation>> train_operations_;
 
   std::vector<std::shared_ptr<CudaOperation>> fwd_operations_;
   std::vector<std::shared_ptr<CudaOperation>> bwd_operations_;
@@ -151,7 +150,7 @@ public:
   CudaBatchAccessOps train_pre_;
   CudaBatchAccessOps train_post_;
 
-  std::vector<std::shared_ptr<CudaTensorStorage>> flips_;
+  std::vector<std::shared_ptr<CudaTensorStorageDoubleBuffered>> flips_;
 
   void *workspace_;
   size_t workspace_size_;
@@ -176,13 +175,16 @@ public:
                                                  const CudaTensor &blueprint);
 
   void infer(const std::shared_ptr<CudaOperation> &op);
-  void train(const std::shared_ptr<CudaOperation> &op);
+
+  void fwd(const std::shared_ptr<CudaOperation> &op);
   void bwd(const std::shared_ptr<CudaOperation> &op);
   void upd(const std::shared_ptr<CudaOperation> &op);
 
   void setupAccessors(const BatchTensorAccessors &accessors);
 
-  void addPrePostOp(std::shared_ptr<CudaTensor> t, const BatchTensorAccess &a);
+  void addPrePostOp(std::shared_ptr<CudaTensor> t,
+                    std::shared_ptr<CudaTensorStorageDoubleBuffered> s,
+                    const BatchTensorAccess &a);
 
   void issueOps(const CudaBatchAccessOps ops, long batch);
 
@@ -202,7 +204,7 @@ public:
   virtual std::vector<std::shared_ptr<CudaTensor>> getInputs() const = 0;
   virtual std::vector<std::shared_ptr<CudaTensor>> getOutputs() const = 0;
 
-  void print() const;
+  void print(bool full = false) const;
 
   std::string name() const { return kind_; }
 

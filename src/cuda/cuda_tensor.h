@@ -32,7 +32,52 @@
 
 namespace saga {
 
-class CudaTensorStorage;
+
+class CudaTensorStorage : public TensorStorage {
+
+public:
+  CudaTensorStorage(Tensor::DataType data_type, size_t size,
+                    const std::shared_ptr<CudaContext> &ctx);
+
+  virtual ~CudaTensorStorage();
+
+  virtual void *deviceMem(int64_t offset);
+
+  const std::shared_ptr<CudaContext> ctx_;
+  const size_t size_;
+  const size_t element_size_;
+  const int id_;
+
+};
+
+
+class CudaTensorStorageDoubleBuffered : public CudaTensorStorage {
+
+public:
+  CudaTensorStorageDoubleBuffered(Tensor::DataType data_type,
+                                  Dims &dims,
+                                  cudnnTensorFormat_t format,
+                                  const std::shared_ptr<CudaContext> &ctx);
+
+  virtual ~CudaTensorStorageDoubleBuffered();
+
+  void *deviceMem(int64_t offset) override;
+  void *data(int buffer) const;
+
+  double get(size_t offset) const override;
+  void set(size_t offset, double value) override;
+
+  double get(size_t offset, int buffer) const;
+  void set(size_t offset, double value, int buffer);
+  void flip();
+  void prefetchGPU();
+
+  void *buffers_[2];
+  int index_;
+};
+
+
+
 
 class CudaTensor : public Tensor {
 
@@ -40,8 +85,7 @@ public:
   CudaTensor(DataType data_type, const Dims &size,
              cudnnTensorFormat_t format,
              const std::shared_ptr<CudaContext> &ctx,
-             const std::optional<const std::string> &name = std::nullopt,
-             int num_buffers = 1);
+             const std::optional<const std::string> &name = std::nullopt);
 
   CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
              const Dims &size, cudnnTensorFormat_t format,
@@ -93,10 +137,6 @@ public:
 
   void *deviceMem() const;
 
-  void *deviceMem(int buffer_index) const;
-
-  int flip() const;
-
   std::shared_ptr<CudaTensor> makeSharedGrad();
 
   std::shared_ptr<CudaTensor> makePrivateGrad();
@@ -104,6 +144,12 @@ public:
   bool cpacked() const;
 
   void copyFromLocked(Tensor &t);
+
+  int id() const;
+
+  std::string shortname() const;
+
+  size_t memoryUsage() const;
 
   const cudnnDataType_t type_;
   int64_t offset_;
