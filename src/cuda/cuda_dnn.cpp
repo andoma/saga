@@ -576,7 +576,10 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    return {w_, dy_, dx_beta_ ? dx_ : nullptr};
+    auto r = std::vector{w_, dy_, dx_};
+    if(dx_beta_)
+      r.push_back(dx_);
+    return r;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
@@ -741,7 +744,10 @@ struct CudnnActivationBwd : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    return {x_, y_, dy_, dx_beta_ ? dx_ : nullptr};
+    auto r = std::vector{x_, y_, dy_};
+    if(dx_beta_)
+      r.push_back(dx_);
+    return r;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
@@ -885,7 +891,10 @@ struct CudnnPoolingBwd : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    return {x_, y_, dy_, dx_beta_ ? dx_ : nullptr};
+    auto r = std::vector{x_, y_, dy_};
+    if(dx_beta_)
+      r.push_back(dx_);
+    return r;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
@@ -1614,7 +1623,10 @@ struct CudnnBatchNormBwd : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    return {x_, dy_, s_, sm_, sv_, dx_beta_ ? dx_ : nullptr};
+    auto r = std::vector{x_, dy_, s_, sm_, sv_};
+    if(dx_beta_)
+      r.push_back(dx_);
+    return r;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
@@ -1953,8 +1965,11 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    return {fwd_->x_, fwd_->y_, dy_, fwd_->s_, fwd_->b_, fwd_->sm_, fwd_->sv_,
-        dx_beta_ ? dx_ : nullptr};
+    auto r = std::vector{fwd_->x_, fwd_->y_, dy_, fwd_->s_,
+                         fwd_->b_, fwd_->sm_, fwd_->sv_};
+    if(dx_beta_)
+      r.push_back(dx_);
+    return r;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
