@@ -358,18 +358,6 @@ struct ProgramConfig {
 };
 
 
-
-
-
-
-enum class BatchTensorAccessType {
-  PRE_BATCH,
-  PRE_BATCH_GRADIENT,
-  POST_BATCH,
-  POST_BATCH_GRADIENT,
-};
-
-
 class Program {
 
 public:
