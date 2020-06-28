@@ -79,7 +79,7 @@ SRCS-prog += \
 	test/minimal.cpp \
 	test/test_classifier.cpp \
 	test/test_ops.cpp \
-
+	test/test_jpeg_decoder.cpp \
 
 ###########################################
 
