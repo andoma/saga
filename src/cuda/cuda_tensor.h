@@ -145,11 +145,15 @@ public:
 
   void copyFromLocked(Tensor &t);
 
-  int id() const;
+  int storage_id() const {
+    return storage_->id_;
+  }
 
   std::string shortname() const;
 
-  size_t memoryUsage() const;
+  size_t memoryUsage() const {
+    return storage_->size_;
+  }
 
   const cudnnDataType_t type_;
   int64_t offset_;

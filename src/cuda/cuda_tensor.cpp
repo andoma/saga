@@ -44,7 +44,7 @@ CudaTensorStorage::CudaTensorStorage(Tensor::DataType data_type, size_t size,
   , ctx_(ctx)
   , size_(size)
   , element_size_(Tensor::DataTypeSize(data_type))
-  , id_(ctx->tensor_id_gen_++)
+  , id_(++ctx->tensor_storage_id_gen_)
 {
   chkCuda(cudaMallocManaged(&data_, size, cudaMemAttachGlobal));
   chkCuda(cudaMemset(data_, 0, size));
@@ -393,11 +393,6 @@ CudaTensor::shortname() const
   return ss.str();
 }
 
-int CudaTensor::id() const
-{
-  return storage_->id_;
-}
-
 
 std::string
 CudaTensor::info() const
@@ -499,14 +494,6 @@ CudaTensor::copyFromLocked(Tensor &t)
             info().c_str());
     abort();
   }
-}
-
-
-
-size_t
-CudaTensor::memoryUsage() const
-{
-  return storage_->size_;
 }
 
 

@@ -44,7 +44,7 @@ public:
   CudaContext()
     : cudnn_(NULL)
     , cublas_(NULL)
-    , tensor_id_gen_(0)
+    , tensor_storage_id_gen_(0)
   {}
 
   ~CudaContext()
@@ -65,7 +65,7 @@ public:
   int deviceId_;
   std::mutex mutex_;
 
-  int tensor_id_gen_;
+  int tensor_storage_id_gen_;
 };
 
 
@@ -213,6 +213,8 @@ public:
   void print(bool full = false) const;
 
   std::string name() const { return kind_; }
+
+  std::string str() const;
 
 protected:
 
