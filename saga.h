@@ -388,4 +388,6 @@ std::shared_ptr<Context> createContext();
 
 std::vector<std::shared_ptr<Context>> createContexts();
 
+int64_t Now();
+
 }
