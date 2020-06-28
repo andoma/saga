@@ -45,6 +45,7 @@ HAVE_CUDA := $(subst 0,yes,$(subst 1,no,$(shell $(PKG_CONFIG) cuda-${CUDA_VERSIO
 
 SRCS-lib-$(HAVE_CUDA) += \
 	src/cuda/cuda_common.cpp \
+	src/cuda/cuda_analysis.cpp \
 	src/cuda/cuda_dnn.cpp \
 	src/cuda/cuda_tensor.cpp \
 	src/cuda/cuda_jpeg.cpp \

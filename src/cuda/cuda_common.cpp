@@ -33,6 +33,7 @@
 
 #include "cuda_common.h"
 #include "cuda_tensor.h"
+#include "cuda_analysis.h"
 
 
 namespace saga {
@@ -602,183 +603,6 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
 
 
 
-struct OpsAnalysis {
-  const std::vector<std::shared_ptr<CudaOperation>> ops_;
-  std::map<int, size_t> first_write;
-  std::map<int, size_t> last_read;
-  std::map<int, size_t> usage;
-  std::vector<int> externals;
-
-  OpsAnalysis(const std::vector<std::shared_ptr<CudaOperation>> &ops)
-    : ops_(ops)
-  {
-    for(size_t i = 0; i < ops.size(); i++) {
-      const auto &op = ops[i];
-      for(const auto &t : op->getInputs()) {
-        auto id = t->storage_id();
-        last_read[id] = i;
-        usage[id] = t->memoryUsage();
-      }
-    }
-
-    for(ssize_t i = ops.size() - 1; i>= 0; i--) {
-      const auto &op = ops[i];
-      for(const auto &t : op->getOutputs()) {
-        auto id = t->storage_id();
-        first_write[id] = i;
-        usage[id] = t->memoryUsage();
-      }
-    }
-
-    for(auto it = usage.cbegin(); it != usage.cend();) {
-
-      auto fw = first_write.find(it->first);
-      auto lr = last_read.find(it->first);
-
-      const int fw_val = fw == first_write.end() ? INT32_MAX : fw->second;
-      const int lr_val = lr == last_read.end()   ? INT32_MIN : lr->second;
-
-      if(lr_val <= fw_val) {
-        externals.push_back(it->first);
-        it = usage.erase(it);
-      } else {
-        it++;
-      }
-    }
-  }
-
-
-  size_t peak_mem_use() {
-
-    size_t highest_mem_use = 0;
-    for(size_t i = 0; i < ops_.size(); i++) {
-
-      size_t s = 0;
-      for(const auto &it : usage) {
-        int j = it.first;
-        if(first_write[j] <= i && last_read[j] >= i) {
-          s += usage[j];
-        }
-      }
-
-      if(s > highest_mem_use) {
-        highest_mem_use = s;
-      }
-    }
-    return highest_mem_use;
-  }
-
-  void print(const char *title) {
-
-    printf("%s\n", title);
-    printf("     Externals: ");
-    for(auto it : externals) {
-      printf("T%d ", it);
-    }
-    printf("\n");
-
-    for(size_t i = 0; i < ops_.size(); i++) {
-
-      printf("%3zd: %s\n",i, ops_[i]->str().c_str());
-
-      printf("     Live:");
-      size_t s = 0;
-      for(const auto &it : usage) {
-        int j = it.first;
-        if(first_write[j] <= i && last_read[j] >= i) {
-          printf(" T%d", j);
-          s += usage[j];
-        }
-      }
-      printf(" (%zd bytes)\n", s);
-    }
-  }
-
-
-
-};
-
-
-
-
-
-
-static size_t
-compute_memory_cost(const std::vector<std::shared_ptr<CudaOperation>> &ops)
-{
-  return OpsAnalysis(ops).peak_mem_use();
-}
-
-
-
-
-
-
-
-static std::unordered_set<int>
-input_tensor_set(const CudaOperation &op)
-{
-  std::unordered_set<int> r;
-  for(const auto &o : op.getInputs()) {
-    r.insert(o->storage_id());
-  }
-  return r;
-}
-
-
-static bool
-writes_to_set(const CudaOperation &op, const std::unordered_set<int> &s)
-{
-  for(const auto &o : op.getOutputs()) {
-    if(s.find(o->storage_id()) != s.end())
-      return true;
-  }
-  return false;
-}
-
-
-static std::vector<std::shared_ptr<CudaOperation>>
-reduce_liverange(std::vector<std::shared_ptr<CudaOperation>> ops)
-{
-  const size_t num_ops = ops.size();
-
-  size_t memory_cost = compute_memory_cost(ops);
-
-  for(ssize_t i = 0; i < (ssize_t)num_ops; i++) {
-    auto inputs = input_tensor_set(*ops[i]);
-
-    ssize_t j;
-    for(j = i - 1; j >= 0; j--) {
-      if(writes_to_set(*ops[j], inputs))
-        break;
-    }
-
-    if(j == -1)
-      continue;
-
-    j++;
-    if(j != i) {
-      auto copy = ops;
-      auto op = copy[i];
-      copy.erase(copy.begin() + i);
-      copy.insert(copy.begin() + j, op);
-
-      size_t new_mem_cost = compute_memory_cost(copy);
-      if(new_mem_cost < memory_cost) {
-        i = 0;
-        memory_cost = new_mem_cost;
-        ops = copy;
-      }
-    }
-  }
-  return ops;
-}
-
-
-
-
-
-
 std::shared_ptr<Program>
 CudaContext::createProgram(const Graph &g,
                            const ProgramConfig &pc,
@@ -826,14 +650,9 @@ CudaContext::createProgram(const Graph &g,
     p->bwd_operations_.clear();
     p->upd_operations_.clear();
 
-    if(1) {
-      int64_t ts = Now();
-      p->train_operations_ = reduce_liverange(p->train_operations_);
-      ts = Now() - ts;
-      printf("reduce liverage: %ld\n", (long)ts);
-    }
+    p->train_operations_ = reduceLiveranges(p->train_operations_);
 
-    OpsAnalysis(p->train_operations_).print("train");
+    //    OpsAnalysis(p->train_operations_).print("train");
 
   }
 
@@ -851,7 +670,7 @@ CudaContext::createProgram(const Graph &g,
       }
     }
     //    p->infer_operations_ = reduce_liverange(p->infer_operations_);
-    OpsAnalysis(p->infer_operations_).print("infer");
+    //    OpsAnalysis(p->infer_operations_).print("infer");
   }
   p->allocWorkspace();
 
