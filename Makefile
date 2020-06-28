@@ -52,7 +52,7 @@ SRCS-lib-$(HAVE_CUDA) += \
 
 CPPFLAGS-$(HAVE_CUDA) += $(shell pkg-config --cflags cuda-${CUDA_VERSION} cudart-${CUDA_VERSION})
 LDFLAGS-$(HAVE_CUDA)  += $(shell pkg-config --libs   cuda-${CUDA_VERSION} cudart-${CUDA_VERSION})
-LDFLAGS-$(HAVE_CUDA)  += -lnvidia-ml -lcudnn -lcublas -lnvjpeg
+LDFLAGS-$(HAVE_CUDA)  += -lnvidia-ml -lcudnn -lcublas -lnvjpeg -lpthread
 
 NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
 NVCC := /usr/local/cuda-${CUDA_VERSION}/bin/nvcc
@@ -73,13 +73,14 @@ LDFLAGS-$(HAVE_PROTOBUF)  += $(shell pkg-config --libs protobuf)
 
 SRCS-prog += \
 	main.cpp \
-	test/test_onnx.cpp \
 	test/mnist.cpp \
 	test/cifar.cpp \
 	test/minimal.cpp \
 	test/test_classifier.cpp \
 	test/test_ops.cpp \
 	test/test_jpeg_decoder.cpp \
+
+SRCS-prog-$(HAVE_PROTOBUF) += test/test_onnx.cpp
 
 ###########################################
 
@@ -92,7 +93,7 @@ OBJS := ${SRCS:%.cpp=${O}/%.o}
 OBJS := ${OBJS:%.proto3=${O}/%.proto3.o}
 OBJS := ${OBJS:%.cu=${O}/%.o}
 
-OBJS-prog := ${SRCS-prog:%.cpp=${O}/%.o}
+OBJS-prog := ${SRCS-prog:%.cpp=${O}/%.o} ${SRCS-prog-yes:%.cpp=${O}/%.o}
 
 DEPS := ${OBJS:%.o=%.d} ${OBJS-prog:%.o=%.d}
 SRCDEPS := $(patsubst %,$(O)/%.pb.cc,$(filter %.proto3,$(SRCS)))
