@@ -137,7 +137,9 @@ public:
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
 
-  std::vector<std::shared_ptr<CudaOperation>> load_operations_;
+  std::unordered_map<std::shared_ptr<Tensor>,
+                     std::shared_ptr<CudaOperation>> load_operations_;
+
   std::vector<std::shared_ptr<CudaOperation>> infer_operations_;
   std::vector<std::shared_ptr<CudaOperation>> train_operations_;
 
@@ -203,6 +205,10 @@ public:
 
   virtual std::vector<std::shared_ptr<CudaTensor>> getInputs() const = 0;
   virtual std::vector<std::shared_ptr<CudaTensor>> getOutputs() const = 0;
+
+  virtual std::shared_ptr<CudaOperation> getSyncOp() {
+    return nullptr;
+  };
 
   void print(bool full = false) const;
 

@@ -595,10 +595,11 @@ CudaTensorStorageDoubleBuffered::set(size_t offset, double value, int buffer)
   set_(data(buffer), offset, value);
 }
 
-void
+int
 CudaTensorStorageDoubleBuffered::flip()
 {
   index_++;
+  return index_ & 1;
 }
 
 void

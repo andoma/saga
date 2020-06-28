@@ -69,7 +69,7 @@ public:
 
   double get(size_t offset, int buffer) const;
   void set(size_t offset, double value, int buffer);
-  void flip();
+  int flip();
   void prefetchGPU();
 
   void *buffers_[2];

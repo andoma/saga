@@ -16,9 +16,11 @@
 
 namespace saga {
 
-struct CudaJpeg : public CudaOperation {
+struct CudaJpeg : public CudaOperation,
+                  public std::enable_shared_from_this<CudaJpeg> {
 
   const std::shared_ptr<CudaTensor> y_;
+  const std::shared_ptr<CudaTensorStorageDoubleBuffered> s_;
   const Loader loader_;
   const int batch_size_;
 
@@ -45,7 +47,7 @@ struct CudaJpeg : public CudaOperation {
            Loader loader,
            int batch_size)
     : CudaOperation("jpegdec")
-    , y_(y), loader_(loader), batch_size_(batch_size)
+    , y_(y), s_(s), loader_(loader), batch_size_(batch_size)
   {
     output_images_[0] = std::make_unique<nvjpegImage_t[]>(batch_size_);
     output_images_[1] = std::make_unique<nvjpegImage_t[]>(batch_size_);
@@ -73,7 +75,7 @@ struct CudaJpeg : public CudaOperation {
                                         &rank, dimsA, stridesA));
 
     for(int i = 0; i < 2; i++) {
-      uint8_t *ymem = (uint8_t *)y_->deviceMem(i);
+      uint8_t *ymem = (uint8_t *)s->data(i);
 
       for(int n = 0; n < batch_size_; n++) {
         for(int c = 0; c < 3; c++) {
@@ -107,7 +109,7 @@ struct CudaJpeg : public CudaOperation {
 
   void exec(CudaProgram &p, long batch) override {
 
-    int buffer_wr = y_->flip();
+    int buffer_wr = s_->flip();
 
 
     work_mutex_.lock();
@@ -171,16 +173,18 @@ struct CudaJpeg : public CudaOperation {
     return {y_};
   }
 
-
+  std::shared_ptr<CudaOperation> getSyncOp() override;
 
 };
+
+
 
 struct CudaJpegSync : public CudaOperation {
 
   const std::shared_ptr<CudaJpeg> j_;
 
   CudaJpegSync(std::shared_ptr<CudaJpeg> j)
-    : CudaOperation("jpegsync")
+    : CudaOperation("jpegdecoder.wait")
     , j_(j)
   {}
 
@@ -190,7 +194,7 @@ struct CudaJpegSync : public CudaOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    return {j_->y_};
+    return {};
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
@@ -200,26 +204,41 @@ struct CudaJpegSync : public CudaOperation {
 };
 
 
+std::shared_ptr<CudaOperation>
+CudaJpeg::getSyncOp()
+{
+  return std::make_shared<CudaJpegSync>(shared_from_this());
+}
+
 
 
 static void
 jpegdecoder_setup(CudaProgram &p, const Node &n, bool training)
 {
-  assert(training);
-  abort();  // FIX FIX DOUBLE BUFFER
-  // Lower into a double buffered tensor
   auto yh = n.outputs_.get("y");
-  auto dims = yh->dims_.n(p.batch_size_);
-  auto y = std::make_shared<CudaTensor>(yh->data_type_, dims,
-                                        CUDNN_TENSOR_NHWC,
-                                        p.ctx_, yh->name_);
+  auto j = p.load_operations_[yh];
 
-  p.tensors_[yh] = y;
+  if(!j) {
 
-  auto j = std::make_shared<CudaJpeg>(p, y, n.loader_, p.batch_size_);
-  p.load_operations_.push_back(j);
+    // Lower into a double buffered tensor
+    auto dims = yh->dims_.n(p.batch_size_);
 
-  p.fwd(std::make_shared<CudaJpegSync>(j));
+    auto fmt = CUDNN_TENSOR_NHWC;
+    auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(yh->data_type_,
+                                                               dims, fmt,
+                                                               p.ctx_);
+    auto y = std::make_shared<CudaTensor>(s, dims, fmt);
+
+    p.tensors_[yh] = y;
+    j = std::make_shared<CudaJpeg>(p, s, y, n.loader_, p.batch_size_);
+    p.load_operations_[yh] = j;
+  }
+
+  if(training)
+    p.fwd(j->getSyncOp());
+  else
+    p.infer(j->getSyncOp());
+
 }
 
 

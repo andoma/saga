@@ -248,7 +248,7 @@ CudaProgram::infer(long batches)
 
   issueOps(infer_pre_, 0);
   flipDoubleBufferedTensors();
-  for(const auto &op : load_operations_) op->exec(*this, 0);
+  for(const auto &op : load_operations_) op.second->exec(*this, 0);
   cudaStreamSynchronize(ctx_->stream_);
   for(long i = 0; i < batches; i++) {
 
@@ -261,7 +261,7 @@ CudaProgram::infer(long batches)
 
     flipDoubleBufferedTensors();
     if(i < batches - 1)
-      for(const auto &op : load_operations_) op->exec(*this, i + 1);
+      for(const auto &op : load_operations_) op.second->exec(*this, i + 1);
     cudaStreamSynchronize(ctx_->stream_);
   }
   issueOps(infer_post_, batches - 1);
@@ -276,7 +276,7 @@ CudaProgram::train(long batches)
 
   issueOps(train_pre_, 0);
   flipDoubleBufferedTensors();
-  for(const auto &op : load_operations_) op->exec(*this, 0);
+  for(const auto &op : load_operations_) op.second->exec(*this, 0);
   cudaStreamSynchronize(ctx_->stream_);
 
   for(long i = 0; i < batches; i++) {
@@ -290,7 +290,7 @@ CudaProgram::train(long batches)
 
     flipDoubleBufferedTensors();
     if(i < batches - 1)
-      for(const auto &op : load_operations_) op->exec(*this, i + 1);
+      for(const auto &op : load_operations_) op.second->exec(*this, i + 1);
     cudaStreamSynchronize(ctx_->stream_);
 
     if(*(int *)check_result_) {
