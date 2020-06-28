@@ -757,9 +757,9 @@ CudaContext::createProgram(const Graph &g,
   std::scoped_lock lock(mutex_);
 
   auto p = std::make_shared<CudaProgram>(shared_from_this(),
-                                          pc.tensor_layout,
-                                          pc.batch_size,
-                                          pc.initial_learning_rate);
+                                         pc.tensor_layout,
+                                         pc.batch_size,
+                                         pc.initial_learning_rate);
 
   p->setupAccessors(accessors);
 
