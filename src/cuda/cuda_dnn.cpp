@@ -100,7 +100,7 @@ struct CudnnAdam : public CudaOperation {
       break;
 
     default:
-      abort();
+      break;
     }
   }
 
@@ -975,6 +975,46 @@ REGISTER_CUDA_OP("avgpool", avgpool_setup);
 
 //------------------------------------------------------------------------
 
+
+static const char *
+cublasErrStr(cublasStatus_t error) {
+  switch (error) {
+  case CUBLAS_STATUS_SUCCESS:
+    return NULL;
+
+  case CUBLAS_STATUS_NOT_INITIALIZED:
+    return "CUBLAS_STATUS_NOT_INITIALIZED";
+
+  case CUBLAS_STATUS_ALLOC_FAILED:
+    return "CUBLAS_STATUS_ALLOC_FAILED";
+
+  case CUBLAS_STATUS_INVALID_VALUE:
+    return "CUBLAS_STATUS_INVALID_VALUE";
+
+  case CUBLAS_STATUS_ARCH_MISMATCH:
+    return "CUBLAS_STATUS_ARCH_MISMATCH";
+
+  case CUBLAS_STATUS_MAPPING_ERROR:
+    return "CUBLAS_STATUS_MAPPING_ERROR";
+
+  case CUBLAS_STATUS_EXECUTION_FAILED:
+    return "CUBLAS_STATUS_EXECUTION_FAILED";
+
+  case CUBLAS_STATUS_INTERNAL_ERROR:
+    return "CUBLAS_STATUS_INTERNAL_ERROR";
+
+  case CUBLAS_STATUS_NOT_SUPPORTED:
+    return "CUBLAS_STATUS_NOT_SUPPORTED";
+
+  case CUBLAS_STATUS_LICENSE_ERROR:
+    return "CUBLAS_STATUS_LICENSE_ERROR";
+  }
+
+  return "<unknown>";
+}
+
+
+
 struct CudaGemm : public CudaOperation {
 
   const cublasOperation_t transa_;
@@ -1004,30 +1044,31 @@ struct CudaGemm : public CudaOperation {
     float alpha = 1.0f, beta = 0.0f;
     __half halpha = 1.0f, hbeta = 0.0f;
 
+    cublasStatus_t s;
     switch(a_->type_) {
     case CUDNN_DATA_FLOAT:
 
-      chkCuda(cublasSgemm(p.ctx_->cublas_, transa_, transb_,
-                          m_, n_, k_,
-                          &alpha,
-                          (const float *)a_->deviceMem(), lda_,
-                          (const float *)b_->deviceMem(), ldb_,
-                          &beta,
-                          (float *)c_->deviceMem(), ldc_));
+      s = cublasSgemm(p.ctx_->cublas_, transa_, transb_,
+                      m_, n_, k_,
+                      &alpha,
+                      (const float *)a_->deviceMem(), lda_,
+                      (const float *)b_->deviceMem(), ldb_,
+                      &beta,
+                      (float *)c_->deviceMem(), ldc_);
       break;
     case CUDNN_DATA_HALF:
-      chkCuda(cublasHgemm(p.ctx_->cublas_, transa_, transb_,
-                          m_, n_, k_,
-                          &halpha,
-                          (const __half *)a_->deviceMem(), lda_,
-                          (const __half *)b_->deviceMem(), ldb_,
-                          &hbeta,
-                          (__half *)c_->deviceMem(), ldc_));
+      s = cublasHgemm(p.ctx_->cublas_, transa_, transb_,
+                      m_, n_, k_,
+                      &halpha,
+                      (const __half *)a_->deviceMem(), lda_,
+                      (const __half *)b_->deviceMem(), ldb_,
+                      &hbeta,
+                      (__half *)c_->deviceMem(), ldc_);
       break;
     default:
-      abort();
+      return "Unsupported tensor datatype";
     }
-    return NULL;
+    return cublasErrStr(s);
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
@@ -1212,7 +1253,7 @@ struct CudaCatClassifierFwd : public CudaOperation {
                                  p.ctx_->stream_);
       break;
     default:
-      abort();
+      return "Unsupported tensor datatype";
     }
     return NULL;
   }
@@ -1270,7 +1311,7 @@ struct CudaCatClassifierBwd : public CudaOperation {
 
       break;
     default:
-      abort();
+      return "Unsupported tensor datatype";
     }
     return NULL;
   }
