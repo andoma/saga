@@ -25,6 +25,7 @@
     if(cuda_status__) {                                                 \
       fprintf(stderr, "CUDA error at %s:%d in %s\n",                    \
               __FILE__, __LINE__, __FUNCTION__);                        \
+      abort();                                                          \
     }                                                                   \
   }
 
@@ -35,7 +36,7 @@ class CudaTensor;
 class CudaOperation;
 class CudaTensorStorage;
 class CudaTensorStorageDoubleBuffered;
-
+class CudaMemoryLayout;
 
 
 class CudaContext : public Context,
@@ -78,6 +79,60 @@ struct CudaBatchAccessOp {
 
 typedef std::vector<CudaBatchAccessOp> CudaBatchAccessOps;
 
+typedef std::vector<std::shared_ptr<CudaOperation>> CudaOps;
+
+struct CudaTmpMem {
+
+  ~CudaTmpMem()
+  {
+    chkCuda(cudaFree(ptr_));
+  }
+
+  void request(size_t size)
+  {
+    requested_ = std::max(requested_, size);
+  }
+
+  void alloc()
+  {
+    if(requested_ <= size_)
+      return;
+
+    chkCuda(cudaFree(ptr_));
+
+    size_ = requested_;
+    chkCuda(cudaMalloc(&ptr_, size_));
+  }
+
+  void allocManaged()
+  {
+    if(requested_ <= size_)
+      return;
+
+    chkCuda(cudaFree(ptr_));
+
+    size_ = requested_;
+    chkCuda(cudaMallocManaged(&ptr_, size_, cudaMemAttachGlobal));
+  }
+
+
+  void *ptr() const
+  {
+    return ptr_;
+  }
+
+  size_t size() const
+  {
+    return size_;
+  }
+
+private:
+  void *ptr_ = nullptr;
+  size_t size_ = 0;
+  size_t requested_ = 0;
+};
+
+
 
 
 class CudaProgram : public Program {
@@ -91,10 +146,6 @@ public:
     , tensor_layout_(tensor_layout)
     , batch_size_(batch_size)
     , learning_rate_(learning_rate)
-    , debug_(false)
-    , workspace_(NULL)
-    , workspace_size_(0)
-    , workspace_requested_(0)
     , mp_scaling_(batch_size)
   {
     chkCuda(cudaMallocManaged(&check_result_, sizeof(int), cudaMemAttachGlobal));
@@ -103,7 +154,6 @@ public:
 
   ~CudaProgram()
   {
-    chkCuda(cudaFree(workspace_));
     chkCuda(cudaFree(check_result_));
   }
 
@@ -114,38 +164,25 @@ public:
   void print() const override;
   void debug(bool) override;
 
-  void requetstWorkspace(size_t size) {
-    workspace_requested_ = std::max(workspace_requested_, size);
-  }
-
-  void allocWorkspace() {
-    if(workspace_requested_ <= workspace_size_)
-      return;
-
-    chkCuda(cudaFree(workspace_));
-
-    workspace_size_ = workspace_requested_;
-    chkCuda(cudaMalloc(&workspace_, workspace_size_));
-  }
-
   const std::shared_ptr<CudaContext> ctx_;
   const TensorLayout tensor_layout_;
   const int batch_size_;
   const float learning_rate_;
-  bool debug_;
+  bool debug_ = false;
 
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
 
   std::unordered_map<std::shared_ptr<Tensor>,
-                     std::shared_ptr<CudaOperation>> load_operations_;
+                     std::shared_ptr<CudaOperation>> load_map_;
 
-  std::vector<std::shared_ptr<CudaOperation>> infer_operations_;
-  std::vector<std::shared_ptr<CudaOperation>> train_operations_;
+  CudaOps load_operations_;
+  CudaOps infer_operations_;
+  CudaOps train_operations_;
 
-  std::vector<std::shared_ptr<CudaOperation>> fwd_operations_;
-  std::vector<std::shared_ptr<CudaOperation>> bwd_operations_;
-  std::vector<std::shared_ptr<CudaOperation>> upd_operations_;
+  CudaOps fwd_operations_;
+  CudaOps bwd_operations_;
+  CudaOps upd_operations_;
 
   CudaBatchAccessOps infer_pre_;
   CudaBatchAccessOps infer_post_;
@@ -154,9 +191,11 @@ public:
 
   std::vector<std::shared_ptr<CudaTensorStorageDoubleBuffered>> flips_;
 
-  void *workspace_;
-  size_t workspace_size_;
-  size_t workspace_requested_;
+  std::shared_ptr<CudaMemoryLayout> train_memory_layout_;
+  std::shared_ptr<CudaMemoryLayout> infer_memory_layout_;
+
+  CudaTmpMem workspace_;
+  CudaTmpMem tensor_mem_;
 
   void *check_result_;
   float mp_scaling_;
@@ -192,6 +231,10 @@ public:
 
   void flipDoubleBufferedTensors();
 
+  void setupTensorStorage(const CudaMemoryLayout &cml);
+
+  void runOps(const CudaOps &ops, long batch);
+
 };
 
 
@@ -201,7 +244,7 @@ public:
   CudaOperation(CudaOperation const&) = delete;
 
   virtual ~CudaOperation() {}
-  virtual void exec(CudaProgram &p, long batch) = 0;
+  virtual const char *exec(CudaProgram &p, long batch) = 0;
 
   virtual std::vector<std::shared_ptr<CudaTensor>> getInputs() const = 0;
   virtual std::vector<std::shared_ptr<CudaTensor>> getOutputs() const = 0;
@@ -213,6 +256,8 @@ public:
   void print(bool full = false) const;
 
   std::string name() const { return kind_; }
+
+  virtual std::string info() const { return ""; };
 
   std::string str() const;
 

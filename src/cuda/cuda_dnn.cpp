@@ -45,15 +45,13 @@ struct CudnnOperation : public CudaOperation {
 
   virtual cudnnStatus_t exec(CudaProgram &p) = 0;
 
-  void exec(CudaProgram &p, long batch) {
+  const char *exec(CudaProgram &p, long batch) {
 
     cudnnStatus_t s = exec(p);
     if(s == CUDNN_STATUS_SUCCESS)
-      return;
+      return NULL;
 
-    fprintf(stderr, "CUDNN error %s\n",
-            cudnnGetErrorString(s));
-    abort();
+    return cudnnGetErrorString(s);
   }
 };
 
@@ -120,7 +118,7 @@ struct CudnnAdam : public CudaOperation {
   }
 
 
-  void exec(CudaProgram &p, long batch) override {
+  const char *exec(CudaProgram &p, long batch) override {
     const int i = ++iter_;
 
 #define ADAM_B1      0.9
@@ -146,8 +144,9 @@ struct CudnnAdam : public CudaOperation {
                  p.ctx_->stream_);
       break;
     default:
-      abort();
+      return "Unsupported tensor datatype";
     }
+    return NULL;
   }
   size_t bytes_;
   const std::shared_ptr<CudaContext> ctx_;
@@ -365,7 +364,7 @@ struct CudnnConvolutionDesc {
                                                      conv_fwd_algo_,
                                                      &workspace));
 
-    p.requetstWorkspace(workspace);
+    p.workspace_.request(workspace);
 
     if(!bwd)
       return true;
@@ -390,7 +389,7 @@ struct CudnnConvolutionDesc {
                                                           bwd_data_algo_,
                                                           &workspace));
 
-    p.requetstWorkspace(workspace);
+    p.workspace_.request(workspace);
 
     chkCUDNN(cudnnGetConvolutionBackwardFilterAlgorithm(p.ctx_->cudnn_,
                                                         x.desc(),
@@ -409,7 +408,7 @@ struct CudnnConvolutionDesc {
                                                             bwd_filter_algo_,
                                                             &workspace));
 
-    p.requetstWorkspace(workspace);
+    p.workspace_.request(workspace);
 
     return true;
   }
@@ -443,7 +442,8 @@ struct CudnnConvolutionFwd : public CudnnOperation {
                                    w_->deviceMem(),
                                    desc_->conv_desc_,
                                    desc_->conv_fwd_algo_,
-                                   p.workspace_, p.workspace_size_,
+                                   p.workspace_.ptr(),
+                                   p.workspace_.size(),
                                    &beta,
                                    y_->desc(),
                                    y_->deviceMem());
@@ -456,6 +456,11 @@ struct CudnnConvolutionFwd : public CudnnOperation {
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
     return {y_};
   }
+
+  std::string info() const override {
+    return convfwdalgostr(desc_->conv_fwd_algo_);
+  }
+
 };
 
 
@@ -522,7 +527,8 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
                                           dy_->deviceMem(),
                                           desc_->conv_desc_,
                                           desc_->bwd_filter_algo_,
-                                          p.workspace_, p.workspace_size_,
+                                          p.workspace_.ptr(),
+                                          p.workspace_.size(),
                                           &beta,
                                           desc_->filter_desc_,
                                           dw_->deviceMem());
@@ -535,6 +541,11 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
     return {dw_};
   }
+
+  std::string info() const override {
+    return convbwdfilteralgostr(desc_->bwd_filter_algo_);
+  }
+
 };
 
 
@@ -566,7 +577,8 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
                                         dy_->deviceMem(),
                                         desc_->conv_desc_,
                                         desc_->bwd_data_algo_,
-                                        p.workspace_, p.workspace_size_,
+                                        p.workspace_.ptr(),
+                                        p.workspace_.size(),
                                         &dx_beta_,
                                         dx_->desc(),
                                         dx_->deviceMem());
@@ -574,7 +586,7 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    auto r = std::vector{w_, dy_, dx_};
+    auto r = std::vector{w_, dy_};
     if(dx_beta_)
       r.push_back(dx_);
     return r;
@@ -582,6 +594,10 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
     return {dx_};
+  }
+
+  std::string info() const override {
+    return convbwddataalgostr(desc_->bwd_data_algo_);
   }
 };
 
@@ -984,7 +1000,7 @@ struct CudaGemm : public CudaOperation {
       a_(a), lda_(lda), b_(b), ldb_(ldb), c_(c), ldc_(ldc)
   {}
 
-  void exec(CudaProgram &p, long batch) {
+  const char *exec(CudaProgram &p, long batch) {
     float alpha = 1.0f, beta = 0.0f;
     __half halpha = 1.0f, hbeta = 0.0f;
 
@@ -1011,6 +1027,7 @@ struct CudaGemm : public CudaOperation {
     default:
       abort();
     }
+    return NULL;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
@@ -1134,9 +1151,10 @@ struct CudaConvert : public CudaOperation {
     }
   }
 
-  void exec(CudaProgram &p, long batch) {
+  const char *exec(CudaProgram &p, long batch) {
     algo_(x_->deviceMem(), y_->deviceMem(), x_->elements_, scale_,
           p.ctx_->stream_);
+    return NULL;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
@@ -1179,7 +1197,7 @@ struct CudaCatClassifierFwd : public CudaOperation {
     , x_(x), y_(y)
   {}
 
-  void exec(CudaProgram &p, long batch) {
+  const char *exec(CudaProgram &p, long batch) {
     switch(x_->type_) {
     case CUDNN_DATA_FLOAT:
       catclassifier_fwd_float_i32(x_->dims_[0],
@@ -1196,6 +1214,7 @@ struct CudaCatClassifierFwd : public CudaOperation {
     default:
       abort();
     }
+    return NULL;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
@@ -1221,7 +1240,7 @@ struct CudaCatClassifierBwd : public CudaOperation {
     , x_(x), y_(y), dx_(dx), dy_(dy), loss_(loss)
   {}
 
-  void exec(CudaProgram &p, long batch) {
+  const char *exec(CudaProgram &p, long batch) {
 
     const int n = x_->dims_[0];
     const int c = x_->dims_[1];
@@ -1253,6 +1272,7 @@ struct CudaCatClassifierBwd : public CudaOperation {
     default:
       abort();
     }
+    return NULL;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
@@ -1867,8 +1887,8 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
                                                     sm_->deviceMem(),
                                                     sv_->deviceMem(),
                                                     desc_,
-                                                    p.workspace_,
-                                                    p.workspace_size_,
+                                                    p.workspace_.ptr(),
+                                                    p.workspace_.size(),
                                                     reserve_, reserve_size_);
   }
 
@@ -1914,7 +1934,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                                                                ds_->desc(),
                                                                fwd->desc_,
                                                                &workspace));
-    p.requetstWorkspace(workspace);
+    p.workspace_.request(workspace);
 
 
   }
@@ -1944,7 +1964,8 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                                              fwd_->sm_->deviceMem(),
                                              fwd_->sv_->deviceMem(),
                                              fwd_->desc_,
-                                             p.workspace_, p.workspace_size_,
+                                             p.workspace_.ptr(),
+                                             p.workspace_.size(),
                                              fwd_->reserve_,
                                              fwd_->reserve_size_);
 

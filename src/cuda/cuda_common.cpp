@@ -121,7 +121,9 @@ CudaProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
 
   auto it = tensors_.find(src);
   if(it != tensors_.end()) {
-    return it->second;
+    auto t = it->second;
+    t->storage_->alloc();
+    return t;
   }
   return nullptr;
 }
@@ -241,6 +243,40 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
 
 
 
+void
+CudaProgram::setupTensorStorage(const CudaMemoryLayout &cml)
+{
+  void *base = tensor_mem_.ptr();
+  for(const auto &kv : cml.table_) {
+    void *ptr = (void *)((char *)base + kv.second);
+    //    printf("Tensor T%d gets %p\n", kv.first->id_, ptr);
+    kv.first->setTmpMem(ptr);
+
+  }
+}
+
+void
+CudaProgram::runOps(const CudaOps &ops, long batch)
+{
+  for(const auto &op : ops) {
+    const char *err = op->exec(*this, batch);
+    if(err) {
+      fprintf(stderr, "Op %s failed: %s\n", op->name().c_str(), err);
+      op->print(true);
+      exit(1);
+    }
+
+    if(0) {
+      printf("op: %p: %s\n", op.get(), op->name().c_str());
+      for(const auto &o : op->getOutputs()) {
+        printf("%-80s: %s\n",
+               o->info().c_str(),
+               o->statsString().c_str());
+      }
+    }
+  }
+}
+
 
 void
 CudaProgram::infer(long batches)
@@ -248,13 +284,15 @@ CudaProgram::infer(long batches)
   if(batches == 0)
     return;
 
+  setupTensorStorage(*infer_memory_layout_);
+
   issueOps(infer_pre_, 0);
   flipDoubleBufferedTensors();
-  for(const auto &op : load_operations_) op.second->exec(*this, 0);
+  runOps(load_operations_, 0);
   cudaStreamSynchronize(ctx_->stream_);
   for(long i = 0; i < batches; i++) {
 
-    for(const auto &op : infer_operations_) op->exec(*this, i);
+    runOps(infer_operations_, i);
 
     if(i < batches - 1)
       issueOps(infer_pre_, i + 1);
@@ -263,7 +301,7 @@ CudaProgram::infer(long batches)
 
     flipDoubleBufferedTensors();
     if(i < batches - 1)
-      for(const auto &op : load_operations_) op.second->exec(*this, i + 1);
+      runOps(load_operations_, i + 1);
     cudaStreamSynchronize(ctx_->stream_);
   }
   issueOps(infer_post_, batches - 1);
@@ -276,14 +314,16 @@ CudaProgram::train(long batches)
   if(batches == 0)
     return;
 
+  setupTensorStorage(*train_memory_layout_);
+
   issueOps(train_pre_, 0);
   flipDoubleBufferedTensors();
-  for(const auto &op : load_operations_) op.second->exec(*this, 0);
+  runOps(load_operations_, 0);
   cudaStreamSynchronize(ctx_->stream_);
 
   for(long i = 0; i < batches; i++) {
 
-    for(const auto &op : train_operations_) op->exec(*this, i);
+    runOps(train_operations_, i);
 
     if(i < batches - 1)
       issueOps(train_pre_, i + 1);
@@ -292,7 +332,7 @@ CudaProgram::train(long batches)
 
     flipDoubleBufferedTensors();
     if(i < batches - 1)
-      for(const auto &op : load_operations_) op.second->exec(*this, i + 1);
+      runOps(load_operations_, i + 1);
     cudaStreamSynchronize(ctx_->stream_);
 
     if(*(int *)check_result_) {
@@ -323,6 +363,10 @@ CudaOperation::str() const
     ss << sep << t->shortname();
     sep = ", ";
   }
+  auto inf = info();
+  if(inf.size())
+    ss << ", " << inf;
+
   ss << ")";
   return ss.str();
 }
@@ -336,7 +380,7 @@ CudaOperation::print(bool full) const
 
   if(full) {
 
-    printf("OP: %s\n", name().c_str());
+    printf("OP: %s %s\n", name().c_str(), info().c_str());
     for(auto const &t : inputs) {
       if(t)
         printf("\tI: %s\n", t->info().c_str());
@@ -354,14 +398,22 @@ void
 CudaProgram::print() const
 {
   std::scoped_lock lock(ctx_->mutex_);
+  printf("\n");
+  printf("Workspace: %zd kB [%p + 0x%zx]\n", workspace_.size() / 1024,
+         workspace_.ptr(), workspace_.size());
+  printf("TensorTmp: %zd kB [%p + 0x%zx]\n", tensor_mem_.size() / 1024,
+         tensor_mem_.ptr(), tensor_mem_.size());
 
-  printf("\n\nInference:\n");
+  printf("\nInference: (%zd ops)\n", infer_operations_.size());
+  int index = 0;
   for(const auto &op : infer_operations_) {
+    printf("%3d: ", index);
     op->print();
+    index++;
   }
 
-  printf("\n\nTraining:\n");
-  int index = 0;
+  printf("\nTraining: (%zd ops):\n", train_operations_.size());
+  index = 0;
   for(const auto &op : train_operations_) {
     printf("%3d: ", index);
     op->print();
@@ -651,9 +703,8 @@ CudaContext::createProgram(const Graph &g,
     p->upd_operations_.clear();
 
     p->train_operations_ = reduceLiveranges(p->train_operations_);
-
-    //    OpsAnalysis(p->train_operations_).print("train");
-
+    p->train_memory_layout_ = memoryLayout(p->train_operations_);
+    p->tensor_mem_.request(p->train_memory_layout_->size_);
   }
 
   if(pc.inference) {
@@ -669,11 +720,19 @@ CudaContext::createProgram(const Graph &g,
         exit(1);
       }
     }
-    //    p->infer_operations_ = reduce_liverange(p->infer_operations_);
-    //    OpsAnalysis(p->infer_operations_).print("infer");
+    p->infer_memory_layout_ = memoryLayout(p->infer_operations_);
+    p->tensor_mem_.request(p->infer_memory_layout_->size_);
   }
-  p->allocWorkspace();
 
+
+  for(const auto &kv : p->load_map_) {
+    p->load_operations_.push_back(kv.second);
+  }
+
+  p->load_map_.clear();
+
+  p->workspace_.alloc();
+  p->tensor_mem_.allocManaged();
 
   return p;
 }

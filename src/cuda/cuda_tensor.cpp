@@ -46,14 +46,31 @@ CudaTensorStorage::CudaTensorStorage(Tensor::DataType data_type, size_t size,
   , element_size_(Tensor::DataTypeSize(data_type))
   , id_(++ctx->tensor_storage_id_gen_)
 {
-  chkCuda(cudaMallocManaged(&data_, size, cudaMemAttachGlobal));
-  chkCuda(cudaMemset(data_, 0, size));
 }
 
 
 CudaTensorStorage::~CudaTensorStorage()
 {
-  chkCuda(cudaFree(data_));
+  if(mem_)
+    assert(mem_ == data_);
+  chkCuda(cudaFree(mem_));
+}
+
+void
+CudaTensorStorage::alloc()
+{
+  assert(mem_ == nullptr);
+  if(data_)
+    return;
+  chkCuda(cudaMallocManaged(&data_, size_, cudaMemAttachGlobal));
+  chkCuda(cudaMemset(data_, 0, size_));
+}
+
+void
+CudaTensorStorage::setTmpMem(void *p)
+{
+  assert(mem_ == nullptr);
+  data_ = p;
 }
 
 void *CudaTensorStorage::deviceMem(int64_t offset)
@@ -398,11 +415,9 @@ std::string
 CudaTensor::info() const
 {
   std::stringstream ss;
-  if(name_) {
+  ss << "T" << storage_->id_;
+  if(name_)
     ss << "\"" << *name_ << "\"";
-  } else {
-    ss << "T" << storage_->id_;
-  }
 
   const int max_rank = 8;
   int dims[max_rank];
@@ -446,6 +461,10 @@ CudaTensor::info() const
   }
   ss << "}@cuda:" << storage_->deviceMem(0);
 
+  if(storage_->mem_) {
+    ss << "<static>";
+  }
+
   if(offset_) {
     ss << " + " << offset_;
   }
@@ -475,6 +494,13 @@ CudaTensor::copyFromLocked(Tensor &t)
   int rank;
   cudnnDataType_t data_type;
 
+  auto ta = t.access();
+  if(ta == nullptr) {
+    return;
+  }
+
+  storage_->alloc();
+
   chkCUDNN(cudnnGetTensorNdDescriptor(desc_, max_rank, &data_type,
                                       &rank, dims, strides));
 
@@ -485,7 +511,7 @@ CudaTensor::copyFromLocked(Tensor &t)
                   &dims_[0],
                   &strides[0],
                   data_type_,
-                  t)) {
+                  t, ta.get())) {
     fprintf(stderr,
             "Cuda Tensor copy failed\n"
             "From: %s\n"

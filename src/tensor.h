@@ -32,7 +32,7 @@ public:
   const Tensor::DataType data_type_;
   const size_t element_size_;
 protected:
-  void *data_;
+  void *data_ = nullptr;
 };
 
 
@@ -41,6 +41,7 @@ bool copy_tensor(void *dst,
                  const int *dst_sizes,
                  const int *dst_strides,
                  Tensor::DataType dst_datatype,
-                 Tensor &src);
+                 const Tensor &src,
+                 TensorAccess *src_ta);
 
 };

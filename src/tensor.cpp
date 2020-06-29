@@ -642,12 +642,9 @@ copy_tensor(void *dst,
             const int *dst_sizes,
             const int *dst_strides,
             Tensor::DataType datatype,
-            Tensor &t)
+            const Tensor &t,
+            TensorAccess *ta)
 {
-  auto ta = t.access();
-  if(ta == nullptr)
-    return true;
-
   int src_rank = t.dims_.size();
   auto src_strides = ta->strides();
 
@@ -706,19 +703,19 @@ copy_tensor(void *dst,
   Dims selem(t.dims_.size(), 0);
   switch(datatype) {
   case Tensor::DataType::U8:
-    copy_tensor_T((uint8_t *)dst, ta.get(), selem, dis.size(), &dis[0]);
+    copy_tensor_T((uint8_t *)dst, ta, selem, dis.size(), &dis[0]);
     break;
   case Tensor::DataType::HALF:
-    copy_tensor_half((uint16_t *)dst, ta.get(), selem, dis.size(), &dis[0]);
+    copy_tensor_half((uint16_t *)dst, ta, selem, dis.size(), &dis[0]);
     break;
   case Tensor::DataType::FLOAT:
-    copy_tensor_T((float *)dst, ta.get(), selem, dis.size(), &dis[0]);
+    copy_tensor_T((float *)dst, ta, selem, dis.size(), &dis[0]);
     break;
   case Tensor::DataType::I32:
-    copy_tensor_T((int32_t *)dst, ta.get(), selem, dis.size(), &dis[0]);
+    copy_tensor_T((int32_t *)dst, ta, selem, dis.size(), &dis[0]);
     break;
   case Tensor::DataType::INT64:
-    copy_tensor_T((int64_t *)dst, ta.get(), selem, dis.size(), &dis[0]);
+    copy_tensor_T((int64_t *)dst, ta, selem, dis.size(), &dis[0]);
     break;
   default:
     fprintf(stderr, "%s can't handle %s\n", __FUNCTION__, datatype_str(datatype));
@@ -733,12 +730,13 @@ void
 Tensor::copyFrom(Tensor &t)
 {
   auto dst = access();
+  auto src_ta = t.access();
   if(!copy_tensor(dst->data(),
                   dims_.size(),
                   &dims_[0],
                   &dst->strides()[0],
                   data_type_,
-                  t)) {
+                  t, src_ta.get())) {
     fprintf(stderr,
             "Tensor copy failed\n"
             "From: %s\n"

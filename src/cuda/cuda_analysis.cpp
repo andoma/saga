@@ -1,3 +1,6 @@
+#include <map>
+
+#include <assert.h>
 #include "saga.h"
 #include "tensor.h"
 #include "context.h"
@@ -70,6 +73,103 @@ bitset_insersects(const uint32_t *a, const uint32_t *b, int words)
 
 
 
+struct Bestfit { // Best fit allocator
+
+  size_t total_ = 0;
+  size_t peak_ = 0;
+  std::multimap<size_t, size_t> sizes_;
+  std::map<size_t, size_t> chunks_;
+
+  size_t alloc(size_t reqsize)
+  {
+    size_t offset;
+    auto it = sizes_.upper_bound(reqsize);
+    if(it == sizes_.end()) {
+      offset = total_;
+      total_ += reqsize;
+      peak_ = std::max(total_, peak_);
+    } else {
+
+      size_t size = it->first;
+      offset = it->second;
+
+      chunks_.erase(offset);
+
+      sizes_.erase(it);
+
+      if(size > reqsize) {
+        // Didn't use entire free chunk, reinsert remainder
+        sizes_.insert(std::make_pair(size - reqsize, offset + reqsize));
+        chunks_.insert(std::make_pair(offset + reqsize, size - reqsize));
+      }
+    }
+    return offset;
+  }
+
+
+  void free(size_t position, size_t size)
+  {
+    auto next = chunks_.find(position + size);
+    if(next != chunks_.end()) {
+      // Merge next block
+      eraseInSize(next->second, next->first);
+      size += next->second;
+      chunks_.erase(next);
+    }
+
+    auto prev = chunks_.lower_bound(position);
+    if(prev != chunks_.begin()) {
+      // Merge prev block
+      prev--;
+      if(prev->first + prev->second == position) {
+        eraseInSize(prev->second, prev->first);
+        size += prev->second;
+        position = prev->first;
+        chunks_.erase(prev);
+      }
+    }
+
+    if(size + position == total_) {
+      total_ = position;
+    } else {
+      sizes_.insert(std::make_pair(size, position));
+      chunks_.insert(std::make_pair(position, size));
+    }
+  }
+
+
+  void eraseInSize(size_t size, size_t position)
+  {
+    auto range = sizes_.equal_range(size);
+    int found = 0;
+    for(auto it = range.first; it != range.second;) {
+      if(it->second == position) {
+        it = sizes_.erase(it);
+        found++;
+      } else {
+        it++;
+      }
+    }
+    assert(found == 1);
+  }
+
+  void dump()
+  {
+    printf("Bestfit heap peak:%zd current:%zd\n",
+           peak_, total_);
+    printf("chunks\n");
+    for(auto it : chunks_) {
+      printf("\t%zd + %zd\n", it.first, it.second);
+    }
+
+    printf("sizes\n");
+    for(auto it : sizes_) {
+      printf("\t%zd @ %zd\n", it.first, it.second);
+    }
+  }
+
+};
+
 
 struct Liveness {
 
@@ -114,6 +214,7 @@ struct LiveAnalysis {
   int ln_size_;
   std::vector<std::shared_ptr<Liveness>> lns_;
   std::vector<size_t> memory_usage_;
+  std::vector<std::shared_ptr<CudaTensorStorage>> storage_;
 
   LiveAnalysis(const std::vector<std::shared_ptr<CudaOperation>> &ops)
     : ops_(ops)
@@ -142,6 +243,7 @@ struct LiveAnalysis {
     lns_.reserve(ops.size());
 
     memory_usage_.resize(ln_size_);
+    storage_.resize(ln_size_);
 
     for(const auto &op : ops) {
       auto ln = std::make_shared<Liveness>(ln_words_);
@@ -150,12 +252,18 @@ struct LiveAnalysis {
         const int id = t->storage_id() - ln_id_base_;
         bitset(ln->gen_, id);
         memory_usage_[id] = t->memoryUsage();
+        storage_[id] = t->storage_;
       }
 
       for(const auto &t : op->getOutputs()) {
         const int id = t->storage_id() - ln_id_base_;
         bitset(ln->def_, id);
         memory_usage_[id] = t->memoryUsage();
+        storage_[id] = t->storage_;
+
+        // This is a bit of a hack.
+        // If writing to an offset in the tensor's storage we assume
+        // it's the non-first part of a concat (or similar operation)
         if(t->offset_)
           bitset(ln->gen_, id);
 
@@ -169,9 +277,15 @@ struct LiveAnalysis {
   void update() {
     uint32_t in_prim[ln_words_];
 
+    if(ops_.size() == 0)
+      return;
+
     int stable = 0;
     while(!stable) {
       stable = 1;
+
+      // Simple live analysis as there is no real control flow graph,
+      // it's rather just an infinite loop.
 
       Liveness *succ = lns_[0].get();
       for(ssize_t i = ops_.size() - 1; i >= 0; i--) {
@@ -291,6 +405,48 @@ struct LiveAnalysis {
       memory_use = new_memory_use;
     }
   }
+
+
+  std::unique_ptr<CudaMemoryLayout>  memoryLayout()
+  {
+    Bestfit bf;
+    const size_t align = 16;
+
+    std::unordered_map<int, size_t> positions;
+    std::unordered_set<int> inuse;
+
+    for(size_t i = 0; i <  ops_.size(); i++) {
+      for(int j = 0; j < ln_size_; j++) {
+        if(bitchk(lns_[i]->out_, j) && !bitchk(lns_[i]->in_, j)) {
+          const size_t size = (memory_usage_[j] + align - 1) / align;
+
+          assert(inuse.find(j) == inuse.end());
+          inuse.insert(j);
+          positions[j] = align * bf.alloc(size);
+        }
+      }
+
+      for(int j = 0; j < ln_size_; j++) {
+        if(bitchk(lns_[i]->in_, j) && !bitchk(lns_[i]->out_, j)) {
+          const size_t size = (memory_usage_[j] + align - 1) / align;
+
+          assert(inuse.find(j) != inuse.end());
+          inuse.erase(j);
+          bf.free(positions[j] / align, size);
+        }
+      }
+    }
+    assert(inuse.empty());
+    auto r = std::make_unique<CudaMemoryLayout>();
+
+    r->table_.reserve(positions.size());
+    for(const auto &p : positions) {
+      r->table_.push_back(std::make_pair(storage_[p.first], p.second));
+    }
+    r->size_ = bf.peak_ * align;
+    return r;
+  }
+
 };
 
 
@@ -301,5 +457,15 @@ reduceLiveranges(std::vector<std::shared_ptr<CudaOperation>> &ops)
   la.reduceMemoryPressure();
   return la.ops_;
 }
+
+
+
+std::unique_ptr<CudaMemoryLayout>
+memoryLayout(std::vector<std::shared_ptr<CudaOperation>> &ops)
+{
+  LiveAnalysis la(ops);
+  return la.memoryLayout();
+}
+
 
 }

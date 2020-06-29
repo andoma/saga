@@ -107,7 +107,7 @@ struct CudaJpeg : public CudaOperation,
     nvjpegDestroy(handle_);
   }
 
-  void exec(CudaProgram &p, long batch) override {
+  const char *exec(CudaProgram &p, long batch) override {
 
     int buffer_wr = s_->flip();
 
@@ -130,6 +130,7 @@ struct CudaJpeg : public CudaOperation,
                                   &output_images_[buffer_wr][0],
                                   stream_);
     chkCuda(cudaEventRecord(event_, stream_));
+    return NULL;
   }
 
 
@@ -188,9 +189,10 @@ struct CudaJpegSync : public CudaOperation {
     , j_(j)
   {}
 
-  void exec(CudaProgram &p, long batch)
+  const char *exec(CudaProgram &p, long batch)
   {
     chkCuda(cudaStreamWaitEvent(p.ctx_->stream_, j_->event_, 0));
+    return NULL;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
@@ -216,7 +218,7 @@ static void
 jpegdecoder_setup(CudaProgram &p, const Node &n, bool training)
 {
   auto yh = n.outputs_.get("y");
-  auto j = p.load_operations_[yh];
+  auto j = p.load_map_[yh];
 
   if(!j) {
 
@@ -231,7 +233,7 @@ jpegdecoder_setup(CudaProgram &p, const Node &n, bool training)
 
     p.tensors_[yh] = y;
     j = std::make_shared<CudaJpeg>(p, s, y, n.loader_, p.batch_size_);
-    p.load_operations_[yh] = j;
+    p.load_map_[yh] = j;
   }
 
   if(training)

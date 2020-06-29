@@ -41,12 +41,17 @@ public:
 
   virtual ~CudaTensorStorage();
 
+  void alloc();
+  void setTmpMem(void *p);
+
   virtual void *deviceMem(int64_t offset);
 
   const std::shared_ptr<CudaContext> ctx_;
   const size_t size_;
   const size_t element_size_;
   const int id_;
+
+  void *mem_ = nullptr;
 
 };
 
