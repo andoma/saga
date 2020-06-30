@@ -1735,6 +1735,7 @@ batchnorm_setup(CudaProgram &p, const Node &n, bool training)
   auto sm = std::make_shared<CudaTensor>(*m, m->namePostfix("smean"));
   auto sv = std::make_shared<CudaTensor>(*v, v->namePostfix("svar"));
 
+  // expavgf, 0 = mean and var is stationary, 1 = overwritten
   const float expavgf = n.attributes_.get("expavgf", 0.1f);
   const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
   auto f = std::make_shared<CudnnBatchNormTrain>(x, s, b, m, v, y,
