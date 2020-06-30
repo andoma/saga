@@ -158,20 +158,18 @@ struct CudnnAdam : public CudaOperation {
 
 struct CudnnAddTensor : public CudnnOperation {
 
-  const std::shared_ptr<CudaContext> ctx_;
   const std::shared_ptr<CudaTensor> x_, y_;
 
-  CudnnAddTensor(std::shared_ptr<CudaContext> ctx,
-                 std::shared_ptr<CudaTensor> x,
+  CudnnAddTensor(std::shared_ptr<CudaTensor> x,
                  std::shared_ptr<CudaTensor> y)
     : CudnnOperation("add")
-    , ctx_(ctx), x_(x), y_(y)
+    , x_(x), y_(y)
   {}
 
   cudnnStatus_t exec(CudaProgram &p)
   {
     float alpha = 1.0f;
-    return cudnnAddTensor(ctx_->cudnn_,
+    return cudnnAddTensor(p.ctx_->cudnn_,
                           &alpha, x_->desc(), x_->deviceMem(),
                           &alpha, y_->desc(), y_->deviceMem());
   }
@@ -661,13 +659,13 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
   if(!training) {
     p.infer(std::make_shared<CudnnConvolutionFwd>(p.ctx_, desc, x, w, y));
     if(b)
-      p.infer(std::make_shared<CudnnAddTensor>(p.ctx_, b, y));
+      p.infer(std::make_shared<CudnnAddTensor>(b, y));
     return NULL;
   }
 
   p.fwd(std::make_shared<CudnnConvolutionFwd>(p.ctx_, desc, x, w, y));
   if(b)
-    p.fwd(std::make_shared<CudnnAddTensor>(p.ctx_, b, y));
+    p.fwd(std::make_shared<CudnnAddTensor>(b, y));
 
   auto dy = y->makeSharedGrad();
 
@@ -1128,7 +1126,7 @@ fc_setup(CudaProgram &p, const Node &n, bool training)
   if(!training) {
     p.infer(fwd);
     if(b)
-      p.infer(std::make_shared<CudnnAddTensor>(p.ctx_, b, y));
+      p.infer(std::make_shared<CudnnAddTensor>(b, y));
     return NULL;
   }
 
