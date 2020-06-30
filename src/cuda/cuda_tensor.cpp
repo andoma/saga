@@ -59,17 +59,18 @@ CudaTensorStorage::~CudaTensorStorage()
 void
 CudaTensorStorage::alloc()
 {
-  assert(mem_ == nullptr);
-  if(data_)
+  if(mem_)
     return;
-  chkCuda(cudaMallocManaged(&data_, size_, cudaMemAttachGlobal));
-  chkCuda(cudaMemset(data_, 0, size_));
+  chkCuda(cudaMallocManaged(&mem_, size_, cudaMemAttachGlobal));
+  chkCuda(cudaMemset(mem_, 0, size_));
+  data_ = mem_;
 }
 
 void
 CudaTensorStorage::setTmpMem(void *p)
 {
-  assert(mem_ == nullptr);
+  if(mem_)
+    return;
   data_ = p;
 }
 
