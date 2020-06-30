@@ -1843,13 +1843,15 @@ sum_setup(CudaProgram &p, const Node &n, bool training)
   auto dy = y->makeSharedGrad();
 
   auto dx0 = x0->grad_;
-  if(dx0)
-    p.bwd(std::make_shared<CudnnTransform>(dy, dx0, 0.0f));
-
+  if(dx0) {
+    const float beta = n.attributes_.get("dx0.beta", 0.0f);
+    p.bwd(std::make_shared<CudnnTransform>(dy, dx0, beta));
+  }
   auto dx1 = x1->grad_;
-  if(dx1)
-    p.bwd(std::make_shared<CudnnTransform>(dy, dx1, 0.0f));
-
+  if(dx1) {
+    const float beta = n.attributes_.get("dx1.beta", 0.0f);
+    p.bwd(std::make_shared<CudnnTransform>(dy, dx1, beta));
+  }
   return NULL;
 }
 

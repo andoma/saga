@@ -586,8 +586,13 @@ compute_dx_beta(CudaProgram &p,
 
   for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
     std::shared_ptr<Node> n = nodes[i];
-    auto &x = n->inputs_["x"];
-    if(x) {
+
+    for(const auto &it : n->inputs_) {
+      const auto &name = it.first;
+      if(name[0] != 'x')
+        continue;
+
+      auto &x = it.second;
 
       if(xset.find(x) == xset.end()) {
         // First contributing node. dx.beta = 0 (default)
@@ -595,7 +600,7 @@ compute_dx_beta(CudaProgram &p,
       } else {
         // Other contributing nodes: Add to current value
         auto n2 = std::make_shared<Node>(*n);
-        n2->attributes_["dx.beta"] = 1.0f;
+        n2->attributes_["d" + name + ".beta"] = 1.0f;
         n = n2;
       }
     }
