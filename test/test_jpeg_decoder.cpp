@@ -38,13 +38,32 @@ load_jpeg(long batch, int n, uint8_t *data, size_t len)
   return srclen;
 }
 
+
+
+
+static void
+fill_theta(Tensor *t, int batch_size)
+{
+  auto ta = t->access();
+  for(int i = 0; i < batch_size; i++) {
+
+    ta->set({i, 1, 0}, -1);
+    ta->set({i, 0, 1}, 1);
+  }
+}
+
+
+
 static int
 jpeg_decoder_main(int argc, char **argv)
 {
   int opt;
   auto dt = Tensor::DataType::FLOAT;
 
-  while((opt = getopt(argc, argv, "hv")) != -1) {
+  int transform = 0;
+  const int batch_size = 4;
+
+  while((opt = getopt(argc, argv, "hvt")) != -1) {
     switch(opt) {
     case 'h':
       dt = Tensor::DataType::HALF;
@@ -52,32 +71,57 @@ jpeg_decoder_main(int argc, char **argv)
     case 'v':
       g_verbose++;
       break;
+    case 't':
+      transform = 1;
+      break;
     }
   }
 
   argc -= optind;
   argv += optind;
 
-  printf("dt=%d\n", (int)dt);
-
   Graph g;
 
-  auto n =  g.addNode("jpegdecoder", [&](long batch, int n,
-                                         uint8_t *data, size_t len)
-                      {
-                        return load_jpeg(batch, n, data, len);
-                      }, {{"width", 32}, {"height", 32}});
+  auto n = g.addNode("jpegdecoder", [&](long batch, int n,
+                                        uint8_t *data, size_t len)
+                     {
+                       return load_jpeg(batch, n, data, len);
+                     }, {{"width", 32}, {"height", 32}});
 
-  g.print();
+
+  n = g.addNode("convert", {{"x", n->y()}},
+                {{"scale", 1 / 255.0f}, {"datatype", (int)Tensor::DataType::FLOAT}});
+
+  std::shared_ptr<Tensor> theta =
+    makeCPUTensor(Tensor::DataType::FLOAT,
+                  Dims({batch_size, 2, 3}), "theta0");
+
+  if(transform)
+    n = g.addNode("spatialtransform", {{"x", n->y()}, {"theta", theta}},
+                  {{"width", 32}, {"height", 32}, {"inference", true}});
+
+  if(dt == Tensor::DataType::HALF)
+    n = g.addNode("convert", {{"x", n->y()}},
+                  {{"datatype", (int)dt}});
+
+  if(g_verbose)
+    g.print();
 
   auto ctx = createContext();
   auto p = ctx->createProgram(g, {
       .inference = true,
       .training = false,
-      .batch_size = 4
+      .batch_size = batch_size
    });
 
-  p->print();
+
+
+  if(g_verbose > 1)
+    p->print();
+
+  theta = p->resolveTensor(theta);
+  if(theta)
+    fill_theta(theta.get(), batch_size);
 
   auto output = p->resolveTensor(n->y());
 
