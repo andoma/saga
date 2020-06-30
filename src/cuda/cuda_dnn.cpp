@@ -2216,6 +2216,7 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
                                                     CUDNN_DATA_FLOAT,
                                                     4,
                                                     dims));
+    grid_->storage_->alloc();
   }
 
   ~CudnnSpatialTransformFwd()
