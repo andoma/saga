@@ -215,13 +215,22 @@ struct CudnnTransform : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    return {a_};
+    auto r = std::vector{a_};
+    if(beta_)
+      r.push_back(b_);
+    return r;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
     return {b_};
   }
 
+  std::string info() const override {
+    if(beta_) {
+      return "beta=" + std::to_string(beta_);
+    }
+    return "";
+  }
 };
 
 //------------------------------------------------------------------------
