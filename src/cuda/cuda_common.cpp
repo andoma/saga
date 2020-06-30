@@ -238,6 +238,8 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
 std::shared_ptr<CudaTensor>
 CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
 {
+  if(src == nullptr)
+    return nullptr;
   return lower_tensor_batch(src, tensorFormat(src->data_type_));
 }
 
