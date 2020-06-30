@@ -365,7 +365,7 @@ public:
   virtual std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) = 0;
   virtual void infer(long batches = 1) = 0;
   virtual void train(long batches = 1) = 0;
-  virtual void print() const = 0;
+  virtual void print(bool detailed = false) const = 0;
   virtual void debug(bool on) = 0;
 };
 

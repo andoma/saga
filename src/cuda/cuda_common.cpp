@@ -395,22 +395,30 @@ CudaOperation::print(bool full) const
 }
 
 void
-CudaProgram::print() const
+CudaProgram::print(bool detailed) const
 {
   std::scoped_lock lock(ctx_->mutex_);
   printf("\nInference: (%zd ops)\n", infer_operations_.size());
   int index = 0;
   for(const auto &op : infer_operations_) {
-    printf("%3d: ", index);
-    op->print();
+    if(detailed) {
+      op->print(true);
+    } else {
+      printf("%3d: ", index);
+      op->print();
+    }
     index++;
   }
 
   printf("\nTraining: (%zd ops):\n", train_operations_.size());
   index = 0;
   for(const auto &op : train_operations_) {
-    printf("%3d: ", index);
-    op->print();
+    if(detailed) {
+      op->print(true);
+    } else {
+      printf("%3d: ", index);
+      op->print();
+    }
     index++;
   }
 

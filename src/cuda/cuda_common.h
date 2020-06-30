@@ -161,7 +161,7 @@ public:
   std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
   void infer(long batches) override;
   void train(long batches) override;
-  void print() const override;
+  void print(bool detailed) const override;
   void debug(bool) override;
 
   const std::shared_ptr<CudaContext> ctx_;
