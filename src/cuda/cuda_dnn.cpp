@@ -1917,10 +1917,27 @@ REGISTER_CUDA_OP("softmax", softmax_setup);
 
 //------------------------------------------------------------------------
 
+
+static const char *
+bnopsstr(cudnnBatchNormOps_t ops)
+{
+  switch(ops) {
+  case CUDNN_BATCHNORM_OPS_BN:
+    return "bn";
+  case CUDNN_BATCHNORM_OPS_BN_ACTIVATION:
+    return "bn_act";
+  case CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION:
+    return "bn_add_act";
+  default:
+    return "??";
+  }
+}
+
+
 struct CudnnBatchNormActTrain : public CudnnOperation {
 
   const std::shared_ptr<CudaContext> ctx_;
-  const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_, sm_, sv_;
+  const std::shared_ptr<CudaTensor> x_, z_ ,s_, b_, m_, v_, y_, sm_, sv_;
   const float epsilon_;
   const float expavgf_;
   const cudnnBatchNormOps_t ops_;
@@ -1932,6 +1949,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
 
   CudnnBatchNormActTrain(CudaProgram &p,
                          std::shared_ptr<CudaTensor> x,
+                         std::shared_ptr<CudaTensor> z,
                          std::shared_ptr<CudaTensor> s,
                          std::shared_ptr<CudaTensor> b,
                          std::shared_ptr<CudaTensor> m,
@@ -1944,11 +1962,11 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
                          cudnnBatchNormOps_t ops,
                          cudnnActivationMode_t activation_mode,
                          float actalpha)
-    : CudnnOperation("bnacttrain")
-    , ctx_(p.ctx_)
-    , x_(x), s_(s), b_(b), m_(m), v_(v), y_(y), sm_(sm), sv_(sv)
-    , epsilon_(epsilon), expavgf_(expavgf), ops_(ops)
-    , mode_(CUDNN_BATCHNORM_SPATIAL_PERSISTENT)
+  : CudnnOperation(std::string(bnopsstr(ops)) + "_fwd.persistent")
+  , ctx_(p.ctx_)
+  , x_(x), z_(z), s_(s), b_(b), m_(m), v_(v), y_(y), sm_(sm), sv_(sv)
+  , epsilon_(epsilon), expavgf_(expavgf), ops_(ops)
+  , mode_(CUDNN_BATCHNORM_SPATIAL_PERSISTENT)
   {
     chkCUDNN(cudnnCreateActivationDescriptor(&desc_));
     chkCUDNN(cudnnSetActivationDescriptor(desc_, activation_mode,
@@ -1978,7 +1996,8 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
                                                     &alpha, &beta,
                                                     x_->desc(),
                                                     x_->deviceMem(),
-                                                    NULL, NULL,
+                                                    z_ ? z_->desc() : NULL,
+                                                    z_ ? z_->deviceMem() : NULL,
                                                     y_->desc(),
                                                     y_->deviceMem(),
                                                     s_->desc(),
@@ -1998,32 +2017,35 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
 
 
   std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
-    return {x_, s_, b_, m_, v_};
+    auto r = std::vector{x_, s_, b_, m_, v_};
+    if(z_)
+      r.push_back(z_);
+    return r;
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
     return {y_, sm_, sv_};
   }
-
 };
 
 
 struct CudnnBatchNormActBwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnBatchNormActTrain> fwd_;
-  const std::shared_ptr<CudaTensor> dy_, dx_, ds_, db_;
+  const std::shared_ptr<CudaTensor> dy_, dx_, dz_, ds_, db_;
   const float dx_beta_;
 
   CudnnBatchNormActBwd(CudaProgram &p,
                        std::shared_ptr<CudnnBatchNormActTrain> fwd,
                        std::shared_ptr<CudaTensor> dy,
                        std::shared_ptr<CudaTensor> dx,
+                       std::shared_ptr<CudaTensor> dz,
                        std::shared_ptr<CudaTensor> ds,
                        std::shared_ptr<CudaTensor> db,
                        float dx_beta)
-    : CudnnOperation("bnactbwd")
+    : CudnnOperation(std::string(bnopsstr(fwd->ops_)) + "_bwd.persistent")
     , fwd_(fwd)
-    , dy_(dy), dx_(dx), ds_(ds), db_(db)
+    , dy_(dy), dx_(dx), dz_(dz), ds_(ds), db_(db)
     , dx_beta_(dx_beta)
   {
     size_t workspace;
@@ -2033,7 +2055,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                                                                fwd->x_->desc(),
                                                                fwd->y_->desc(),
                                                                dy_->desc(),
-                                                               NULL,
+                                                               dz_ ? dz_->desc() : NULL,
                                                                dx_->desc(),
                                                                ds_->desc(),
                                                                fwd->desc_,
@@ -2056,7 +2078,8 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                                              fwd_->y_->deviceMem(),
                                              dy_->desc(),
                                              dy_->deviceMem(),
-                                             NULL, NULL,
+                                             dz_ ? dz_->desc() : NULL,
+                                             dz_ ? dz_->deviceMem() : NULL,
                                              dx_->desc(),
                                              dx_->deviceMem(),
                                              fwd_->s_->desc(),
@@ -2084,7 +2107,10 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
-    return {dx_, ds_, db_};
+    auto r = std::vector{dx_, ds_, db_};
+    if(dz_)
+      r.push_back(dz_);
+    return r;
   }
 };
 
@@ -2094,12 +2120,13 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
 
 
 static const char *
-batchnorm_relu_setup(CudaProgram &p, const Node &n, bool training)
+batchnorm_persistent_setup(CudaProgram &p, const Node &n, bool training)
 {
   if(!training)
     return "not supported for inferenece";
 
-  auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+  auto x0 = p.lower_tensor_batch(n.inputs_.get("x0"));
+  auto x1 = p.lower_tensor_batch(n.inputs_.get("x1"));
   auto y = p.lower_tensor_batch(n.outputs_.get("y"));
 
   auto s = p.lower_tensor(n.inputs_.get("s"), 2);
@@ -2112,45 +2139,64 @@ batchnorm_relu_setup(CudaProgram &p, const Node &n, bool training)
   auto sv = std::make_shared<CudaTensor>(*v, v->namePostfix("svar"));
 
   const float expavgf = n.attributes_.get("expavgf", 0.1f);
-  const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
 
-  auto ops = CUDNN_BATCHNORM_OPS_BN_ACTIVATION;
+  auto ops = CUDNN_BATCHNORM_OPS_BN;
+  if(n.attributes_.get("relu", false)) {
+    ops = CUDNN_BATCHNORM_OPS_BN_ACTIVATION;
+    if(x1)
+      ops = CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION;
+  } else {
+    assert(x1 == nullptr);
+  }
+
   auto activation_mode = CUDNN_ACTIVATION_RELU;
   float activation_alpha = 0.0f;
 
-  auto f = std::make_shared<CudnnBatchNormActTrain>(p, x, s, b, m, v, y,
+  auto f = std::make_shared<CudnnBatchNormActTrain>(p, x0, x1, s, b, m, v, y,
                                                     sm, sv, epsilon, expavgf,
                                                     ops, activation_mode,
                                                     activation_alpha);
   p.fwd(f);
 
-  auto dx = x->makeSharedGrad();
+  auto dx0 = x0->makeSharedGrad();
+  auto dx1 = x1 ? x1->makeSharedGrad() : nullptr;
   auto dy = y->makeSharedGrad();
   auto ds = s->makePrivateGrad();
   auto db = b->makePrivateGrad();
 
-  p.bwd(std::make_shared<CudnnBatchNormActBwd>(p, f, dy, dx, ds, db, dx_beta));
+  const float dx0_beta = n.attributes_.get("dx0.beta", 0.0f);
+  const float dx1_beta = n.attributes_.get("dx1.beta", 0.0f);
+
+  if(dx0_beta) {
+    return "dx0.beta is non-zero";
+  }
+  if(dx1_beta) {
+    return "dx1.beta is non-zero";
+  }
+
+  p.bwd(std::make_shared<CudnnBatchNormActBwd>(p, f, dy, dx0, dx1, ds, db,
+                                               0.0f));
 
   p.upd(std::make_shared<CudnnAdam>(p, s, ds));
   p.upd(std::make_shared<CudnnAdam>(p, b, db));
   return NULL;
 }
 
-REGISTER_CUDA_OP("batchnorm_relu", batchnorm_relu_setup);
-
-
-
+REGISTER_CUDA_OP("batchnorm.persistent", batchnorm_persistent_setup);
 
 
 static std::shared_ptr<Node>
-batchnorm_relu_transform_node(CudaProgram &p,
-                              std::shared_ptr<Node> bn,
-                              std::shared_ptr<Node> mp)
+batchnorm_persistent_transform_node(CudaProgram &p,
+                                    std::shared_ptr<Node> bn,
+                                    std::shared_ptr<Node> sum,
+                                    std::shared_ptr<Node> relu)
 {
   auto x = bn->inputs_["x"];
-  auto y = mp->outputs_["y"];
 
   if(x->data_type_ != Tensor::DataType::HALF)
+    return nullptr;
+
+  if(x->dims_[1] % 4)
     return nullptr;
 
   auto lx = p.tensors_.find(x);
@@ -2159,16 +2205,30 @@ batchnorm_relu_transform_node(CudaProgram &p,
       return nullptr;
   }
 
+  auto y = relu ? relu->outputs_["y"] : bn->outputs_["y"];
+
   auto ly = p.tensors_.find(y);
   if(ly != p.tensors_.end()) {
     if(!ly->second->cpacked())
       return nullptr;
   }
 
+  auto nn = std::make_shared<Node>("batchnorm.persistent");
 
-  auto nn = std::make_shared<Node>("batchnorm_relu");
+  nn->inputs_["x0"] = bn->inputs_["x"];
+  auto bn_y = bn->outputs_["y"];
 
-  nn->inputs_["x"] = bn->inputs_["x"];
+  if(sum) {
+
+    auto sum_x0 = sum->inputs_["x0"];
+    auto sum_x1 = sum->inputs_["x1"];
+
+    if(sum_x0 == bn_y) {
+      nn->inputs_["x1"] = sum->inputs_["x1"];
+    } else {
+      nn->inputs_["x1"] = sum->inputs_["x0"];
+    }
+  }
   nn->inputs_["s"] = bn->inputs_["s"];
   nn->inputs_["b"] = bn->inputs_["b"];
   nn->inputs_["m"] = bn->inputs_["m"];
@@ -2177,7 +2237,10 @@ batchnorm_relu_transform_node(CudaProgram &p,
   if(bn->attributes_.find("epsilon") != bn->attributes_.end())
     nn->attributes_["epsilon"] = bn->attributes_["epsilon"];
 
-  nn->outputs_["y"] = mp->outputs_["y"];
+  if(relu)
+    nn->attributes_["relu"] = true;
+
+  nn->outputs_["y"] = y;
   return nn;
 }
 
@@ -2190,22 +2253,38 @@ batchnorm_relu_transform(CudaProgram &p,
                          const std::vector<std::shared_ptr<Node>> &nodes)
 {
   std::vector<std::shared_ptr<Node>> r;
+  const ssize_t num_nodes = nodes.size();
 
-  if(nodes.size() < 2)
-    return nodes;
-
-  for(size_t i = 0; i < nodes.size(); i++) {
+  for(ssize_t i = 0; i < num_nodes; i++) {
     std::shared_ptr<Node> n = nodes[i];
 
-    if(i < nodes.size() - 1 &&
+    if(i < num_nodes - 1 &&
        nodes[i + 0]->type_ == "batchnorm" &&
        nodes[i + 1]->type_ == "relu") {
-      auto n2 = batchnorm_relu_transform_node(p, nodes[i], nodes[i + 1]);
+      auto n2 = batchnorm_persistent_transform_node(p, nodes[i], nullptr,
+                                                    nodes[i + 1]);
       if(n2) {
         i++;
         n = n2;
       }
+    } else if(i < num_nodes - 2 &&
+              nodes[i + 0]->type_ == "batchnorm" &&
+              nodes[i + 1]->type_ == "sum" &&
+              nodes[i + 2]->type_ == "relu") {
+      auto n2 = batchnorm_persistent_transform_node(p, nodes[i], nodes[i + 1],
+                                                    nodes[i + 2]);
+      if(n2) {
+        i += 2;
+        n = n2;
+      }
+    } else if(nodes[i]->type_ == "batchnorm") {
+      auto n2 = batchnorm_persistent_transform_node(p, nodes[i], nullptr,
+                                                    nullptr);
+      if(n2) {
+        n = n2;
+      }
     }
+
     r.push_back(n);
   }
   return r;
