@@ -620,7 +620,13 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
   }
 
   std::string info() const override {
-    return convbwddataalgostr(desc_->bwd_data_algo_);
+    std::stringstream ss;
+
+    ss << convbwddataalgostr(desc_->bwd_data_algo_);
+    if(dx_beta_) {
+      ss << ", beta=" << dx_beta_;
+    }
+    return ss.str();
   }
 };
 
