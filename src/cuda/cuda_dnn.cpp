@@ -1818,15 +1818,30 @@ struct CudnnOpTensor : public CudnnOperation {
 static const char *
 sum_setup(CudaProgram &p, const Node &n, bool training)
 {
-  if(training)
-    return "not supported for training";
-
   auto x0 = p.lower_tensor_batch(n.inputs_.get("x0"));
   auto x1 = p.lower_tensor_batch(n.inputs_.get("x1"));
 
   auto y = p.lower_tensor_batch(n.outputs_.get("y"));
 
-  p.infer(std::make_shared<CudnnOpTensor>(x0, x1, y, CUDNN_OP_TENSOR_ADD));
+  auto fwd = std::make_shared<CudnnOpTensor>(x0, x1, y, CUDNN_OP_TENSOR_ADD);
+
+  if(!training) {
+    p.infer(fwd);
+    return NULL;
+  }
+
+  p.fwd(fwd);
+
+  auto dy = y->makeSharedGrad();
+
+  auto dx0 = x0->grad_;
+  if(dx0)
+    p.bwd(std::make_shared<CudnnTransform>(dy, dx0, 0.0f));
+
+  auto dx1 = x1->grad_;
+  if(dx1)
+    p.bwd(std::make_shared<CudnnTransform>(dy, dx1, 0.0f));
+
   return NULL;
 }
 
