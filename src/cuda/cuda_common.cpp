@@ -398,12 +398,6 @@ void
 CudaProgram::print() const
 {
   std::scoped_lock lock(ctx_->mutex_);
-  printf("\n");
-  printf("Workspace: %zd kB [%p + 0x%zx]\n", workspace_.size() / 1024,
-         workspace_.ptr(), workspace_.size());
-  printf("TensorTmp: %zd kB [%p + 0x%zx]\n", tensor_mem_.size() / 1024,
-         tensor_mem_.ptr(), tensor_mem_.size());
-
   printf("\nInference: (%zd ops)\n", infer_operations_.size());
   int index = 0;
   for(const auto &op : infer_operations_) {
@@ -419,6 +413,13 @@ CudaProgram::print() const
     op->print();
     index++;
   }
+
+  printf("\n");
+  printf("Workspace: %zd kB [%p + 0x%zx]\n", workspace_.size() / 1024,
+         workspace_.ptr(), workspace_.size());
+  printf("TensorTmp: %zd kB [%p + 0x%zx]\n", tensor_mem_.size() / 1024,
+         tensor_mem_.ptr(), tensor_mem_.size());
+
 }
 
 void
