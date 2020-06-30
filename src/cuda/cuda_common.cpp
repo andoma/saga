@@ -432,30 +432,42 @@ CudaProgram::debug(bool on)
 //------------------------------------------------------------------------
 
 struct OpFactory {
-  void (*setup)(CudaProgram &p, const Node &n, bool training);
+  const char *(*setup)(CudaProgram &p, const Node &n, bool training);
 };
 
 static std::map<std::string, OpFactory> *cuda_op_factories;
 
 void
 CudaRegisterOpFactory(const char *name,
-                      void (*setup)(CudaProgram &p, const Node &n, bool train))
+                      const char *(*setup)(CudaProgram &p, const Node &n,
+                                           bool train))
 {
   if(!cuda_op_factories)
-    cuda_op_factories = new  std::map<std::string, OpFactory>;
+    cuda_op_factories = new std::map<std::string, OpFactory>;
 
   (*cuda_op_factories)[name] = OpFactory{.setup = setup };
 }
 
 
+
+static const char *
+no_setup(CudaProgram &p, const Node &n, bool train)
+{
+  return "operation does not exist";
+}
+
+static const OpFactory no_op = {
+  .setup = no_setup
+};
+
 static const OpFactory *
 find_operation(const Node &n)
 {
   if(!cuda_op_factories)
-    return nullptr;
+    return &no_op;
   auto it = cuda_op_factories->find(n.type_);
   if(it == cuda_op_factories->end())
-    return nullptr;
+    return &no_op;
   return &it->second;
 }
 
@@ -676,12 +688,10 @@ CudaContext::createProgram(const Graph &g,
     auto train_nodes = applyTransforms(CUDA_TRANSFORM_TRAINING, *p, nodes);
 
     for(const auto &n : train_nodes) {
-      auto op = find_operation(*n);
-      if(op != NULL && op->setup) {
-        op->setup(*p, *n, true);
-      } else {
-        fprintf(stderr, "Unable to create training operation for node %s\n",
-                n->type_.c_str());
+      const char *err = find_operation(*n)->setup(*p, *n, true);
+      if(err) {
+        fprintf(stderr, "Unable to create training operation for %s -- %s\n",
+                n->type_.c_str(), err);
         n->print();
         exit(1);
       }
@@ -711,12 +721,10 @@ CudaContext::createProgram(const Graph &g,
   if(pc.inference) {
     auto infer_nodes = applyTransforms(CUDA_TRANSFORM_INFERENCE, *p, nodes);
     for(const auto &n : infer_nodes) {
-      auto op = find_operation(*n);
-      if(op != NULL && op->setup) {
-        op->setup(*p, *n, false);
-      } else {
-        fprintf(stderr, "Unable to create inference operation for node %s\n",
-                n->type_.c_str());
+      const char *err = find_operation(*n)->setup(*p, *n, false);
+      if(err) {
+        fprintf(stderr, "Unable to create inferenece operation for %s -- %s\n",
+                n->type_.c_str(), err);
         n->print();
         exit(1);
       }

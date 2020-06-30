@@ -277,8 +277,8 @@ private:
 #define CPPJOIN(a, b) CPPGLUE(a, b)
 
 void CudaRegisterOpFactory(const char *name,
-                           void (*setup)(CudaProgram &p, const Node &n,
-                                         bool training));
+                           const char *(*setup)(CudaProgram &p, const Node &n,
+                                                bool training));
 
 #define REGISTER_CUDA_OP(name, setup)                                   \
   static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) { \

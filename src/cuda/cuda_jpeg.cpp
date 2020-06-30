@@ -214,7 +214,7 @@ CudaJpeg::getSyncOp()
 
 
 
-static void
+static const char *
 jpegdecoder_setup(CudaProgram &p, const Node &n, bool training)
 {
   auto yh = n.outputs_.get("y");
@@ -240,7 +240,7 @@ jpegdecoder_setup(CudaProgram &p, const Node &n, bool training)
     p.fwd(j->getSyncOp());
   else
     p.infer(j->getSyncOp());
-
+  return NULL;
 }
 
 
