@@ -2454,6 +2454,46 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
 
 REGISTER_CUDA_OP("spatialtransform", spatialtransform_setup);
 
+
+static std::vector<std::shared_ptr<Node>>
+spatialtransform_transform(CudaProgram &p,
+                           const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+
+  for(size_t i = 0; i < nodes.size(); i++) {
+    auto &n = nodes[i];
+    if(n->type_ == "spatialtransform") {
+
+      auto x = n->inputs_.get("x");
+      if(x && x->data_type_ != Tensor::DataType::FLOAT) {
+
+        Tensors emptyset;
+        auto n0 = Node::make("convert", {{"x", x}},
+                             {{"datatype", (int)Tensor::DataType::FLOAT}},
+                             emptyset)[0];
+        auto n1 = Node::make("spatialtransform",
+                             {{"x", n0->y()}, {"theta", n->inputs_.get("theta")}},
+                             n->attributes_,
+                             emptyset)[0];
+        auto n2 = Node::make("convert", {{"x", n1->y()}},
+                             {{"datatype", (int)x->data_type_}},
+                             emptyset)[0];
+        n2->outputs_["y"] = n->outputs_.get("y");
+        r.push_back(n0);
+        r.push_back(n1);
+        r.push_back(n2);
+        continue;
+      }
+    }
+    r.push_back(n);
+  }
+  return r;
+}
+
+
+REGISTER_CUDA_TRANSFORM(120, CUDA_TRANSFORM_ALL, spatialtransform_transform);
+
 //------------------------------------------------------------------------
 
 
