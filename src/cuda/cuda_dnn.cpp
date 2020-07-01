@@ -1225,7 +1225,7 @@ struct CudaConvert : public CudaOperation {
               y_->data_type_ == Tensor::DataType::HALF) {
       algo_ = convert_float_half;
     } else {
-      abort();
+      algo_ = NULL;
     }
   }
 
@@ -1249,11 +1249,26 @@ struct CudaConvert : public CudaOperation {
 static const char *
 convert_setup(CudaProgram &p, const Node &n, bool training)
 {
-  auto x = p.lower_tensor_batch(n.inputs_.get("x"));
-  auto y = p.lower_tensor_batch(n.outputs_.get("y"), *x);
   auto scale = n.attributes_.get("scale", 1.0f);
 
+  auto xh = n.inputs_.get("x");
+  auto x = p.lower_tensor_batch(xh);
+
+  auto yh = n.outputs_.get("y");
+
+  if(xh->data_type_ == yh->data_type_ && scale == 1.0f) {
+    auto y = std::make_shared<CudaTensor>(x, x->dims_, std::vector<int64_t>{},
+                                          xh->namePostfix("nop-convert"));
+    p.tensors_[yh] = y;
+    return NULL;
+  }
+
+  auto y = p.lower_tensor_batch(yh, *x);
   auto op = std::make_shared<CudaConvert>(x, y, scale);
+
+  if(op->algo_ == NULL) {
+    return "Unable to convert between given formats";
+  }
 
   if(!training) {
     p.infer(op);
@@ -1264,6 +1279,53 @@ convert_setup(CudaProgram &p, const Node &n, bool training)
 }
 
 REGISTER_CUDA_OP("convert", convert_setup);
+
+
+
+static std::shared_ptr<Node>
+convert_fuse_nodes(CudaProgram &p,
+                   std::shared_ptr<Node> a,
+                   std::shared_ptr<Node> b)
+{
+  if(b->inputs_.get("x") != a->outputs_.get("y"))
+    return nullptr;
+
+  float scale =
+    a->attributes_.get("scale", 1.0f) * b->attributes_.get("scale", 1.0f);
+
+  auto nn = std::make_shared<Node>("convert");
+  nn->inputs_["x"] = a->inputs_.get("x");
+  nn->outputs_["y"] = b->outputs_.get("y");
+  nn->attributes_["scale"] = scale;
+  return nn;
+}
+
+static std::vector<std::shared_ptr<Node>>
+convert_transform(CudaProgram &p,
+                  const std::vector<std::shared_ptr<Node>> &nodes)
+{
+  std::vector<std::shared_ptr<Node>> r;
+  const ssize_t num_nodes = nodes.size();
+
+  for(ssize_t i = 0; i < num_nodes; i++) {
+    std::shared_ptr<Node> n = nodes[i];
+
+    if(i < num_nodes - 1 &&
+       nodes[i + 0]->type_ == "convert" &&
+       nodes[i + 1]->type_ == "convert") {
+      auto n2 = convert_fuse_nodes(p, nodes[i], nodes[i + 1]);
+      if(n2) {
+        i++;
+        n = n2;
+      }
+    }
+    r.push_back(n);
+  }
+  return r;
+}
+
+
+REGISTER_CUDA_TRANSFORM(200, CUDA_TRANSFORM_ALL, convert_transform);
 
 //------------------------------------------------------------------------
 struct CudaCatClassifierFwd : public CudaOperation {
