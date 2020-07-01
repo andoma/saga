@@ -527,7 +527,13 @@ Node::make(const std::string &type,
 
   if(!nodes.empty()) {
     auto &last = nodes.back();
-    last->outputs_["y"] = last->inferTensor_y();
+    auto y = last->inferTensor_y();
+    if(!y) {
+      fprintf(stderr, "%s: Unable to infer y tensor\n", __FUNCTION__);
+      last->print();
+      exit(1);
+    }
+    last->outputs_["y"] = y;
   }
   return nodes;
 }
