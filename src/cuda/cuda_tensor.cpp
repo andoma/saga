@@ -344,6 +344,8 @@ CudaTensor::~CudaTensor()
 std::unique_ptr<TensorAccess>
 CudaTensor::access()
 {
+  if(!storage_->data())
+    return nullptr;
   return std::make_unique<CudaTensorAccess>(storage_, desc_, offset_);
 }
 
