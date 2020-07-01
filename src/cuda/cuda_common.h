@@ -200,6 +200,7 @@ public:
 
   StopCheck stop_check_;
   bool print_progress_ = true;
+  bool print_progress_pending_nl_ = false;
   time_t print_progress_ts_ = 0;
 
   std::shared_ptr<CudaTensor> resolveTensor_locked(std::shared_ptr<Tensor> t);

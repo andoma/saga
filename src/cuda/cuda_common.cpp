@@ -304,14 +304,16 @@ CudaProgram::progress(const char *what, long i, long batches)
 
   printf("\r");
   fflush(stdout);
+  print_progress_pending_nl_ = true;
 }
 
 void
 CudaProgram::progressDone(void)
 {
-  if(!print_progress_)
+  if(!print_progress_pending_nl_)
     return;
   printf("\n");
+  print_progress_pending_nl_ = false;
 }
 
 
