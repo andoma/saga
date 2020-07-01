@@ -177,4 +177,45 @@ Graph::saveTensors(const char *path, Program *p)
 }
 
 
+// -----------------------------------------------------------------------
+// Node creation helpers
+// -----------------------------------------------------------------------
+
+std::shared_ptr<Node>
+Graph::addConvert(std::shared_ptr<Tensor> input, Tensor::DataType dt,
+                  float scale)
+{
+  return addNode("convert", {{"x", input}},
+                 {{"scale", scale}, {"datatype", (int)dt}});
+}
+
+
+std::shared_ptr<Node>
+Graph::addJpegDecoder(int width, int height, Tensor::DataType dt,
+                      Loader loader)
+{
+  auto n = addNode("jpegdecoder", loader,
+                   {{"width", width}, {"height", height}});
+
+  return addConvert(n->y(), dt, 1 / 255.0f);
+}
+
+
+std::shared_ptr<Node>
+Graph::addSpatialTransform(std::shared_ptr<Tensor> input,
+                           std::shared_ptr<Tensor> theta,
+                           int width,
+                           int height,
+                           bool inference)
+{
+  Attributes a;
+  if(width > 0)
+    a["width"] = width;
+  if(height > 0)
+    a["height"] = height;
+  a["inference"] = inference;
+
+  return addNode("spatialtransform", {{"x", input}, {"theta", theta}}, a);
+}
+
 }

@@ -305,6 +305,21 @@ public:
 
   std::unordered_set<std::shared_ptr<Tensor>> outputTensors() const;
 
+  // Build helpers
+
+  std::shared_ptr<Node> addJpegDecoder(int width, int height,
+                                       Tensor::DataType output_data_type,
+                                       Loader loader);
+
+  std::shared_ptr<Node> addConvert(std::shared_ptr<Tensor> input,
+                                   Tensor::DataType dt,
+                                   float scale);
+
+  std::shared_ptr<Node> addSpatialTransform(std::shared_ptr<Tensor> input,
+                                            std::shared_ptr<Tensor> theta,
+                                            int output_width = -1,
+                                            int output_height = -1,
+                                            bool also_during_inference = false);
 };
 
 
