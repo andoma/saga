@@ -80,6 +80,7 @@ SRCS-prog += \
 	test/test_classifier.cpp \
 	test/test_ops.cpp \
 	test/test_jpeg_decoder.cpp \
+	test/test_resnode.cpp \
 
 SRCS-prog-$(HAVE_PROTOBUF) += test/test_onnx.cpp
 
