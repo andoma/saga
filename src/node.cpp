@@ -402,6 +402,22 @@ spatialtransform_y(const Node &n, const std::optional<const std::string> &name)
                                         height, width}));
 }
 
+static std::vector<std::shared_ptr<Node>>
+spatialtransform_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+{
+  auto theta = n->inputs_.get("theta");
+  if(!theta) {
+    theta = makeCPUTensor(Tensor::DataType::FLOAT,
+                          Dims({1, 2, 3}), "theta.identity");
+
+    auto ta = theta->access();
+    ta->set({0, 0, 0}, 1);
+    ta->set({0, 1, 1}, 1);
+    n->inputs_["theta"] = theta;
+  }
+  return {n};
+}
+
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
@@ -431,7 +447,7 @@ static const struct {
   { "relu",              passthru_y },
   { "reshape",           reshape_y },
   { "softmax",           passthru_y },
-  { "spatialtransform",  spatialtransform_y },
+  { "spatialtransform",  spatialtransform_y, spatialtransform_setup },
   { "sum",               sum_y },
   { "convert",           convert_y },
 };

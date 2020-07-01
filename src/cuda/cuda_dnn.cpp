@@ -2376,7 +2376,10 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
     return NULL;
   }
 
-  auto theta = p.lower_tensor(n.inputs_.get("theta"));
+  auto theta = p.lower_tensor_batch(n.inputs_.get("theta"));
+  if(!theta) {
+    return "theta tensor missing";
+  }
   auto op = std::make_shared<CudnnSpatialTransformFwd>(p.ctx_, x, theta, y);
 
   if(training) {
