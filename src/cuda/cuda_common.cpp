@@ -35,12 +35,13 @@
 #include "cuda_tensor.h"
 #include "cuda_analysis.h"
 
-
 namespace saga {
 
 int
 CudaContext::init()
 {
+  nvmlInit();
+
   cudaGetDevice(&deviceId_);
 
   struct cudaDeviceProp prop;
@@ -49,11 +50,14 @@ CudaContext::init()
   chkCuda(cudaStreamCreateWithFlags(&stream_,
                                     cudaStreamNonBlocking));
 
-  printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s id:%d\n",
+  char pciid[32];
+  cudaDeviceGetPCIBusId(pciid, sizeof(pciid), deviceId_);
+
+  printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s id:%d at %s\n",
          prop.name, prop.major, prop.minor,
          prop.concurrentKernels ? "yes":"no",
          prop.canMapHostMemory ? "yes":"no",
-         deviceId_);
+         deviceId_, pciid);
 
 
   chkCUDNN(cudnnCreate(&cudnn_));
@@ -62,6 +66,8 @@ CudaContext::init()
   chkCuda(cublasCreate(&cublas_));
   chkCuda(cublasSetStream(cublas_, stream_));
   chkCuda(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+
+  nvmlDeviceGetHandleByPciBusId_v2(pciid, &nvmldev_);
   return 0;
 }
 
@@ -271,6 +277,44 @@ CudaProgram::runOps(const CudaOps &ops, long batch)
   return true;
 }
 
+void
+CudaProgram::progress(const char *what, long i, long batches)
+{
+  if(!print_progress_)
+    return;
+  time_t now = time(NULL);
+  if(now == print_progress_ts_)
+    return;
+  print_progress_ts_ = now;
+
+  size_t memfree = 0, memtotal = 0;
+  cudaMemGetInfo(&memfree, &memtotal);
+
+
+  printf("%-5s | Batch: %4ld/%-4ld | MemUse: %5zu/%-5zu MB",
+         what, i, batches,
+         (memtotal - memfree) / (1024 * 1024),
+         memtotal / (1024 * 1024));
+
+  nvmlUtilization_t util = {};
+  if(!nvmlDeviceGetUtilizationRates(ctx_->nvmldev_, &util)) {
+    printf(" | GpuUse: %3d%% MemUse: %3d%%",
+           util.gpu, util.memory);
+  }
+
+  printf("\r");
+  fflush(stdout);
+}
+
+void
+CudaProgram::progressDone(void)
+{
+  if(!print_progress_)
+    return;
+  printf("\n");
+}
+
+
 
 ExecResult
 CudaProgram::infer(long batches)
@@ -292,9 +336,10 @@ CudaProgram::infer(long batches)
   cudaStreamSynchronize(ctx_->stream_);
   for(long i = 0; i < batches; i++) {
 
-    if(!runOps(infer_operations_, i))
+    if(!runOps(infer_operations_, i)) {
+      progressDone();
       return ExecResult::ERROR;
-
+    }
     if(i < batches - 1)
       issueOps(infer_pre_, i + 1);
     if(i > 0)
@@ -302,16 +347,22 @@ CudaProgram::infer(long batches)
 
     flipDoubleBufferedTensors();
     if(i < batches - 1) {
-      if(!runOps(load_operations_, i + 1))
+      if(!runOps(load_operations_, i + 1)) {
+        progressDone();
         return ExecResult::ERROR;
+      }
     }
 
-    if(stop_check_ && stop_check_())
+    if(stop_check_ && stop_check_()) {
+      progressDone();
       return ExecResult::STOPPED;
+    }
 
+    progress("Test", i, batches);
     cudaStreamSynchronize(ctx_->stream_);
   }
   issueOps(infer_post_, batches - 1);
+  progressDone();
   return ExecResult::OK;
 }
 
@@ -336,8 +387,10 @@ CudaProgram::train(long batches)
 
   for(long i = 0; i < batches; i++) {
 
-    if(!runOps(train_operations_, i))
+    if(!runOps(train_operations_, i)) {
+      progressDone();
       return ExecResult::ERROR;
+    }
 
     if(i < batches - 1)
       issueOps(train_pre_, i + 1);
@@ -347,13 +400,17 @@ CudaProgram::train(long batches)
     flipDoubleBufferedTensors();
     if(i < batches - 1) {
       if(!runOps(load_operations_, i + 1)) {
+        progressDone();
         return ExecResult::ERROR;
       }
     }
 
-    if(stop_check_ && stop_check_())
+    if(stop_check_ && stop_check_()) {
+      progressDone();
       return ExecResult::STOPPED;
+    }
 
+    progress("Train", i, batches);
     cudaStreamSynchronize(ctx_->stream_);
 
     if(*(int *)check_result_) {
@@ -365,6 +422,7 @@ CudaProgram::train(long batches)
   }
 
   issueOps(train_post_, batches - 1);
+  progressDone();
   return ExecResult::OK;
 }
 
@@ -713,9 +771,9 @@ CudaContext::createProgram(const Graph &g,
   auto p = std::make_shared<CudaProgram>(shared_from_this(),
                                          pc.tensor_layout,
                                          pc.batch_size,
-                                         pc.initial_learning_rate);
-
-  p->stop_check_ = pc.stop_check;
+                                         pc.initial_learning_rate,
+                                         pc.stop_check,
+                                         pc.show_progress);
 
   p->setupAccessors(accessors);
 

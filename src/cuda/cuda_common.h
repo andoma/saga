@@ -7,6 +7,7 @@
 
 #include <cudnn.h>
 #include <cublas_v2.h>
+#include <nvml.h>
 
 
 #define chkCUDNN(expression) {                                          \
@@ -42,14 +43,6 @@ class CudaMemoryLayout;
 class CudaContext : public Context,
                     public std::enable_shared_from_this<CudaContext> {
 public:
-  CudaContext()
-    : cudnn_(NULL)
-    , cublas_(NULL)
-    , tensor_storage_id_gen_(0)
-  {}
-
-  ~CudaContext()
-  {}
 
   int init();
 
@@ -59,14 +52,15 @@ public:
 
   void print() override;
 
-  cudaStream_t stream_;
-  cudnnHandle_t cudnn_;
-  cublasHandle_t cublas_;
+  cudaStream_t stream_ = 0;
+  cudnnHandle_t cudnn_ = NULL;
+  cublasHandle_t cublas_ = NULL;
+  nvmlDevice_t nvmldev_ = NULL;
 
   int deviceId_;
   std::mutex mutex_;
 
-  int tensor_storage_id_gen_;
+  int tensor_storage_id_gen_ = 0;
 };
 
 
@@ -139,14 +133,18 @@ class CudaProgram : public Program {
 public:
 
   CudaProgram(std::shared_ptr<CudaContext> ctx,
-               TensorLayout tensor_layout,
-               int batch_size,
-               float learning_rate)
+              TensorLayout tensor_layout,
+              int batch_size,
+              float learning_rate,
+              StopCheck stop_check,
+              bool print_progress)
     : ctx_(ctx)
     , tensor_layout_(tensor_layout)
     , batch_size_(batch_size)
     , learning_rate_(learning_rate)
     , mp_scaling_(batch_size)
+    , stop_check_(stop_check)
+    , print_progress_(print_progress)
   {
     chkCuda(cudaMallocManaged(&check_result_, sizeof(int), cudaMemAttachGlobal));
     chkCuda(cudaMemset(check_result_, 0, sizeof(int)));
@@ -201,6 +199,8 @@ public:
   float mp_scaling_;
 
   StopCheck stop_check_;
+  bool print_progress_ = true;
+  time_t print_progress_ts_ = 0;
 
   std::shared_ptr<CudaTensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
 
@@ -236,6 +236,11 @@ public:
   void setupTensorStorage(const CudaMemoryLayout &cml);
 
   bool runOps(const CudaOps &ops, long batch);
+
+  void progress(const char *what, long i, long batches);
+
+  void progressDone();
+
 
 };
 

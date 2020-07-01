@@ -358,6 +358,7 @@ struct ProgramConfig {
   float initial_learning_rate;
   TensorLayout tensor_layout;
   StopCheck stop_check;
+  bool show_progress;
 };
 
 

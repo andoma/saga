@@ -514,7 +514,8 @@ test_classifier(int argc, char **argv,
       .tensor_layout = tensor_layout,
       .stop_check = [&]() {
         return !g_run;
-      }
+      },
+      .show_progress = true
    }, bta);
 
   if(verbose > 1)
