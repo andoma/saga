@@ -345,8 +345,7 @@ struct CudnnConvolutionDesc {
     if(s)
       return cudnnGetErrorString(s);
 
-    s = cudnnSetConvolutionMathType(conv_desc_,
-                                    CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION);
+    s = cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH);
     if(s)
       return cudnnGetErrorString(s);
 
