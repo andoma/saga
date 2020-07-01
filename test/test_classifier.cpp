@@ -279,6 +279,102 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 
 
 static std::shared_ptr<Node>
+resnetmodule(Graph &g, std::shared_ptr<Node> input,
+             int a1, int a2, bool downsample, bool bypass,
+             const std::string &name)
+{
+  std::shared_ptr<Node> a, b;
+  a = g.addNode("conv", {{"x", input->y()}},
+                {{"size", 1},
+                 {"activations", a1},
+                 {"stride", 1},
+                 {"pad", 0}}, name + "-conv-1");
+  a = g.addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-1");
+  a = g.addNode("relu", {{"x", a->y()}}, {});
+
+  a = g.addNode("conv", {{"x", a->y()}},
+                {{"size", 3},
+                 {"activations", a1},
+                 {"stride", downsample ? 2 : 1},
+                 {"pad", 1}}, name + "-conv-2");
+  a = g.addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-2");
+  a = g.addNode("relu", {{"x", a->y()}}, {});
+
+  a = g.addNode("conv", {{"x", a->y()}},
+                {{"size", 1},
+                 {"activations", a2},
+                 {"stride", 1},
+                 {"pad", 0}}, name + "-conv-3");
+  a = g.addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-3");
+
+  if(bypass) {
+    b = g.addNode("conv", {{"x", input->y()}},
+                  {{"size", 3},
+                   {"activations", a2},
+                   {"stride", downsample ? 2 : 1},
+                   {"pad", 1}}, name + "-conv-bp");
+    b = g.addNode("batchnorm", {{"x", b->y()}}, {}, name + "-bn-bp");
+  } else {
+    b = input;
+  }
+
+  auto s = g.addNode("sum", {{"x0", a->y()}, {"x1", b->y()}}, {});
+  s = g.addNode("relu", {{"x", s->y()}}, {});
+  return s;
+}
+
+
+
+static std::shared_ptr<Node>
+resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes)
+{
+  n = g.addNode("spatialtransform",
+                {{"x", n->y()}},
+                {{"width", 224}, {"height", 224}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 7},
+                 {"activations", 64},
+                 {"stride", 2},
+                 {"pad", 3}},
+                "s1-conv");
+  n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "s1-bn");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("maxpool", {{"x", n->y()}},
+                {{"size", 3}, {"stride", 2}, {"pad", 1}});
+
+  n = resnetmodule(g, n, 64, 256,   false, true,  "s2_1");
+  n = resnetmodule(g, n, 64, 256,   false, false, "s2_2");
+  n = resnetmodule(g, n, 64, 256,   false, false, "s2_3");
+
+  n = resnetmodule(g, n, 128, 512,  true,  true,  "s3_1");
+  n = resnetmodule(g, n, 128, 512,  false, false, "s3_2");
+  n = resnetmodule(g, n, 128, 512,  false, false, "s3_3");
+  n = resnetmodule(g, n, 128, 512,  false, false, "s3_4");
+
+  n = resnetmodule(g, n, 256, 1024, true, true,   "s4_1");
+  n = resnetmodule(g, n, 256, 1024, false, false, "s4_2");
+  n = resnetmodule(g, n, 256, 1024, false, false, "s4_3");
+  n = resnetmodule(g, n, 256, 1024, false, false, "s4_4");
+  n = resnetmodule(g, n, 256, 1024, false, false, "s4_5");
+  n = resnetmodule(g, n, 256, 1024, false, false, "s4_6");
+
+
+  n = resnetmodule(g, n, 512, 2048, true,  true,  "s5_1");
+  n = resnetmodule(g, n, 512, 2048, false, false, "s5_2");
+  n = resnetmodule(g, n, 512, 2048, false, false, "s5_3");
+
+  n = g.addNode("avgpool", {{"x", n->y()}}, {{"global", true}});
+
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", output_classes}, {"bias", true}},
+                "fc3");
+  return n;
+}
+
+
+static std::shared_ptr<Node>
 make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
              int output_classes)
 {
@@ -298,20 +394,14 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
     return vgg19(g, n, false, output_classes);
   } else if(name == "vgg19+bn") {
     return vgg19(g, n, true, output_classes);
+  } else if(name == "resnet-50") {
+    return resnet50(g, n, output_classes);
   } else {
     return nullptr;
   }
 }
 
 
-
-
-static std::shared_ptr<Node>
-convert(Graph &g, std::shared_ptr<Tensor> x, float scale, Tensor::DataType dt)
-{
-  return g.addNode("convert", {{"x", x}},
-                   {{"scale", scale}, {"datatype", (int)dt}});
-}
 
 
 static void
@@ -333,6 +423,7 @@ fill_theta(Tensor *t, int batch_size)
     ta->set({i, 1, 2}, -0.1 + drand48() * 0.2);
   }
 }
+
 
 
 namespace saga {
@@ -412,22 +503,14 @@ test_classifier(int argc, char **argv,
   if(loadpath != NULL)
     g.loadTensors(loadpath);
 
-  std::shared_ptr<Node> n;
   std::shared_ptr<Tensor> theta;
+
+  auto n = g.addConvert(x, dt, 1.0f / input_range);
 
   if(augmentation) {
     theta = makeCPUTensor(Tensor::DataType::FLOAT,
                           Dims({batch_size, 2, 3}), "theta");
-
-    n = convert(g, x, 1.0f / input_range, Tensor::DataType::FLOAT);
-    n = g.addNode("spatialtransform", {{"x", n->y()}, {"theta", theta}},
-                  {});
-
-    if(dt != Tensor::DataType::FLOAT) {
-      n = convert(g, n->y(), 1.0f, dt);
-    }
-  } else {
-    n = convert(g, x, 1.0f / input_range, dt);
+    n = g.addSpatialTransform(n->y(), theta);
   }
 
   auto postconv = n->y();
