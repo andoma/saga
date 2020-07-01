@@ -395,8 +395,7 @@ test_classifier(int argc, char **argv,
     }
   }
 
-  if(savepath)
-    signal(SIGINT, stop);
+  signal(SIGINT, stop);
 
   printf("Test classifer: DataType:%s BatchSize:%d\n",
          dt == Tensor::DataType::HALF ? "fp16" : "fp32",
@@ -506,20 +505,20 @@ test_classifier(int argc, char **argv,
    });
 
   auto ctx = createContext();
-  ctx->print();
 
   auto p = ctx->createProgram(g, {
       .inference = true,
       .training = true,
       .batch_size = batch_size,
       .initial_learning_rate = learning_rate,
-      .tensor_layout = tensor_layout
+      .tensor_layout = tensor_layout,
+      .stop_check = [&]() {
+        return !g_run;
+      }
    }, bta);
 
   if(verbose > 1)
     p->print();
-
-  ctx->print();
 
   theta = p->resolveTensor(theta);
   postconv = p->resolveTensor(postconv);
@@ -532,13 +531,15 @@ test_classifier(int argc, char **argv,
     epoch_begin(batch_size, false);
     const int64_t t0 = get_ts();
     loss_sum = 0;
-    p->train(train_inputs / batch_size);
+    if(p->train(train_inputs / batch_size) != ExecResult::OK)
+      break;
 
     // Test
     epoch_begin(batch_size, true);
     const int64_t t1 = get_ts();
     correct = 0;
-    p->infer(test_inputs / batch_size);
+    if(p->infer(test_inputs / batch_size) != ExecResult::OK)
+      break;
 
     const int64_t t2 = get_ts();
     float percentage = 100.0 * correct / test_inputs;
@@ -547,8 +548,8 @@ test_classifier(int argc, char **argv,
            (t1 - t0) / 1e6,
            (t2 - t1) / 1e6,
            loss_sum / test_inputs);
-    //    if(percentage > 99 || !g_run)
-    //      break;
+    if(percentage > 99 || !g_run)
+      break;
   }
 
   if(savepath != NULL)

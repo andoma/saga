@@ -159,8 +159,8 @@ public:
 
 
   std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
-  void infer(long batches) override;
-  void train(long batches) override;
+  ExecResult infer(long batches) override;
+  ExecResult train(long batches) override;
   void print(bool detailed) const override;
   void debug(bool) override;
 
@@ -200,6 +200,8 @@ public:
   void *check_result_;
   float mp_scaling_;
 
+  StopCheck stop_check_;
+
   std::shared_ptr<CudaTensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
 
   cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
@@ -233,7 +235,7 @@ public:
 
   void setupTensorStorage(const CudaMemoryLayout &cml);
 
-  void runOps(const CudaOps &ops, long batch);
+  bool runOps(const CudaOps &ops, long batch);
 
 };
 

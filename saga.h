@@ -349,12 +349,22 @@ struct BatchTensorAccess {
 typedef std::vector<BatchTensorAccess> BatchTensorAccessors;
 
 
+typedef std::function<bool(void)> StopCheck;
+
 struct ProgramConfig {
   bool inference;
   bool training;
   int batch_size;
   float initial_learning_rate;
   TensorLayout tensor_layout;
+  StopCheck stop_check;
+};
+
+
+enum class ExecResult {
+  OK,
+  STOPPED,
+  ERROR,
 };
 
 
@@ -363,8 +373,8 @@ class Program {
 public:
   virtual ~Program() {}
   virtual std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) = 0;
-  virtual void infer(long batches = 1) = 0;
-  virtual void train(long batches = 1) = 0;
+  virtual ExecResult infer(long batches = 1) = 0;
+  virtual ExecResult train(long batches = 1) = 0;
   virtual void print(bool detailed = false) const = 0;
   virtual void debug(bool on) = 0;
 };

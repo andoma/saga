@@ -257,44 +257,43 @@ CudaProgram::setupTensorStorage(const CudaMemoryLayout &cml)
   }
 }
 
-void
+bool
 CudaProgram::runOps(const CudaOps &ops, long batch)
 {
   for(const auto &op : ops) {
     const char *err = op->exec(*this, batch);
     if(err) {
-      fprintf(stderr, "Op %s failed: %s\n", op->name().c_str(), err);
+      fprintf(stderr, "\nOp %s failed: %s\n", op->name().c_str(), err);
       op->print(true);
-      exit(1);
-    }
-
-    if(0) {
-      printf("op: %p: %s\n", op.get(), op->name().c_str());
-      for(const auto &o : op->getOutputs()) {
-        printf("%-80s: %s\n",
-               o->info().c_str(),
-               o->statsString().c_str());
-      }
+      return false;
     }
   }
+  return true;
 }
 
 
-void
+ExecResult
 CudaProgram::infer(long batches)
 {
   if(batches == 0)
-    return;
+    return ExecResult::OK;
+
+  if(stop_check_ && stop_check_())
+    return ExecResult::STOPPED;
 
   setupTensorStorage(*infer_memory_layout_);
 
   issueOps(infer_pre_, 0);
+
   flipDoubleBufferedTensors();
-  runOps(load_operations_, 0);
+  if(!runOps(load_operations_, 0))
+    return ExecResult::ERROR;
+
   cudaStreamSynchronize(ctx_->stream_);
   for(long i = 0; i < batches; i++) {
 
-    runOps(infer_operations_, i);
+    if(!runOps(infer_operations_, i))
+      return ExecResult::ERROR;
 
     if(i < batches - 1)
       issueOps(infer_pre_, i + 1);
@@ -302,30 +301,43 @@ CudaProgram::infer(long batches)
       issueOps(infer_post_, i - 1);
 
     flipDoubleBufferedTensors();
-    if(i < batches - 1)
-      runOps(load_operations_, i + 1);
+    if(i < batches - 1) {
+      if(!runOps(load_operations_, i + 1))
+        return ExecResult::ERROR;
+    }
+
+    if(stop_check_ && stop_check_())
+      return ExecResult::STOPPED;
+
     cudaStreamSynchronize(ctx_->stream_);
   }
   issueOps(infer_post_, batches - 1);
+  return ExecResult::OK;
 }
 
 
-void
+ExecResult
 CudaProgram::train(long batches)
 {
   if(batches == 0)
-    return;
+    return ExecResult::OK;
+
+  if(stop_check_ && stop_check_())
+    return ExecResult::STOPPED;
 
   setupTensorStorage(*train_memory_layout_);
 
   issueOps(train_pre_, 0);
   flipDoubleBufferedTensors();
-  runOps(load_operations_, 0);
+  if(!runOps(load_operations_, 0))
+    return ExecResult::ERROR;
+
   cudaStreamSynchronize(ctx_->stream_);
 
   for(long i = 0; i < batches; i++) {
 
-    runOps(train_operations_, i);
+    if(!runOps(train_operations_, i))
+      return ExecResult::ERROR;
 
     if(i < batches - 1)
       issueOps(train_pre_, i + 1);
@@ -333,8 +345,15 @@ CudaProgram::train(long batches)
       issueOps(train_post_, i - 1);
 
     flipDoubleBufferedTensors();
-    if(i < batches - 1)
-      runOps(load_operations_, i + 1);
+    if(i < batches - 1) {
+      if(!runOps(load_operations_, i + 1)) {
+        return ExecResult::ERROR;
+      }
+    }
+
+    if(stop_check_ && stop_check_())
+      return ExecResult::STOPPED;
+
     cudaStreamSynchronize(ctx_->stream_);
 
     if(*(int *)check_result_) {
@@ -346,6 +365,7 @@ CudaProgram::train(long batches)
   }
 
   issueOps(train_post_, batches - 1);
+  return ExecResult::OK;
 }
 
 std::string
@@ -694,6 +714,8 @@ CudaContext::createProgram(const Graph &g,
                                          pc.tensor_layout,
                                          pc.batch_size,
                                          pc.initial_learning_rate);
+
+  p->stop_check_ = pc.stop_check;
 
   p->setupAccessors(accessors);
 
