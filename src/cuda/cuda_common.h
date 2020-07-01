@@ -22,13 +22,14 @@
 
 
 #define chkCuda(expression) {                                           \
-    int cuda_status__ = (expression);                                   \
-    if(cuda_status__) {                                                 \
-      fprintf(stderr, "CUDA error at %s:%d in %s\n",                    \
-              __FILE__, __LINE__, __FUNCTION__);                        \
-      abort();                                                          \
-    }                                                                   \
-  }
+  cudaError_t cuda_status__ = (expression);                             \
+  if(cuda_status__) {                                                   \
+    fprintf(stderr, "CUDA error at %s:%d in %s: %s\n",                  \
+            __FILE__, __LINE__, __FUNCTION__,                           \
+            cudaGetErrorString(cuda_status__));                         \
+    abort();                                                            \
+  }                                                                     \
+}
 
 
 namespace saga {
