@@ -2366,16 +2366,16 @@ static const char *
 spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
 
-  bool bypass = !training && !n.attributes_.get("inference", false);
+  bool bypass = !training && !n.attributes_.get("inference", false) &&
+    x->dims_ == y->dims_;
 
   if(bypass) {
-    auto y = p.lower_tensor_batch(n.outputs_.get("y"));
     p.infer(std::make_shared<CudnnTransform>(x, y, 0.0f));
     return NULL;
   }
 
-  auto y = p.lower_tensor_batch(n.outputs_.get("y"));
   auto theta = p.lower_tensor(n.inputs_.get("theta"));
   auto op = std::make_shared<CudnnSpatialTransformFwd>(p.ctx_, x, theta, y);
 
