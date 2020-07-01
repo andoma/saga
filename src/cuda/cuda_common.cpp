@@ -194,7 +194,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t rank)
                                         ctx_,
                                         src->name_);
 
-  t->copyFromLocked(*src);
+  t->copyFromLocked(*src, 0);
   tensors_[src] = t;
   return t;
 }
@@ -212,7 +212,7 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
   }
 
   auto t = std::make_shared<CudaTensor>(src->data_type_, blueprint);
-  t->copyFromLocked(*src);
+  t->copyFromLocked(*src, 0);
   tensors_[src] = t;
   return t;
 }
@@ -235,7 +235,7 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
                                         ctx_,
                                         src->name_);
 
-  t->copyFromLocked(*src);
+  t->copyFromLocked(*src, 0);
   tensors_[src] = t;
   return t;
 }

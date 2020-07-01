@@ -489,7 +489,7 @@ bool CudaTensor::cpacked() const
 }
 
 void
-CudaTensor::copyFromLocked(Tensor &t)
+CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
 {
   const int max_rank = 8;
   int dims[max_rank];
@@ -514,7 +514,8 @@ CudaTensor::copyFromLocked(Tensor &t)
                   &dims_[0],
                   &strides[0],
                   data_type_,
-                  t, ta.get())) {
+                  t, ta.get(),
+                  dst_broadcast_dimension)) {
     fprintf(stderr,
             "Cuda Tensor copy failed\n"
             "From: %s\n"

@@ -514,6 +514,7 @@ Tensor::printRGB(const char *prefix,
 struct DimInfo {
   int size;
   int dst_stride;
+  int src_size;
   int src_stride;
   int src_dim;
   static void reduce(std::vector<DimInfo> &dis);
@@ -526,8 +527,9 @@ DimInfo::reduce(std::vector<DimInfo> &dis)
 #if 0
   printf("Initial copy plan\n");
   for(size_t i = 0; i < dis.size(); i++) {
-    printf("Dim %zd  DstStride:%-5d  Size:%-5d  SrcStride:%-5d\n",
-           i, dis[i].dst_stride, dis[i].size, dis[i].src_stride);
+    printf("Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
+           i, dis[i].dst_stride, dis[i].size, dis[i].src_stride,
+           dis[i].src_size);
   }
 #endif
   // Any dimensions with a size of 1 which is not the innermost
@@ -552,8 +554,9 @@ DimInfo::reduce(std::vector<DimInfo> &dis)
 #if 0
   printf("Reduced copy plan\n");
   for(size_t i = 0; i < dis.size(); i++) {
-    printf("Dim %zd  DstStride:%-5d  Size:%-5d  SrcStride:%-5d\n",
-           i, dis[i].dst_stride, dis[i].size, dis[i].src_stride);
+    printf("Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
+           i, dis[i].dst_stride, dis[i].size, dis[i].src_stride,
+           dis[i].src_size);
   }
 #endif
 }
@@ -643,20 +646,37 @@ copy_tensor(void *dst,
             const int *dst_strides,
             Tensor::DataType datatype,
             const Tensor &t,
-            TensorAccess *ta)
+            TensorAccess *ta,
+            int broadcast_dimension)
 {
-  int src_rank = t.dims_.size();
+  int dst_dim = dst_rank;
+  int src_dim = t.dims_.size();
   auto src_strides = ta->strides();
 
-  const int rank = std::max(dst_rank, src_rank);
+  const int rank = std::max(dst_dim, src_dim);
   std::vector<DimInfo> dis;
   dis.reserve(rank);
 
-  dst_rank -= rank;
-  src_rank -= rank;
+  dst_dim -= rank;
+  src_dim -= rank;
 
-  for(int i = 0; i < rank; i++, dst_rank++, src_rank++) {
-    dis.push_back(DimInfo{dst_rank >= 0 ? dst_sizes[dst_rank] : 1, dst_strides[std::max(dst_rank, 0)], src_strides[std::max(src_rank, 0)],std::max(src_rank, 0)});
+  for(int i = 0; i < rank; i++, dst_dim++, src_dim++) {
+
+    int dst_size   = dst_dim >= 0 ? dst_sizes[dst_dim] : 1;
+    int dst_stride = dst_strides[std::max(dst_dim, 0)];
+    int src_size   = src_dim >= 0 ? t.dims_[src_dim] : 1;
+    int src_stride = src_strides[std::max(src_dim, 0)];
+
+    if(broadcast_dimension == dst_dim) {
+
+      if(src_size == 1 && src_stride == dst_stride && dst_size > 1) {
+        src_stride = 0;
+        src_size = dst_size;
+      }
+    }
+
+    dis.push_back(DimInfo{dst_size, dst_stride, src_size, src_stride,
+          std::max(src_dim, 0)});
   }
 
   std::sort(dis.begin(), dis.end(), [] (const DimInfo& a, const DimInfo& b) {
@@ -664,15 +684,16 @@ copy_tensor(void *dst,
   });
 
 
-  int elements = 1;
+  size_t dst_elements = 1;
+  size_t src_elements = 1;
   for(const auto &d : dis) {
-    elements *= d.size;
+    dst_elements *= d.size;
+    src_elements *= d.src_size;
   }
 
-  if(elements != t.elements_) {
+  if(src_elements != dst_elements) {
     return false;
   }
-
 
   const void *src = ta->data();
 

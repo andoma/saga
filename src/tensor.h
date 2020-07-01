@@ -42,6 +42,7 @@ bool copy_tensor(void *dst,
                  const int *dst_strides,
                  Tensor::DataType dst_datatype,
                  const Tensor &src,
-                 TensorAccess *src_ta);
+                 TensorAccess *src_ta,
+                 int dst_broadcast_dimension = -1);
 
 };

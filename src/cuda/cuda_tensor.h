@@ -151,7 +151,7 @@ public:
 
   bool cpacked() const;
 
-  void copyFromLocked(Tensor &t);
+  void copyFromLocked(Tensor &t, int dst_broadcast_dimension = -1);
 
   int storage_id() const {
     return storage_->id_;
