@@ -82,27 +82,17 @@ jpeg_decoder_main(int argc, char **argv)
 
   Graph g;
 
-  auto n = g.addNode("jpegdecoder", [&](long batch, int n,
-                                        uint8_t *data, size_t len)
-                     {
-                       return load_jpeg(batch, n, data, len);
-                     }, {{"width", 32}, {"height", 32}});
-
-
-  n = g.addNode("convert", {{"x", n->y()}},
-                {{"scale", 1 / 255.0f}, {"datatype", (int)Tensor::DataType::FLOAT}});
+  auto n = g.addJpegDecoder(32, 32, dt,
+                            [&](long batch, int n, uint8_t *data, size_t len) {
+                              return load_jpeg(batch, n, data, len);
+                            });
 
   std::shared_ptr<Tensor> theta =
     makeCPUTensor(Tensor::DataType::FLOAT,
                   Dims({batch_size, 2, 3}), "theta0");
 
   if(transform)
-    n = g.addNode("spatialtransform", {{"x", n->y()}, {"theta", theta}},
-                  {{"width", 32}, {"height", 32}, {"inference", true}});
-
-  if(dt == Tensor::DataType::HALF)
-    n = g.addNode("convert", {{"x", n->y()}},
-                  {{"datatype", (int)dt}});
+    n = g.addSpatialTransform(n->y(), theta, -1, -1, true);
 
   if(g_verbose)
     g.print();
