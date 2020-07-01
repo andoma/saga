@@ -63,9 +63,9 @@ CudaContext::init()
   chkCUDNN(cudnnCreate(&cudnn_));
   chkCUDNN(cudnnSetStream(cudnn_, stream_));
 
-  chkCuda(cublasCreate(&cublas_));
-  chkCuda(cublasSetStream(cublas_, stream_));
-  chkCuda(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+  cublasCreate(&cublas_);
+  cublasSetStream(cublas_, stream_);
+  cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH);
 
   nvmlDeviceGetHandleByPciBusId_v2(pciid, &nvmldev_);
   return 0;
