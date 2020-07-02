@@ -136,6 +136,7 @@ struct CudnnAdam : public CudaOperation {
                  p.ctx_->stream_);
       break;
     case Tensor::DataType::HALF:
+      p.mp_enabled_ = true;
       adam_mixed(weights_->elements_, 1.0f / p.mp_scaling_,
                  (__half *)weights_->deviceMem(),
                  (const __half *)gradient_->deviceMem(),

@@ -306,7 +306,8 @@ CudaProgram::runOps(const CudaOps &ops, long batch)
 }
 
 void
-CudaProgram::progress(const char *what, long i, long batches)
+CudaProgram::progress(const char *what, long i, long batches,
+                      float mp_scaling)
 {
   if(!print_progress_)
     return;
@@ -328,6 +329,10 @@ CudaProgram::progress(const char *what, long i, long batches)
   if(!nvmlDeviceGetUtilizationRates(ctx_->nvmldev_, &util)) {
     printf(" | GpuUse: %3d%% MemUse: %3d%%",
            util.gpu, util.memory);
+  }
+
+  if(isfinite(mp_scaling)) {
+    printf(" | MPScale: %e", mp_scaling);
   }
 
   printf("\r");
@@ -391,7 +396,7 @@ CudaProgram::infer(long batches)
       return ExecResult::STOPPED;
     }
 
-    progress("Test", i, batches);
+    progress("Test", i, batches, NAN);
     cudaStreamSynchronize(ctx_->stream_);
   }
   issueBatchAccessOps(infer_post_, batches - 1);
@@ -421,6 +426,8 @@ CudaProgram::train(long batches)
 
   cudaStreamSynchronize(ctx_->stream_);
 
+  float current_mp_scaling = NAN;
+
   for(long i = 0; i < batches; i++) {
 
     if(!runOps(train_operations_, i)) {
@@ -446,14 +453,17 @@ CudaProgram::train(long batches)
       return ExecResult::STOPPED;
     }
 
-    progress("Train", i, batches);
+    progress("Train", i, batches, current_mp_scaling);
     cudaStreamSynchronize(ctx_->stream_);
 
-    if(*(int *)check_result_) {
-      mp_scaling_ *= 0.5;
-      *(int *)check_result_ = 0;
-    } else {
-      mp_scaling_ *= 1.01;
+    if(mp_enabled_) {
+      if(*(int *)check_result_) {
+        mp_scaling_ *= 0.5;
+        *(int *)check_result_ = 0;
+      } else {
+        mp_scaling_ *= 1.01;
+      }
+      current_mp_scaling = mp_scaling_;
     }
   }
 

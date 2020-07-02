@@ -205,6 +205,7 @@ public:
 
   void *check_result_;
   float mp_scaling_;
+  bool mp_enabled_ = false;
 
   StopCheck stop_check_;
   bool print_progress_ = true;
@@ -250,7 +251,7 @@ public:
 
   bool runOps(const CudaOps &ops, long batch);
 
-  void progress(const char *what, long i, long batches);
+  void progress(const char *what, long i, long batches, float mp_scaling);
 
   void progressDone();
 
