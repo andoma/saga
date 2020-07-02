@@ -316,9 +316,10 @@ CudaProgram::progress(const char *what, long i, long batches,
     return;
   print_progress_ts_ = now;
 
+  printf("\033[K");
+
   size_t memfree = 0, memtotal = 0;
   cudaMemGetInfo(&memfree, &memtotal);
-
 
   printf("%-5s | Batch: %4ld/%-4ld | MemUse: %5zu/%-5zu MB",
          what, i, batches,
