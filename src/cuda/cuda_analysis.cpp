@@ -364,7 +364,9 @@ struct LiveAnalysis {
                   int id = j * 32 + k;
                   auto s = storage_[id];
                   if(!ops_[i]->killOutput(s)) {
-                    fprintf(stderr, "Warning: Unable to kill dead output\n");
+                    fprintf(stderr, "Unable to kill dead output T%d\n",
+                            id + ln_id_base_);
+                    ops_[i]->print(true);
                     exit(1);
                   }
                 }
