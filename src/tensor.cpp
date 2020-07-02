@@ -176,6 +176,13 @@ datatype_str(Tensor::DataType dt)
   }
 }
 
+
+const char *
+Tensor::DataTypeStr(DataType dt)
+{
+  return datatype_str(dt);
+}
+
 size_t
 Tensor::DataTypeSize(DataType dt)
 {

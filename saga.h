@@ -130,6 +130,8 @@ public:
 
   static size_t DataTypeSize(DataType dt);
 
+  static const char *DataTypeStr(DataType dt);
+
   Tensor(DataType data_type, const Dims &size,
          const std::optional<const std::string> &name = std::nullopt);
 
