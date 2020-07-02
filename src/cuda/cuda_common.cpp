@@ -738,6 +738,8 @@ CudaProgram::addPrePostOp(std::shared_ptr<CudaTensor> t,
 
   } else {
 
+    exported_storage_.push_back(s);
+
     if(a.mode == Mode::INFER || a.mode == Mode::ALL)
       infer_post_.push_back(op);
 
