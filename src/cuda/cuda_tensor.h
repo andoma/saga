@@ -132,13 +132,6 @@ public:
 
   std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size) override;
 
-  std::shared_ptr<Tensor> grad() const override {
-    auto r = grad_;
-    if(r)
-      r->storage_->alloc();
-    return r;
-  }
-
   cudnnTensorDescriptor_t desc() const {
     return desc_;
   }

@@ -344,8 +344,9 @@ CudaTensor::~CudaTensor()
 std::unique_ptr<TensorAccess>
 CudaTensor::access()
 {
-  if(!storage_->data())
-    return nullptr;
+  if(!storage_->data()) {
+    storage_->alloc();
+  }
   return std::make_unique<CudaTensorAccess>(storage_, desc_, offset_);
 }
 
@@ -377,7 +378,7 @@ std::shared_ptr<CudaTensor>
 CudaTensor::makeSharedGrad()
 {
   if(!grad_)
-    grad_ = std::make_shared<CudaTensor>(*this, namePostfix("shared_grad"));
+    grad_ = std::make_shared<CudaTensor>(*this, namePostfix("grad"));
 
   return grad_;
 }

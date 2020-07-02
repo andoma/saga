@@ -16,7 +16,7 @@ class CudaTensor;
 class CudaOperation;
 class CudaTensorStorage;
 
-
+// This should be made into a class I suppose
 static void
 bitset(uint32_t *bs, int v)
 {
@@ -216,7 +216,10 @@ struct LiveAnalysis {
   std::vector<size_t> memory_usage_;
   std::vector<std::shared_ptr<CudaTensorStorage>> storage_;
 
-  LiveAnalysis(const std::vector<std::shared_ptr<CudaOperation>> &ops)
+  uint32_t *exported_gen_;
+
+  LiveAnalysis(const std::vector<std::shared_ptr<CudaOperation>> &ops,
+               const std::vector<std::shared_ptr<CudaTensorStorage>> &exported)
     : ops_(ops)
   {
     int lowest_id = INT32_MAX;
@@ -236,6 +239,12 @@ struct LiveAnalysis {
       }
     }
 
+    for(const auto &s : exported) {
+      const int id = s->id_;
+      lowest_id = std::min(lowest_id, id);
+      highest_id = std::max(highest_id, id);
+    }
+
     ln_id_base_ = lowest_id;
     ln_size_ = highest_id - lowest_id + 1;
     ln_words_ = (ln_size_ + 31) / 32;
@@ -244,6 +253,13 @@ struct LiveAnalysis {
 
     memory_usage_.resize(ln_size_);
     storage_.resize(ln_size_);
+
+    exported_gen_ = (uint32_t *)calloc(ln_words_, sizeof(uint32_t));
+
+    for(const auto &s : exported) {
+      const int id = s->id_ - ln_id_base_;
+      bitset(exported_gen_, id);
+    }
 
     for(const auto &op : ops) {
       auto ln = std::make_shared<Liveness>(ln_words_);
@@ -273,9 +289,14 @@ struct LiveAnalysis {
     update();
   }
 
+  ~LiveAnalysis()
+  {
+    free(exported_gen_);
+  }
 
   void update() {
     uint32_t in_prim[ln_words_];
+    uint32_t out_buf[ln_words_];
 
     if(ops_.size() == 0)
       return;
@@ -286,15 +307,22 @@ struct LiveAnalysis {
 
       // Simple live analysis as there is no real control flow graph,
       // it's rather just an infinite loop.
+      // We merge any tensors we've exported via resolveTensor() as
+      // being read at end of the loop. This makes sure they're kept alive
+      // at the end when user might inspect.
+
+      const uint32_t *out_prim;
 
       Liveness *succ = lns_[0].get();
+      memcpy(out_buf, succ->in_, ln_words_ * sizeof(uint32_t));
+      bitset_or(out_buf, exported_gen_, ln_words_);
+      out_prim = out_buf;
+
       for(ssize_t i = ops_.size() - 1; i >= 0; i--) {
         Liveness *cur  = lns_[i].get();
 
-        const uint32_t *out_prim = succ->in_;
-
-        for(int i = 0; i < ln_words_; i++)
-          in_prim[i] = (out_prim[i] & ~cur->def_[i]) | cur->gen_[i];
+        for(int j = 0; j < ln_words_; j++)
+          in_prim[j] = (out_prim[j] & ~cur->def_[j]) | cur->gen_[j];
 
         if(memcmp(cur->out_, out_prim, ln_words_ * sizeof(uint32_t)) ||
            memcmp(cur->in_,  in_prim,  ln_words_ * sizeof(uint32_t))) {
@@ -304,10 +332,54 @@ struct LiveAnalysis {
           memcpy(cur->in_,  in_prim,  ln_words_ * sizeof(uint32_t));
         }
 
-        succ = cur;
+        out_prim = cur->in_;
       }
     }
   }
+
+
+  void eliminateDeadInstructions() {
+
+    while(1) {
+      bool did_something = false;
+      for(ssize_t i = ops_.size() - 1; i >= 0; i--) {
+        bool kill = true;
+        for(int j = 0; j < ln_words_; j++) {
+          if(lns_[i]->out_[j] & lns_[i]->def_[j]) {
+            kill = false;
+            break;
+          }
+        }
+        if(kill) {
+          ops_.erase(ops_.begin() + i);
+          lns_.erase(lns_.begin() + i);
+          did_something = true;
+        } else {
+          for(int j = 0; j < ln_words_; j++) {
+            if((lns_[i]->out_[j] & lns_[i]->def_[j]) != lns_[i]->def_[j]) {
+              uint32_t out = lns_[i]->out_[j];
+              uint32_t def = lns_[i]->def_[j];
+              for(int k = 0; k < 32; k++) {
+                if(((1 << k) & def) && !((1 << k) & out)) {
+                  int id = j * 32 + k;
+                  auto s = storage_[id];
+                  if(!ops_[i]->killOutput(s)) {
+                    fprintf(stderr, "Warning: Unable to kill dead output\n");
+                    exit(1);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      if(!did_something) {
+        break;
+      }
+      update();
+    }
+  }
+
 
   void print(bool liveranges = false) {
 
@@ -436,7 +508,7 @@ struct LiveAnalysis {
         }
       }
     }
-    assert(inuse.empty());
+
     auto r = std::make_unique<CudaMemoryLayout>();
 
     r->table_.reserve(positions.size());
@@ -446,14 +518,15 @@ struct LiveAnalysis {
     r->size_ = bf.peak_ * align;
     return r;
   }
-
 };
 
 
 std::vector<std::shared_ptr<CudaOperation>>
-reduceLiveranges(std::vector<std::shared_ptr<CudaOperation>> &ops)
+reduceLiveranges(const std::vector<std::shared_ptr<CudaOperation>> &ops,
+                 const std::vector<std::shared_ptr<CudaTensorStorage>> &exported)
 {
-  LiveAnalysis la(ops);
+  LiveAnalysis la(ops, exported);
+  la.eliminateDeadInstructions();
   la.reduceMemoryPressure();
   return la.ops_;
 }
@@ -461,11 +534,11 @@ reduceLiveranges(std::vector<std::shared_ptr<CudaOperation>> &ops)
 
 
 std::unique_ptr<CudaMemoryLayout>
-memoryLayout(std::vector<std::shared_ptr<CudaOperation>> &ops)
+memoryLayout(const std::vector<std::shared_ptr<CudaOperation>> &ops,
+             const std::vector<std::shared_ptr<CudaTensorStorage>> &exported)
 {
-  LiveAnalysis la(ops);
+  LiveAnalysis la(ops, exported);
   return la.memoryLayout();
 }
-
 
 }

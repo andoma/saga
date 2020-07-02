@@ -158,6 +158,7 @@ public:
 
 
   std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
+  std::shared_ptr<Tensor> resolveTensorGradient(std::shared_ptr<Tensor> src) override;
   ExecResult infer(long batches) override;
   ExecResult train(long batches) override;
   void print(bool detailed) const override;
@@ -168,6 +169,12 @@ public:
   const int batch_size_;
   const float learning_rate_;
   bool debug_ = false;
+
+  bool finalized_ = false;
+
+  // Tensors we've handed out external handles to
+  // Their storage need to be kept alive all the time
+  std::vector<std::shared_ptr<CudaTensorStorage>> exported_storage_;
 
   std::unordered_map<std::shared_ptr<Tensor>,
                      std::shared_ptr<CudaTensor>> tensors_;
@@ -204,7 +211,11 @@ public:
   bool print_progress_pending_nl_ = false;
   time_t print_progress_ts_ = 0;
 
+  void finalize();
+
   std::shared_ptr<CudaTensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
+
+  std::shared_ptr<CudaTensor> resolveTensorGradient_locked(std::shared_ptr<Tensor> src);
 
   cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
 
@@ -235,7 +246,7 @@ public:
 
   void flipDoubleBufferedTensors();
 
-  void setupTensorStorage(const CudaMemoryLayout &cml);
+  void setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml);
 
   bool runOps(const CudaOps &ops, long batch);
 
@@ -257,6 +268,9 @@ public:
 
   virtual std::vector<std::shared_ptr<CudaTensor>> getInputs() const = 0;
   virtual std::vector<std::shared_ptr<CudaTensor>> getOutputs() const = 0;
+  virtual bool killOutput(std::shared_ptr<CudaTensorStorage> t) {
+    return false;
+  }
 
   virtual std::shared_ptr<CudaOperation> getSyncOp() {
     return nullptr;
@@ -276,8 +290,7 @@ protected:
 
   CudaOperation() = delete;
 
-private:
-  const std::string kind_;
+  std::string kind_;
 };
 
 

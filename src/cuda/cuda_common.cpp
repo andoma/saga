@@ -128,7 +128,31 @@ CudaProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
   auto it = tensors_.find(src);
   if(it != tensors_.end()) {
     auto t = it->second;
-    t->storage_->alloc();
+    exported_storage_.push_back(t->storage_);
+    return t;
+  }
+  return nullptr;
+}
+
+std::shared_ptr<Tensor>
+CudaProgram::resolveTensor(std::shared_ptr<Tensor> src)
+{
+  std::scoped_lock lock(ctx_->mutex_);
+  return resolveTensor_locked(src);
+}
+
+
+
+std::shared_ptr<CudaTensor>
+CudaProgram::resolveTensorGradient_locked(std::shared_ptr<Tensor> src)
+{
+  if(src == nullptr)
+    return nullptr;
+
+  auto it = tensors_.find(src);
+  if(it != tensors_.end()) {
+    auto t = it->second->makeSharedGrad();
+    exported_storage_.push_back(t->storage_);
     return t;
   }
   return nullptr;
@@ -137,10 +161,10 @@ CudaProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
 
 
 std::shared_ptr<Tensor>
-CudaProgram::resolveTensor(std::shared_ptr<Tensor> src)
+CudaProgram::resolveTensorGradient(std::shared_ptr<Tensor> src)
 {
   std::scoped_lock lock(ctx_->mutex_);
-  return resolveTensor_locked(src);
+  return resolveTensorGradient_locked(src);
 }
 
 
@@ -252,16 +276,20 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
 
 
 void
-CudaProgram::setupTensorStorage(const CudaMemoryLayout &cml)
+CudaProgram::setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml)
 {
+  if(!cml)
+    return;
+
   void *base = tensor_mem_.ptr();
-  for(const auto &kv : cml.table_) {
+  for(const auto &kv : cml->table_) {
     void *ptr = (void *)((char *)base + kv.second);
     //    printf("Tensor T%d gets %p\n", kv.first->id_, ptr);
     kv.first->setTmpMem(ptr);
-
   }
 }
+
+
 
 bool
 CudaProgram::runOps(const CudaOps &ops, long batch)
@@ -327,13 +355,16 @@ CudaProgram::infer(long batches)
   if(stop_check_ && stop_check_())
     return ExecResult::STOPPED;
 
-  setupTensorStorage(*infer_memory_layout_);
+  finalize();
+
+  setupTensorStorage(infer_memory_layout_);
 
   issueOps(infer_pre_, 0);
 
   flipDoubleBufferedTensors();
-  if(!runOps(load_operations_, 0))
+  if(!runOps(load_operations_, 0)) {
     return ExecResult::ERROR;
+  }
 
   cudaStreamSynchronize(ctx_->stream_);
   for(long i = 0; i < batches; i++) {
@@ -378,12 +409,15 @@ CudaProgram::train(long batches)
   if(stop_check_ && stop_check_())
     return ExecResult::STOPPED;
 
-  setupTensorStorage(*train_memory_layout_);
+  finalize();
+
+  setupTensorStorage(train_memory_layout_);
 
   issueOps(train_pre_, 0);
   flipDoubleBufferedTensors();
-  if(!runOps(load_operations_, 0))
+  if(!runOps(load_operations_, 0)) {
     return ExecResult::ERROR;
+  }
 
   cudaStreamSynchronize(ctx_->stream_);
 
@@ -503,13 +537,6 @@ CudaProgram::print(bool detailed) const
     }
     index++;
   }
-
-  printf("\n");
-  printf("Workspace: %zd kB [%p + 0x%zx]\n", workspace_.size() / 1024,
-         workspace_.ptr(), workspace_.size());
-  printf("TensorTmp: %zd kB [%p + 0x%zx]\n", tensor_mem_.size() / 1024,
-         tensor_mem_.ptr(), tensor_mem_.size());
-
 }
 
 void
@@ -810,9 +837,6 @@ CudaContext::createProgram(const Graph &g,
     p->bwd_operations_.clear();
     p->upd_operations_.clear();
 
-    p->train_operations_ = reduceLiveranges(p->train_operations_);
-    p->train_memory_layout_ = memoryLayout(p->train_operations_);
-    p->tensor_mem_.request(p->train_memory_layout_->size_);
   }
 
   if(pc.inference) {
@@ -826,21 +850,41 @@ CudaContext::createProgram(const Graph &g,
         exit(1);
       }
     }
-    p->infer_memory_layout_ = memoryLayout(p->infer_operations_);
-    p->tensor_mem_.request(p->infer_memory_layout_->size_);
   }
-
 
   for(const auto &kv : p->load_map_) {
     p->load_operations_.push_back(kv.second);
   }
 
   p->load_map_.clear();
-
-  p->workspace_.alloc();
-  p->tensor_mem_.allocManaged();
-
   return p;
+}
+
+void
+CudaProgram::finalize()
+{
+  if(finalized_)
+    return;
+  finalized_ = true;
+
+  if(train_operations_.size()) {
+    train_operations_ = reduceLiveranges(train_operations_, exported_storage_);
+    train_memory_layout_ = memoryLayout(train_operations_, exported_storage_);
+    tensor_mem_.request(train_memory_layout_->size_);
+  }
+
+  if(infer_operations_.size()) {
+    infer_memory_layout_ = memoryLayout(infer_operations_, exported_storage_);
+    tensor_mem_.request(infer_memory_layout_->size_);
+  }
+
+  workspace_.alloc();
+  tensor_mem_.allocManaged();
+
+  printf("Workspace: %zd kB [%p + 0x%zx]\n", workspace_.size() / 1024,
+         workspace_.ptr(), workspace_.size());
+  printf("TensorTmp: %zd kB [%p + 0x%zx]\n", tensor_mem_.size() / 1024,
+         tensor_mem_.ptr(), tensor_mem_.size());
 }
 
 

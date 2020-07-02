@@ -146,10 +146,6 @@ public:
     return nullptr;
   }
 
-  virtual std::shared_ptr<Tensor> grad() const {
-    return nullptr;
-  }
-
   virtual void copyFrom(Tensor &t);
 
   double sse(Tensor &t);
@@ -391,6 +387,7 @@ class Program {
 public:
   virtual ~Program() {}
   virtual std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) = 0;
+  virtual std::shared_ptr<Tensor> resolveTensorGradient(std::shared_ptr<Tensor> t) = 0;
   virtual ExecResult infer(long batches = 1) = 0;
   virtual ExecResult train(long batches = 1) = 0;
   virtual void print(bool detailed = false) const = 0;

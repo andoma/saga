@@ -92,8 +92,8 @@ minimal_main(int argc, char **argv)
   p->print();
 
   x = p->resolveTensor(x);
+  auto dy = p->resolveTensorGradient(y);
   y = p->resolveTensor(y);
-  auto dy = y->grad();
 
   loss = p->resolveTensor(loss);
 

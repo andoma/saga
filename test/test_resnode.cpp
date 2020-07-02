@@ -25,8 +25,6 @@
 
 using namespace saga;
 
-static int g_verbose = 0;
-
 
 struct TensorData {
   Dims dims;
@@ -244,44 +242,27 @@ expect(std::shared_ptr<Tensor> result,
 }
 
 
+
 static int
-resnode_main(int argc, char **argv)
+runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt,
+        bool bypass, bool check_dx)
 {
-  int opt;
   int batch_size = 2;
-  auto dt = Tensor::DataType::FLOAT;
-  int bypass = 1;
 
-  const TensorData *expected_y  = &expected_y_with_bypass;
-  const TensorData *expected_dx = &expected_dx_with_bypass;
+  const TensorData *expected_y =
+    bypass ? &expected_y_with_bypass : &expected_y_no_bypass;
 
-  while((opt = getopt(argc, argv, "hvn")) != -1) {
-    switch(opt) {
-    case 'h':
-      dt = Tensor::DataType::HALF;
-      break;
-    case 'v':
-      g_verbose++;
-      break;
-    case 'n':
-      bypass = 0;
-      expected_y  = &expected_y_no_bypass;
-      expected_dx = &expected_dx_no_bypass;
-      break;
-    }
-  }
+  const TensorData *expected_dx =
+    bypass ? &expected_dx_with_bypass : &expected_dx_no_bypass;
 
-  argc -= optind;
-  argv += optind;
-
-  auto ctx = createContext();
+  printf("\nTesting resnet node: dt:%s bypass:%s read-out-dx:%s\n",
+         Tensor::DataTypeStr(dt),
+         bypass   ? "yes" : "no",
+         check_dx ? "yes" : "no");
 
   Graph g;
-
   auto x = create_tensor(dt, conv_input_x);
-
   auto w = create_tensor(dt, conv_input_w);
-
   auto n = g.addNode("conv",
                      {{"x", x}, {"w", w}},
                      {{"activations", 4}, {"size", 1}});
@@ -308,20 +289,49 @@ resnode_main(int argc, char **argv)
     .tensor_layout = TensorLayout::Auto
   });
 
-  p->print(true);
-
   auto y = p->resolveTensor(n->y());
-  auto dy = y->grad();
-  auto dx = p->resolveTensor(x)->grad();
+  auto dx = check_dx ? p->resolveTensorGradient(x) : nullptr;
 
-  fill_tensor(dy, grad);
+  fill_tensor(p->resolveTensorGradient(n->y()), grad);
 
-  p->train(1);
-
+  if(p->train(1) != ExecResult::OK) {
+    printf("Execution failed\n");
+    return 1;
+  }
   if(expect(y, create_tensor(dt, *expected_y), "Y"))
     return 1;
 
-  if(expect(dx, create_tensor(dt, *expected_dx), "DX"))
+  if(dx) {
+    if(expect(dx, create_tensor(dt, *expected_dx), "DX"))
+      return 1;
+  }
+
+  return 0;
+}
+
+
+
+
+static int
+resnode_main(int argc, char **argv)
+{
+  auto ctx = createContext();
+
+  if(runtest(ctx, Tensor::DataType::FLOAT, true, true))
+    return 1;
+  if(runtest(ctx, Tensor::DataType::FLOAT, true, false))
+    return 1;
+  if(runtest(ctx, Tensor::DataType::FLOAT, false, true))
+    return 1;
+  if(runtest(ctx, Tensor::DataType::FLOAT, false, false))
+    return 1;
+  if(runtest(ctx, Tensor::DataType::HALF, true, true))
+    return 1;
+  if(runtest(ctx, Tensor::DataType::HALF, true, false))
+    return 1;
+  if(runtest(ctx, Tensor::DataType::HALF, false, true))
+    return 1;
+  if(runtest(ctx, Tensor::DataType::HALF, false, false))
     return 1;
 
   return 0;

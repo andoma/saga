@@ -693,10 +693,9 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
   p.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.ctx_, desc, x, dy, dw));
   p.upd(std::make_shared<CudnnAdam>(p, w, dw));
 
-  auto dx = x->grad_;
+  auto dx = x->makeSharedGrad();
   if(dx) {
     const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
-
     p.bwd(std::make_shared<CudnnConvolutionBwdData>(p.ctx_, desc, w, dy, dx,
                                                     dx_beta));
   }
@@ -2093,7 +2092,8 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
 struct CudnnBatchNormActBwd : public CudnnOperation {
 
   const std::shared_ptr<CudnnBatchNormActTrain> fwd_;
-  const std::shared_ptr<CudaTensor> dy_, dx_, dz_, ds_, db_;
+  std::shared_ptr<CudaTensor> dy_, dx_, dz_, ds_, db_;
+  cudnnBatchNormOps_t ops_;
   const float dx_beta_;
 
   CudnnBatchNormActBwd(CudaProgram &p,
@@ -2103,11 +2103,12 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                        std::shared_ptr<CudaTensor> dz,
                        std::shared_ptr<CudaTensor> ds,
                        std::shared_ptr<CudaTensor> db,
+                       cudnnBatchNormOps_t ops,
                        float dx_beta)
-    : CudnnOperation(std::string(bnopsstr(fwd->ops_)) + "_bwd.persistent")
+    : CudnnOperation(std::string(bnopsstr(ops)) + "_bwd.persistent")
     , fwd_(fwd)
     , dy_(dy), dx_(dx), dz_(dz), ds_(ds), db_(db)
-    , dx_beta_(dx_beta)
+    , ops_(ops), dx_beta_(dx_beta)
   {
     size_t workspace;
     chkCUDNN(cudnnGetBatchNormalizationBackwardExWorkspaceSize(p.ctx_->cudnn_,
@@ -2130,7 +2131,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
     float alpha = 1.0f, beta = 0.0f;
 
     return cudnnBatchNormalizationBackwardEx(p.ctx_->cudnn_,
-                                             fwd_->mode_, fwd_->ops_,
+                                             fwd_->mode_, ops_,
                                              &alpha, &dx_beta_,
                                              &alpha, &beta,
                                              fwd_->x_->desc(),
@@ -2173,6 +2174,19 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
       r.push_back(dz_);
     return r;
   }
+
+  virtual bool killOutput(std::shared_ptr<CudaTensorStorage> s) {
+    if(dz_ && dz_->storage_ == s) {
+      dz_.reset();
+      assert(ops_ == CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION);
+      ops_ = CUDNN_BATCHNORM_OPS_BN_ACTIVATION;
+      kind_ = std::string(bnopsstr(ops_)) + "_bwd.persistent";
+      return true;
+    }
+    return false;
+  }
+
+
 };
 
 
@@ -2236,7 +2250,7 @@ batchnorm_persistent_setup(CudaProgram &p, const Node &n, bool training)
   }
 
   p.bwd(std::make_shared<CudnnBatchNormActBwd>(p, f, dy, dx0, dx1, ds, db,
-                                               0.0f));
+                                               ops, 0.0f));
 
   p.upd(std::make_shared<CudnnAdam>(p, s, ds));
   p.upd(std::make_shared<CudnnAdam>(p, b, db));
