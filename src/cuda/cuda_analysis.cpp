@@ -396,12 +396,10 @@ struct LiveAnalysis {
 
       printf("%4zd: %s\n", i, ops_[i]->str().c_str());
       if(liveranges) {
-
         printf(" Live:");
         for(int j = 0; j < ln_size_; j++) {
           if(bitchk(lns_[i]->out_, j)) {
-            if(j + ln_id_base_ == 15)
-               printf(" T%d", j + ln_id_base_);
+            printf(" T%d", j + ln_id_base_);
           }
         }
         printf("\n");
