@@ -694,7 +694,7 @@ public:
 
 
 void
-CudaProgram::issueOps(const CudaBatchAccessOps ops, long batch)
+CudaProgram::issueBatchAccessOps(const CudaBatchAccessOps ops, long batch)
 {
   for(const auto &op : ops) {
     CudaTensorBatchAccess ta(op.storage_.get(),

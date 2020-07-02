@@ -359,7 +359,7 @@ CudaProgram::infer(long batches)
 
   setupTensorStorage(infer_memory_layout_);
 
-  issueOps(infer_pre_, 0);
+  issueBatchAccessOps(infer_pre_, 0);
 
   flipDoubleBufferedTensors();
   if(!runOps(load_operations_, 0)) {
@@ -374,9 +374,9 @@ CudaProgram::infer(long batches)
       return ExecResult::ERROR;
     }
     if(i < batches - 1)
-      issueOps(infer_pre_, i + 1);
+      issueBatchAccessOps(infer_pre_, i + 1);
     if(i > 0)
-      issueOps(infer_post_, i - 1);
+      issueBatchAccessOps(infer_post_, i - 1);
 
     flipDoubleBufferedTensors();
     if(i < batches - 1) {
@@ -394,7 +394,7 @@ CudaProgram::infer(long batches)
     progress("Test", i, batches);
     cudaStreamSynchronize(ctx_->stream_);
   }
-  issueOps(infer_post_, batches - 1);
+  issueBatchAccessOps(infer_post_, batches - 1);
   progressDone();
   return ExecResult::OK;
 }
@@ -413,7 +413,7 @@ CudaProgram::train(long batches)
 
   setupTensorStorage(train_memory_layout_);
 
-  issueOps(train_pre_, 0);
+  issueBatchAccessOps(train_pre_, 0);
   flipDoubleBufferedTensors();
   if(!runOps(load_operations_, 0)) {
     return ExecResult::ERROR;
@@ -429,9 +429,9 @@ CudaProgram::train(long batches)
     }
 
     if(i < batches - 1)
-      issueOps(train_pre_, i + 1);
+      issueBatchAccessOps(train_pre_, i + 1);
     if(i > 0)
-      issueOps(train_post_, i - 1);
+      issueBatchAccessOps(train_post_, i - 1);
 
     flipDoubleBufferedTensors();
     if(i < batches - 1) {
@@ -457,7 +457,7 @@ CudaProgram::train(long batches)
     }
   }
 
-  issueOps(train_post_, batches - 1);
+  issueBatchAccessOps(train_post_, batches - 1);
   progressDone();
   return ExecResult::OK;
 }

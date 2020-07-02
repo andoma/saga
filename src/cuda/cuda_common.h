@@ -242,7 +242,7 @@ public:
                     std::shared_ptr<CudaTensorStorageDoubleBuffered> s,
                     const BatchTensorAccess &a);
 
-  void issueOps(const CudaBatchAccessOps ops, long batch);
+  void issueBatchAccessOps(const CudaBatchAccessOps ops, long batch);
 
   void flipDoubleBufferedTensors();
 
