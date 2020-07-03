@@ -318,6 +318,14 @@ public:
                                             int output_width = -1,
                                             int output_height = -1,
                                             bool also_during_inference = false);
+
+
+  std::shared_ptr<Node> addResNetBottleNeck(std::shared_ptr<Tensor> input,
+                                            int squeeze_activations,
+                                            int output_activations,
+                                            bool downsample,
+                                            const std::string &name);
+
 };
 
 

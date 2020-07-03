@@ -278,51 +278,6 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 
 
 
-static std::shared_ptr<Node>
-resnetmodule(Graph &g, std::shared_ptr<Node> input,
-             int a1, int a2, bool downsample, bool bypass,
-             const std::string &name)
-{
-  std::shared_ptr<Node> a, b;
-  a = g.addNode("conv", {{"x", input->y()}},
-                {{"size", 1},
-                 {"activations", a1},
-                 {"stride", 1},
-                 {"pad", 0}}, name + "-conv-1");
-  a = g.addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-1");
-  a = g.addNode("relu", {{"x", a->y()}}, {});
-
-  a = g.addNode("conv", {{"x", a->y()}},
-                {{"size", 3},
-                 {"activations", a1},
-                 {"stride", downsample ? 2 : 1},
-                 {"pad", 1}}, name + "-conv-2");
-  a = g.addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-2");
-  a = g.addNode("relu", {{"x", a->y()}}, {});
-
-  a = g.addNode("conv", {{"x", a->y()}},
-                {{"size", 1},
-                 {"activations", a2},
-                 {"stride", 1},
-                 {"pad", 0}}, name + "-conv-3");
-  a = g.addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-3");
-
-  if(bypass) {
-    b = g.addNode("conv", {{"x", input->y()}},
-                  {{"size", 3},
-                   {"activations", a2},
-                   {"stride", downsample ? 2 : 1},
-                   {"pad", 1}}, name + "-conv-bp");
-    b = g.addNode("batchnorm", {{"x", b->y()}}, {}, name + "-bn-bp");
-  } else {
-    b = input;
-  }
-
-  auto s = g.addNode("sum", {{"x0", a->y()}, {"x1", b->y()}}, {});
-  s = g.addNode("relu", {{"x", s->y()}}, {});
-  return s;
-}
-
 
 
 static std::shared_ptr<Node>
@@ -344,26 +299,25 @@ resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes)
   n = g.addNode("maxpool", {{"x", n->y()}},
                 {{"size", 3}, {"stride", 2}, {"pad", 1}});
 
-  n = resnetmodule(g, n, 64, 256,   false, true,  "s2_1");
-  n = resnetmodule(g, n, 64, 256,   false, false, "s2_2");
-  n = resnetmodule(g, n, 64, 256,   false, false, "s2_3");
+  n = g.addResNetBottleNeck(n->y(), 64, 256,   false, "s2_1");
+  n = g.addResNetBottleNeck(n->y(), 64, 256,   false, "s2_2");
+  n = g.addResNetBottleNeck(n->y(), 64, 256,   false, "s2_3");
 
-  n = resnetmodule(g, n, 128, 512,  true,  true,  "s3_1");
-  n = resnetmodule(g, n, 128, 512,  false, false, "s3_2");
-  n = resnetmodule(g, n, 128, 512,  false, false, "s3_3");
-  n = resnetmodule(g, n, 128, 512,  false, false, "s3_4");
+  n = g.addResNetBottleNeck(n->y(), 128, 512,  true,  "s3_1");
+  n = g.addResNetBottleNeck(n->y(), 128, 512,  false, "s3_2");
+  n = g.addResNetBottleNeck(n->y(), 128, 512,  false, "s3_3");
+  n = g.addResNetBottleNeck(n->y(), 128, 512,  false, "s3_4");
 
-  n = resnetmodule(g, n, 256, 1024, true, true,   "s4_1");
-  n = resnetmodule(g, n, 256, 1024, false, false, "s4_2");
-  n = resnetmodule(g, n, 256, 1024, false, false, "s4_3");
-  n = resnetmodule(g, n, 256, 1024, false, false, "s4_4");
-  n = resnetmodule(g, n, 256, 1024, false, false, "s4_5");
-  n = resnetmodule(g, n, 256, 1024, false, false, "s4_6");
+  n = g.addResNetBottleNeck(n->y(), 256, 1024, true,  "s4_1");
+  n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_2");
+  n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_3");
+  n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_4");
+  n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_5");
+  n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_6");
 
-
-  n = resnetmodule(g, n, 512, 2048, true,  true,  "s5_1");
-  n = resnetmodule(g, n, 512, 2048, false, false, "s5_2");
-  n = resnetmodule(g, n, 512, 2048, false, false, "s5_3");
+  n = g.addResNetBottleNeck(n->y(), 512, 2048, true,  "s5_1");
+  n = g.addResNetBottleNeck(n->y(), 512, 2048, false, "s5_2");
+  n = g.addResNetBottleNeck(n->y(), 512, 2048, false, "s5_3");
 
   n = g.addNode("avgpool", {{"x", n->y()}}, {{"global", true}});
 
