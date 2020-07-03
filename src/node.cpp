@@ -345,10 +345,15 @@ passthru_y(const Node &n, const std::optional<const std::string> &name)
 static std::shared_ptr<Tensor>
 sum_y(const Node &n, const std::optional<const std::string> &name)
 {
-  auto o = n.inputs_.get("x0");
-  if(o == nullptr)
+  auto x0 = n.inputs_.get("x0");
+  auto x1 = n.inputs_.get("x0");
+  if(x0 == nullptr || x1 == nullptr)
     return nullptr;
-  return std::make_shared<Tensor>(o->data_type_, o->dims_, name);
+
+  if(x0->dims_ != x1->dims_ || x0->data_type_ != x1->data_type_)
+    return nullptr;
+
+  return std::make_shared<Tensor>(x0->data_type_, x0->dims_, name);
 }
 
 //------------------------------------------------------------------------
