@@ -420,6 +420,15 @@ spatialtransform_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 
 
 //------------------------------------------------------------------------
+
+static std::shared_ptr<Tensor>
+stats_y(const Node &n, const std::optional<const std::string> &name)
+{
+  return std::make_shared<Tensor>(Tensor::DataType::FLOAT, Dims{4}, "stats");
+}
+
+
+//------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
 static const struct {
@@ -448,6 +457,7 @@ static const struct {
   { "reshape",           reshape_y },
   { "softmax",           passthru_y },
   { "spatialtransform",  spatialtransform_y, spatialtransform_setup },
+  { "stats",             stats_y },
   { "sum",               sum_y },
   { "convert",           convert_y },
 };

@@ -2600,5 +2600,74 @@ concat_transform(CudaProgram &p,
 REGISTER_CUDA_TRANSFORM(100, CUDA_TRANSFORM_ALL, concat_transform);
 
 
+//------------------------------------------------------------------------
+
+struct CudaStats : public CudaOperation {
+
+  const std::shared_ptr<CudaTensor> x_, y_;
+
+  CudaStats(std::shared_ptr<CudaTensor> x,
+            std::shared_ptr<CudaTensor> y)
+    : CudaOperation("stats")
+    , x_(x), y_(y)
+  {}
+
+  const char *exec(CudaProgram &p, long batch) {
+
+    switch(x_->data_type_) {
+    case Tensor::DataType::FLOAT:
+      tensor_stats_float(x_->elements_, (const float *)x_->deviceMem(),
+                         (float *)y_->deviceMem(), p.ctx_->stream_);
+      break;
+    case Tensor::DataType::HALF:
+      tensor_stats_half(x_->elements_, (const __half *)x_->deviceMem(),
+                        (float *)y_->deviceMem(), p.ctx_->stream_);
+      break;
+    default:
+      return "Unsupported datatype";
+    }
+    return NULL;
+  }
+
+  std::vector<std::shared_ptr<CudaTensor>> getInputs() const override {
+    return {x_};
+  }
+
+  std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
+    return {y_};
+  }
+};
+
+
+
+static const char *
+stats_setup(CudaProgram &p, const Node &n, bool training)
+{
+  auto it = p.tensors_.find(n.inputs_.get("x"));
+  if(it == p.tensors_.end())
+    return "x-tensor not found";
+
+  auto x = it->second;
+  if(n.attributes_.get("gradient", false)) {
+    x = x->grad_;
+
+    if(!x)
+      return "x-tensor has no gradient";
+  }
+
+  auto y = p.lower_tensor(n.outputs_.get("y"));
+
+  auto op = std::make_shared<CudaStats>(x, y);
+
+  if(training) {
+    p.upd(op);
+  } else {
+    p.infer(op);
+  }
+  return NULL;
+}
+
+REGISTER_CUDA_OP("stats", stats_setup);
+
 }
 
