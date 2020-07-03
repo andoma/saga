@@ -381,7 +381,7 @@ struct CudnnConvolutionDesc {
     if(s)
       return cudnnGetErrorString(s);
 
-    p.workspace_.request(workspace);
+    p.ctx_->workspace_.request(workspace);
 
     if(!bwd)
       return NULL;
@@ -408,7 +408,7 @@ struct CudnnConvolutionDesc {
     if(s)
       return cudnnGetErrorString(s);
 
-    p.workspace_.request(workspace);
+    p.ctx_->workspace_.request(workspace);
 
     s = cudnnGetConvolutionBackwardFilterAlgorithm(p.ctx_->cudnn_,
                                                    x.desc(),
@@ -431,7 +431,7 @@ struct CudnnConvolutionDesc {
     if(s)
       return cudnnGetErrorString(s);
 
-    p.workspace_.request(workspace);
+    p.ctx_->workspace_.request(workspace);
 
     return NULL;
   }
@@ -465,8 +465,8 @@ struct CudnnConvolutionFwd : public CudnnOperation {
                                    w_->deviceMem(),
                                    desc_->conv_desc_,
                                    desc_->conv_fwd_algo_,
-                                   p.workspace_.ptr(),
-                                   p.workspace_.size(),
+                                   ctx_->workspace_.ptr(),
+                                   ctx_->workspace_.size(),
                                    &beta,
                                    y_->desc(),
                                    y_->deviceMem());
@@ -550,8 +550,8 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
                                           dy_->deviceMem(),
                                           desc_->conv_desc_,
                                           desc_->bwd_filter_algo_,
-                                          p.workspace_.ptr(),
-                                          p.workspace_.size(),
+                                          ctx_->workspace_.ptr(),
+                                          ctx_->workspace_.size(),
                                           &beta,
                                           desc_->filter_desc_,
                                           dw_->deviceMem());
@@ -600,8 +600,8 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
                                         dy_->deviceMem(),
                                         desc_->conv_desc_,
                                         desc_->bwd_data_algo_,
-                                        p.workspace_.ptr(),
-                                        p.workspace_.size(),
+                                        ctx_->workspace_.ptr(),
+                                        ctx_->workspace_.size(),
                                         &dx_beta_,
                                         dx_->desc(),
                                         dx_->deviceMem());
@@ -2071,8 +2071,8 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
                                                     sm_->deviceMem(),
                                                     sv_->deviceMem(),
                                                     desc_,
-                                                    p.workspace_.ptr(),
-                                                    p.workspace_.size(),
+                                                    ctx_->workspace_.ptr(),
+                                                    ctx_->workspace_.size(),
                                                     reserve_, reserve_size_);
   }
 
@@ -2123,7 +2123,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                                                                ds_->desc(),
                                                                fwd->desc_,
                                                                &workspace));
-    p.workspace_.request(workspace);
+    p.ctx_->workspace_.request(workspace);
 
 
   }
@@ -2154,8 +2154,8 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                                              fwd_->sm_->deviceMem(),
                                              fwd_->sv_->deviceMem(),
                                              fwd_->desc_,
-                                             p.workspace_.ptr(),
-                                             p.workspace_.size(),
+                                             p.ctx_->workspace_.ptr(),
+                                             p.ctx_->workspace_.size(),
                                              fwd_->reserve_,
                                              fwd_->reserve_size_);
 

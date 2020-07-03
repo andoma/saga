@@ -891,13 +891,9 @@ CudaProgram::finalize()
     tensor_mem_.request(infer_memory_layout_->size_);
   }
 
-  workspace_.alloc();
   tensor_mem_.alloc();
 
-  printf("Workspace: %zd kB [%p + 0x%zx]\n", workspace_.size() / 1024,
-         workspace_.ptr(), workspace_.size());
-  printf("TensorTmp: %zd kB [%p + 0x%zx]\n", tensor_mem_.size() / 1024,
-         tensor_mem_.ptr(), tensor_mem_.size());
+  ctx_->workspace_.alloc();
 }
 
 

@@ -99,6 +99,8 @@ public:
 
   void print() override;
 
+  CudaTmpMem workspace_;
+
   cudaStream_t stream_ = 0;
   cudnnHandle_t cudnn_ = NULL;
   cublasHandle_t cublas_ = NULL;
@@ -196,7 +198,6 @@ public:
   std::shared_ptr<CudaMemoryLayout> train_memory_layout_;
   std::shared_ptr<CudaMemoryLayout> infer_memory_layout_;
 
-  CudaTmpMem workspace_;
   CudaTmpMem tensor_mem_;
 
   void *check_result_;
