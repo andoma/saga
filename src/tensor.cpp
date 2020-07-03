@@ -271,6 +271,7 @@ Tensor::stats()
   double max = -INFINITY;
   double min = INFINITY;
   double sum = 0;
+  double sumsum = 0;
 
   for(int64_t i = 0; i < elements_; i++) {
     const double v = ta->get(c);
@@ -278,6 +279,7 @@ Tensor::stats()
     max = std::max(max, v);
     min = std::min(min, v);
     sum += v;
+    sumsum += v * v;
 
     for(ssize_t j = c.size() - 1; j >= 0; j--) {
       c[j]++;
@@ -290,21 +292,9 @@ Tensor::stats()
   }
 
   const double mean = sum / elements_;
-  double sum2 = 0;
-  for(int64_t i = 0; i < elements_; i++) {
-    const double v = ta->get(c) - mean;
-    sum2 += v * v;
-    for(ssize_t j = c.size() - 1; j >= 0; j--) {
-      c[j]++;
-      if(c[j] == dims_[j]) {
-        c[j] = 0;
-      } else {
-        break;
-      }
-    }
-  }
-  return Stats({.min = min, .max = max, .mean = mean,
-        .stddev = sqrt(sum2 / elements_)});
+  const double var = (sumsum - sum * sum / elements_) / elements_;
+
+  return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrt(var)});
 }
 
 
