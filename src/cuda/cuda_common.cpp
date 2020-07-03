@@ -892,7 +892,7 @@ CudaProgram::finalize()
   }
 
   workspace_.alloc();
-  tensor_mem_.allocManaged();
+  tensor_mem_.alloc();
 
   printf("Workspace: %zd kB [%p + 0x%zx]\n", workspace_.size() / 1024,
          workspace_.ptr(), workspace_.size());

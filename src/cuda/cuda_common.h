@@ -41,6 +41,52 @@ class CudaTensorStorageDoubleBuffered;
 class CudaMemoryLayout;
 
 
+
+struct CudaTmpMem {
+
+  ~CudaTmpMem()
+  {
+    chkCuda(cudaFree(ptr_));
+  }
+
+  void request(size_t size)
+  {
+    requested_ = std::max(requested_, size);
+  }
+
+  void alloc()
+  {
+    if(requested_ <= size_)
+      return;
+
+    chkCuda(cudaFree(ptr_));
+
+    size_ = requested_;
+    chkCuda(cudaMallocManaged(&ptr_, size_, cudaMemAttachGlobal));
+  }
+
+
+  void *ptr() const
+  {
+    return ptr_;
+  }
+
+  size_t size() const
+  {
+    return size_;
+  }
+
+private:
+  void *ptr_ = nullptr;
+  size_t size_ = 0;
+  size_t requested_ = 0;
+};
+
+
+
+
+
+
 class CudaContext : public Context,
                     public std::enable_shared_from_this<CudaContext> {
 public:
@@ -76,56 +122,6 @@ typedef std::vector<CudaBatchAccessOp> CudaBatchAccessOps;
 
 typedef std::vector<std::shared_ptr<CudaOperation>> CudaOps;
 
-struct CudaTmpMem {
-
-  ~CudaTmpMem()
-  {
-    chkCuda(cudaFree(ptr_));
-  }
-
-  void request(size_t size)
-  {
-    requested_ = std::max(requested_, size);
-  }
-
-  void alloc()
-  {
-    if(requested_ <= size_)
-      return;
-
-    chkCuda(cudaFree(ptr_));
-
-    size_ = requested_;
-    chkCuda(cudaMalloc(&ptr_, size_));
-  }
-
-  void allocManaged()
-  {
-    if(requested_ <= size_)
-      return;
-
-    chkCuda(cudaFree(ptr_));
-
-    size_ = requested_;
-    chkCuda(cudaMallocManaged(&ptr_, size_, cudaMemAttachGlobal));
-  }
-
-
-  void *ptr() const
-  {
-    return ptr_;
-  }
-
-  size_t size() const
-  {
-    return size_;
-  }
-
-private:
-  void *ptr_ = nullptr;
-  size_t size_ = 0;
-  size_t requested_ = 0;
-};
 
 
 
