@@ -132,6 +132,8 @@ public:
 
   std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size) override;
 
+  Stats stats() override;
+
   cudnnTensorDescriptor_t desc() const {
     return desc_;
   }

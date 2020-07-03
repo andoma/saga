@@ -44,6 +44,13 @@ class CudaMemoryLayout;
 
 struct CudaTmpMem {
 
+  CudaTmpMem& operator=(CudaTmpMem const&) = delete;
+  CudaTmpMem(CudaTmpMem const&) = delete;
+
+  CudaTmpMem(size_t initial = 0)
+    : requested_(initial)
+  {}
+
   ~CudaTmpMem()
   {
     chkCuda(cudaFree(ptr_));
@@ -90,6 +97,10 @@ private:
 class CudaContext : public Context,
                     public std::enable_shared_from_this<CudaContext> {
 public:
+
+  CudaContext()
+    : workspace_(4096)
+  {}
 
   int init();
 

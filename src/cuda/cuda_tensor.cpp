@@ -32,6 +32,7 @@
 #include "context.h"
 #include "cuda_common.h"
 #include "cuda_tensor.h"
+#include "cuda_kernels.h"
 
 
 namespace saga {
@@ -525,6 +526,46 @@ CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
             info().c_str());
     abort();
   }
+}
+
+
+Tensor::Stats
+CudaTensor::stats()
+{
+  auto s = storage_;
+  if(s == nullptr)
+    return Stats({0,0,0,0});
+
+  auto ctx = storage_->ctx_;
+
+  ctx->workspace_.alloc();
+
+  float *output = (float *)ctx->workspace_.ptr();
+
+  switch(type_) {
+  case CUDNN_DATA_FLOAT:
+    tensor_stats_float(elements_, (const float *)deviceMem(),
+                       output, ctx->stream_);
+    break;
+  case CUDNN_DATA_HALF:
+    tensor_stats_half(elements_, (const __half *)deviceMem(),
+                      output, ctx->stream_);
+    break;
+  default:
+    return Tensor::stats();
+  }
+
+  cudaStreamSynchronize(ctx->stream_);
+
+  const double min    = output[0];
+  const double max    = output[1];
+  const double sum    = output[2];
+  const double sumsum = output[3];
+
+  const double mean = sum / elements_;
+  const double var = (sumsum - sum * sum / elements_) / elements_;
+
+  return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrt(var)});
 }
 
 

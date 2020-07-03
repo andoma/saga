@@ -174,7 +174,7 @@ public:
   void print(const char *prefix, int elements_per_rank = 0);
   void printRGB(const char *prefix,
                 std::optional<std::pair<float, float>> range = std::nullopt);
-  Stats stats();
+  virtual Stats stats();
   void printStats(const char *prefix);
   std::string statsString(void);
 
