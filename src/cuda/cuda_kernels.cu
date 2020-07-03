@@ -220,4 +220,106 @@ adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
                                                   lr, range);
 }
 
+
+
+
+__inline__ __device__ float4
+warpReduceStats(float4 val)
+{
+  for(int offset = warpSize/2; offset > 0; offset /= 2) {
+    const float x = __shfl_down_sync(0xffffffff, val.x, offset);
+    const float y = __shfl_down_sync(0xffffffff, val.y, offset);
+    const float z = __shfl_down_sync(0xffffffff, val.z, offset);
+    const float w = __shfl_down_sync(0xffffffff, val.w, offset);
+
+    val.x  = min(val.x, x);
+    val.y  = max(val.y, y);
+    val.z += z;
+    val.w += w;
+  }
+  return val;
+}
+
+
+__inline__ __device__ float4
+blockReduceStats(float4 val) {
+
+  static __shared__ float4 shared[32];
+  int lane = threadIdx.x % warpSize;
+  int wid = threadIdx.x / warpSize;
+  val = warpReduceStats(val);
+  if(lane==0)
+    shared[wid]=val;
+
+  __syncthreads();
+
+  val = (threadIdx.x < blockDim.x / warpSize) ? shared[lane] : float4{0.0f,0.0f,0.0f,0.0f};
+  if(wid==0)
+    val = warpReduceStats(val);
+  return val;
+}
+
+__device__ __forceinline__ static float
+atomicMinFloat(float *addr, float value) {
+  float old;
+  old = (value >= 0) ? __int_as_float(atomicMin((int *)addr, __float_as_int(value))) :
+    __uint_as_float(atomicMax((unsigned int *)addr, __float_as_uint(value)));
+  return old;
+}
+
+__device__ __forceinline__ static float
+atomicMaxFloat(float * addr, float value) {
+  float old;
+  old = (value >= 0) ? __int_as_float(atomicMax((int *)addr, __float_as_int(value))) :
+    __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(value)));
+  return old;
+}
+
+template< typename T > __global__ void
+deviceReduceStats(const T *in, float *out, int N)
+{
+  float min = INFINITY;
+  float max = -INFINITY;
+  float sum = 0;
+  float sumsum = 0;
+
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x;  i < N;
+       i += blockDim.x * gridDim.x) {
+    float v = in[i];
+    min = fminf(min, v);
+    max = fmaxf(max, v);
+    sum += v;
+    sumsum += v * v;
+  }
+
+  float4 re4{sum, sum, sum, sumsum};
+
+  re4 = blockReduceStats(re4);
+  if(threadIdx.x == 0) {
+    atomicMinFloat(out + 0, re4.x);
+    atomicMaxFloat(out + 1, re4.y);
+    atomicAdd(out + 2,      re4.z);
+    atomicAdd(out + 3,      re4.w);
+  }
+}
+
+
+void
+tensor_stats_float(int n, const float *src, float *output,
+                   cudaStream_t stream)
+{
+  cudaMemsetAsync(output, 0, sizeof(float) * 4, stream);
+  deviceReduceStats<<<(n+255)/256, 256, 0, stream>>>(src, output, n);
+}
+
+void
+tensor_stats_half(int n, const __half *src, float *output,
+                  cudaStream_t stream)
+{
+  cudaMemsetAsync(output, 0, sizeof(float) * 4, stream);
+  deviceReduceStats<<<(n+255)/256, 256, 0, stream>>>(src, output, n);
+}
+
+
+
 };

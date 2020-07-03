@@ -41,4 +41,11 @@ void adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
                 float *t, float b1t, float b2t, float lr, int *range,
                 cudaStream_t stream);
 
+// Compute min, max, sum and sum-of-squares and store in output[4]
+void tensor_stats_float(int n, const float *src, float *output,
+                        cudaStream_t stream);
+
+void tensor_stats_half(int n, const __half *src, float *output,
+                       cudaStream_t stream);
+
 }
