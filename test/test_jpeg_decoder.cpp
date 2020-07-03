@@ -1,3 +1,4 @@
+#include <math.h>
 #include <signal.h>
 #include <assert.h>
 #include <unistd.h>
@@ -40,30 +41,18 @@ load_jpeg(long batch, int n, uint8_t *data, size_t len)
 
 
 
-
-static void
-fill_theta(Tensor *t, int batch_size)
-{
-  auto ta = t->access();
-  for(int i = 0; i < batch_size; i++) {
-
-    ta->set({i, 1, 0}, -1);
-    ta->set({i, 0, 1}, 1);
-  }
-}
-
-
-
 static int
 jpeg_decoder_main(int argc, char **argv)
 {
   int opt;
   auto dt = Tensor::DataType::FLOAT;
 
-  int transform = 0;
+  int h_flip = 0;
+  int v_flip = 0;
+  int angle = 0;
   const int batch_size = 4;
 
-  while((opt = getopt(argc, argv, "hvt")) != -1) {
+  while((opt = getopt(argc, argv, "hvxyr:")) != -1) {
     switch(opt) {
     case 'h':
       dt = Tensor::DataType::HALF;
@@ -71,8 +60,14 @@ jpeg_decoder_main(int argc, char **argv)
     case 'v':
       g_verbose++;
       break;
-    case 't':
-      transform = 1;
+    case 'x':
+      h_flip = 1;
+      break;
+    case 'y':
+      v_flip = 1;
+      break;
+    case 'r':
+      angle = atoi(optarg);
       break;
     }
   }
@@ -91,8 +86,43 @@ jpeg_decoder_main(int argc, char **argv)
     makeCPUTensor(Tensor::DataType::FLOAT,
                   Dims({batch_size, 2, 3}), "theta0");
 
-  if(transform)
+  if(h_flip) {
+    std::shared_ptr<Tensor> theta =
+      makeCPUTensor(Tensor::DataType::FLOAT, Dims({1, 2, 3}), "h_flip");
+
+    auto ta = theta->access();
+    ta->set({0, 0, 0}, -1);
+    ta->set({0, 1, 1},  1);
+
     n = g.addSpatialTransform(n->y(), theta, -1, -1, true);
+  }
+
+  if(v_flip) {
+    std::shared_ptr<Tensor> theta =
+      makeCPUTensor(Tensor::DataType::FLOAT, Dims({1, 2, 3}), "v_flip");
+
+    auto ta = theta->access();
+    ta->set({0, 0, 0},  1);
+    ta->set({0, 1, 1}, -1);
+
+    n = g.addSpatialTransform(n->y(), theta, -1, -1, true);
+  }
+
+
+  if(angle) {
+    std::shared_ptr<Tensor> theta =
+      makeCPUTensor(Tensor::DataType::FLOAT, Dims({1, 2, 3}), "rotation");
+
+    const float r = angle * M_PI / 180.0;
+
+    auto ta = theta->access();
+    ta->set({0, 0, 0},  cos(r));
+    ta->set({0, 0, 1}, -sin(r));
+    ta->set({0, 1, 0},  sin(r));
+    ta->set({0, 1, 1},  cos(r));
+
+    n = g.addSpatialTransform(n->y(), theta, -1, -1, true);
+  }
 
   if(g_verbose)
     g.print();
@@ -108,10 +138,6 @@ jpeg_decoder_main(int argc, char **argv)
 
   if(g_verbose > 1)
     p->print();
-
-  theta = p->resolveTensor(theta);
-  if(theta)
-    fill_theta(theta.get(), batch_size);
 
   auto output = p->resolveTensor(n->y());
 
