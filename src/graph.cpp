@@ -266,8 +266,7 @@ Graph::addResNetBottleNeck(std::shared_ptr<Tensor> input,
   }
 
   auto s = addNode("sum", {{"x0", a->y()}, {"x1", x1}}, {});
-  s = addNode("relu", {{"x", s->y()}}, {});
-  return s;
+  return addNode("relu", {{"x", s->y()}}, {});
 }
 
 
@@ -312,9 +311,7 @@ Graph::addResNet(std::shared_ptr<Tensor> input,
   }
 
   auto s = addNode("sum", {{"x0", a->y()}, {"x1", x1}}, {});
-  s =  addNode("relu", {{"x", s->y()}}, {});
-  printf("s=%p\n", s.get());
-  return s;
+  return addNode("relu", {{"x", s->y()}}, {});
 }
 
 
