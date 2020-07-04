@@ -612,7 +612,7 @@ test_classifier(int argc, char **argv,
 
   theta = p->resolveTensor(theta);
   postconv = p->resolveTensor(postconv);
-
+  int epoch = 0;
   while(g_run) {
     if(theta)
       fill_theta(theta.get(), batch_size);
@@ -633,12 +633,13 @@ test_classifier(int argc, char **argv,
 
     const int64_t t2 = get_ts();
     float percentage = 100.0 * correct / test_inputs;
-    printf("%3.3f%% Train:%.3fs Test:%.3fs Loss:%f\n",
-           percentage,
+    epoch++;
+    printf("Epoch %4d: %3.3f%% Train:%.3fs Test:%.3fs Loss:%f\n",
+           epoch, percentage,
            (t1 - t0) / 1e6,
            (t2 - t1) / 1e6,
            loss_sum / train_inputs);
-    if(percentage > 99 || !g_run)
+    if(!g_run)
       break;
   }
 
