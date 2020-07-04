@@ -304,12 +304,28 @@ deviceReduceStats(const T *in, float *out, int N)
 }
 
 
+__global__ static void
+compute_mean_stddev(float *v, float elements)
+{
+  const float sum = v[2];
+  const float sumsum = v[3];
+  const float mean = sum / elements;
+  const float var = (sumsum - sum * sum / elements) / elements;
+
+  v[2] = mean;
+  v[3] = var;
+}
+
+
+
+
 void
 tensor_stats_float(int n, const float *src, float *output,
                    cudaStream_t stream)
 {
   cudaMemsetAsync(output, 0, sizeof(float) * 4, stream);
   deviceReduceStats<<<(n+255)/256, 256, 0, stream>>>(src, output, n);
+  compute_mean_stddev<<<1, 1, 0, stream>>>(output, n);
 }
 
 void
@@ -318,6 +334,7 @@ tensor_stats_half(int n, const __half *src, float *output,
 {
   cudaMemsetAsync(output, 0, sizeof(float) * 4, stream);
   deviceReduceStats<<<(n+255)/256, 256, 0, stream>>>(src, output, n);
+  compute_mean_stddev<<<1, 1, 0, stream>>>(output, n);
 }
 
 

@@ -557,15 +557,12 @@ CudaTensor::stats()
 
   cudaStreamSynchronize(ctx->stream_);
 
-  const double min    = output[0];
-  const double max    = output[1];
-  const double sum    = output[2];
-  const double sumsum = output[3];
+  const float min  = output[0];
+  const float max  = output[1];
+  const float mean = output[2];
+  const float var  = output[3];
 
-  const double mean = sum / elements_;
-  const double var = (sumsum - sum * sum / elements_) / elements_;
-
-  return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrt(var)});
+  return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrtf(var)});
 }
 
 
