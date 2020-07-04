@@ -419,17 +419,14 @@ fill_theta(Tensor *t, int batch_size)
   auto ta = t->access();
   for(int i = 0; i < batch_size; i++) {
 
-    float xx = drand48() > 0.5 ? 1 : -1;
-    float xy = drand48() > 0.5 ? 1 : -1;
-    float yx = drand48() > 0.5 ? 1 : -1;
-    float yy = drand48() > 0.5 ? 1 : -1;
+    // Rotate ± 0.5rad (± 28deg) and ±0.1x zoom
 
-    ta->set({i, 0, 0}, ( 0.9 + drand48() * 0.2) * xx);
-    ta->set({i, 0, 1}, (-0.1 + drand48() * 0.2) * xy);
-    ta->set({i, 0, 2}, -0.1 + drand48() * 0.2);
-    ta->set({i, 1, 0}, (-0.1 + drand48() * 0.2) * yx);
-    ta->set({i, 1, 1}, (0.9 + drand48() * 0.2) * yy);
-    ta->set({i, 1, 2}, -0.1 + drand48() * 0.2);
+    const float r = drand48() - 0.5;
+    const float z = 0.9f + drand48() * 0.2f;
+    ta->set({i, 0, 0},  cos(r) * z);
+    ta->set({i, 0, 1}, -sin(r) * z);
+    ta->set({i, 1, 0},  sin(r) * z);
+    ta->set({i, 1, 1},  cos(r) * z);
   }
 }
 
