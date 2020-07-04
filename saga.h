@@ -326,6 +326,10 @@ public:
                                             bool downsample,
                                             const std::string &name);
 
+  std::shared_ptr<Node> addResNet(std::shared_ptr<Tensor> input,
+                                  int output_activations,
+                                  bool downsample, const std::string &name);
+
 };
 
 
