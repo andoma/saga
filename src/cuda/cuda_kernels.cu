@@ -275,7 +275,7 @@ atomicMaxFloat(float * addr, float value) {
   return old;
 }
 
-template< typename T > __global__ void
+template< typename T > __global__ static void
 deviceReduceStats(const T *in, float *out, int N)
 {
   float min = INFINITY;
