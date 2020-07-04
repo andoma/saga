@@ -1,3 +1,6 @@
+#include <string>
+
+#include <math.h>
 #include <unistd.h>
 #include <signal.h>
 
@@ -278,6 +281,54 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 
 
 
+static std::shared_ptr<Node>
+resnet(Graph &g, std::shared_ptr<Node> n, int output_classes,
+       int stage2, int stage3, int stage4, int stage5)
+{
+  n = g.addNode("spatialtransform",
+                {{"x", n->y()}},
+                {{"width", 224}, {"height", 224}});
+
+  n = g.addNode("conv", {{"x", n->y()}},
+                {{"size", 7},
+                 {"activations", 64},
+                 {"stride", 2},
+                 {"pad", 3}},
+                "s1-conv");
+  n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "s1-bn");
+  n = g.addNode("relu", {{"x", n->y()}}, {});
+
+  n = g.addNode("maxpool", {{"x", n->y()}},
+                {{"size", 3}, {"stride", 2}, {"pad", 1}});
+
+  printf("n=%p\n", n->y().get());
+  for(int i = 0; i < stage2; i++) {
+    n = g.addResNet(n->y(), 64,  false,
+                    std::string("s2_") + std::to_string(i));
+  }
+
+  for(int i = 0; i < stage3; i++) {
+    n = g.addResNet(n->y(), 128,  i == 0,
+                    std::string("s3_") + std::to_string(i));
+  }
+
+  for(int i = 0; i < stage4; i++) {
+    n = g.addResNet(n->y(), 256,  i == 0,
+                    std::string("s4_") + std::to_string(i));
+  }
+
+  for(int i = 0; i < stage5; i++) {
+    n = g.addResNet(n->y(), 512,  i == 0,
+                    std::string("s5_") + std::to_string(i));
+  }
+
+  n = g.addNode("avgpool", {{"x", n->y()}}, {{"global", true}});
+
+  n = g.addNode("fc", {{"x", n->y()}},
+                {{"outputs", output_classes}, {"bias", true}},
+                "fc3");
+  return n;
+}
 
 
 static std::shared_ptr<Node>
@@ -348,6 +399,10 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
     return vgg19(g, n, false, output_classes);
   } else if(name == "vgg19+bn") {
     return vgg19(g, n, true, output_classes);
+  } else if(name == "resnet-18") {
+    return resnet(g, n, output_classes, 2, 2, 2, 2);
+  } else if(name == "resnet-34") {
+    return resnet(g, n, output_classes, 3, 4, 6, 3);
   } else if(name == "resnet-50") {
     return resnet50(g, n, output_classes);
   } else {
