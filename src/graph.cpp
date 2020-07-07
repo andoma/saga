@@ -294,7 +294,6 @@ Graph::addResNet(std::shared_ptr<Tensor> input,
                  {"stride", 1},
                  {"pad", 1}}, name + "-conv-2");
   a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-2");
-  a = addNode("relu", {{"x", a->y()}}, {});
 
   bool need_projection = a->y()->dims_ != input->dims_;
 
