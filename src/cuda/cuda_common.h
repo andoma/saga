@@ -317,8 +317,6 @@ void CudaRegisterOpFactory(const char *name,
   }
 
 
-typedef std::vector<std::shared_ptr<Node>> Nodes;
-
 enum CudaTransformType {
   CUDA_TRANSFORM_ALL,
   CUDA_TRANSFORM_TRAINING,

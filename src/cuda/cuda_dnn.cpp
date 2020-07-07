@@ -1299,11 +1299,10 @@ convert_fuse_nodes(CudaProgram &p,
   return nn;
 }
 
-static std::vector<std::shared_ptr<Node>>
-convert_transform(CudaProgram &p,
-                  const std::vector<std::shared_ptr<Node>> &nodes)
+static Nodes
+convert_transform(CudaProgram &p, const Nodes &nodes)
 {
-  std::vector<std::shared_ptr<Node>> r;
+  Nodes r;
   const ssize_t num_nodes = nodes.size();
 
   for(ssize_t i = 0; i < num_nodes; i++) {
@@ -1604,11 +1603,10 @@ REGISTER_CUDA_OP("dropout", dropout_setup);
 
 
 
-static std::vector<std::shared_ptr<Node>>
-dropout_transform(CudaProgram &p,
-                  const std::vector<std::shared_ptr<Node>> &nodes)
+static Nodes
+dropout_transform(CudaProgram &p, const Nodes &nodes)
 {
-  std::vector<std::shared_ptr<Node>> r;
+  Nodes r;
 
   for(size_t i = 0; i < nodes.size(); i++) {
     auto &n = nodes[i];
@@ -2324,11 +2322,10 @@ batchnorm_persistent_transform_node(CudaProgram &p,
 
 
 
-static std::vector<std::shared_ptr<Node>>
-batchnorm_relu_transform(CudaProgram &p,
-                         const std::vector<std::shared_ptr<Node>> &nodes)
+static Nodes
+batchnorm_relu_transform(CudaProgram &p, const Nodes &nodes)
 {
-  std::vector<std::shared_ptr<Node>> r;
+  Nodes r;
   const ssize_t num_nodes = nodes.size();
 
   for(ssize_t i = 0; i < num_nodes; i++) {
@@ -2469,11 +2466,10 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
 REGISTER_CUDA_OP("spatialtransform", spatialtransform_setup);
 
 
-static std::vector<std::shared_ptr<Node>>
-spatialtransform_transform(CudaProgram &p,
-                           const std::vector<std::shared_ptr<Node>> &nodes)
+static Nodes
+spatialtransform_transform(CudaProgram &p, const Nodes &nodes)
 {
-  std::vector<std::shared_ptr<Node>> r;
+  Nodes r;
 
   for(size_t i = 0; i < nodes.size(); i++) {
     auto &n = nodes[i];
@@ -2533,11 +2529,10 @@ reshape_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 
 
 
-static std::vector<std::shared_ptr<Node>>
-reshape_transform(CudaProgram &p,
-                  const std::vector<std::shared_ptr<Node>> &nodes)
+static Nodes
+reshape_transform(CudaProgram &p, const Nodes &nodes)
 {
-  std::vector<std::shared_ptr<Node>> r;
+  Nodes r;
 
   for(size_t i = 0; i < nodes.size(); i++) {
     auto &n = nodes[i];
@@ -2580,11 +2575,10 @@ concat_transform_node(CudaProgram &p, const Node &n)
 
 
 
-static std::vector<std::shared_ptr<Node>>
-concat_transform(CudaProgram &p,
-                 const std::vector<std::shared_ptr<Node>> &nodes)
+static Nodes
+concat_transform(CudaProgram &p, const Nodes &nodes)
 {
-  std::vector<std::shared_ptr<Node>> r;
+  Nodes r;
 
   for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
     auto &n = nodes[i];

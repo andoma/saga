@@ -264,6 +264,16 @@ public:
 };
 
 
+class Nodes : public std::vector<std::shared_ptr<Node>> {
+
+public:
+  using std::vector<std::shared_ptr<Node>>::vector;
+
+  iterator findSingleDownStreamNode(std::shared_ptr<Node> n,
+                                    std::shared_ptr<Tensor> t);
+};
+
+
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
@@ -275,7 +285,7 @@ typedef std::unordered_map<std::shared_ptr<Tensor>,
 
 class Graph {
 public:
-  std::vector<std::shared_ptr<Node>> nodes_;
+  Nodes nodes_;
   std::unordered_set<std::shared_ptr<Tensor>> inputs_;
   std::unordered_set<std::shared_ptr<Tensor>> outputs_;
   Tensors tensors_;

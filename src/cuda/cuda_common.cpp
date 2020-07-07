@@ -619,16 +619,16 @@ CudaRegisterTransform(CudaTransformType type,
 }
 
 
-static std::vector<std::shared_ptr<Node>>
-applyTransforms(CudaTransformType type,
-                CudaProgram &p, std::vector<std::shared_ptr<Node>> nodes)
+static Nodes
+applyTransforms(CudaTransformType type, CudaProgram &p, const Nodes &nodes)
 {
+  auto copy = nodes;
   for(auto const &cnt : *transforms) {
     if(type != cnt.type)
       continue;
-    nodes = cnt.op(p, nodes);
+    copy = cnt.op(p, copy);
   }
-  return nodes;
+  return copy;
 }
 
 static void
@@ -697,11 +697,10 @@ print_nodes(CudaProgram &p,
  * dx.beta = 1 means that before writing a value the node will read
  * the current value and sum them together.
  */
-static std::vector<std::shared_ptr<Node>>
-compute_dx_beta(CudaProgram &p,
-                const std::vector<std::shared_ptr<Node>> &nodes)
+static Nodes
+compute_dx_beta(CudaProgram &p, const Nodes &nodes)
 {
-  std::vector<std::shared_ptr<Node>> r;
+  Nodes r;
   std::unordered_set<std::shared_ptr<Tensor>> xset;
 
   for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
