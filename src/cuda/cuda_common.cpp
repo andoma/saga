@@ -333,7 +333,7 @@ CudaProgram::progress(const char *what, long i, long batches,
   }
 
   if(isfinite(mp_scaling)) {
-    printf(" | MPScale: %e", mp_scaling);
+    printf(" | MPS: %1.1e", mp_scaling);
   }
 
   printf("\r");
