@@ -414,15 +414,17 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
 
 
 static void
-fill_theta(Tensor *t, int batch_size)
+fill_theta(Tensor *t, int batch_size, int augmentation_angle,
+           int augmentation_zoom)
 {
+
+  float rs = augmentation_angle * M_PI * 2 / 360;
+  float zs = augmentation_zoom * 0.01;
+
   auto ta = t->access();
   for(int i = 0; i < batch_size; i++) {
-
-    // Rotate ± 0.5rad (± 28deg) and ±0.1x zoom
-
-    const float r = drand48() - 0.5;
-    const float z = 0.9f + drand48() * 0.2f;
+    const float r = (-1 + drand48() * 2) * rs;
+    const float z = (-1 + drand48() * 2) * zs + 1.0f;
     ta->set({i, 0, 0},  cos(r) * z);
     ta->set({i, 0, 1}, -sin(r) * z);
     ta->set({i, 1, 0},  sin(r) * z);
@@ -451,13 +453,17 @@ test_classifier(int argc, char **argv,
   float learning_rate = 3e-4;
   std::string mode = "lecun";
   int verbose = 0;
-  bool augmentation = false;
   auto dt = Tensor::DataType::FLOAT;
   auto tensor_layout = TensorLayout::Auto;
   const char *savepath = NULL;
   const char *loadpath = NULL;
 
-  while((opt = getopt(argc, argv, "ns:l:b:hm:r:vacC")) != -1) {
+  int augmentation_angle = 0;
+  int augmentation_zoom = 0;
+
+  std::shared_ptr<std::vector<std::shared_ptr<Tensor>>> stats;
+
+  while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCS")) != -1) {
     switch(opt) {
     case 's':
       savepath = optarg;
@@ -481,7 +487,10 @@ test_classifier(int argc, char **argv,
       verbose++;
       break;
     case 'a':
-      augmentation = true;
+      augmentation_angle = atoi(optarg);
+      break;
+    case 'z':
+      augmentation_zoom = atoi(optarg);
       break;
     case 'c':
       tensor_layout = TensorLayout::NHWC;
@@ -513,7 +522,7 @@ test_classifier(int argc, char **argv,
 
   auto n = g.addConvert(x, dt, 1.0f / input_range);
 
-  if(augmentation) {
+  if(augmentation_angle || augmentation_zoom) {
     theta = makeCPUTensor(Tensor::DataType::FLOAT,
                           Dims({batch_size, 2, 3}), "theta");
     n = g.addSpatialTransform(n->y(), theta);
@@ -615,7 +624,8 @@ test_classifier(int argc, char **argv,
   int epoch = 0;
   while(g_run) {
     if(theta)
-      fill_theta(theta.get(), batch_size);
+      fill_theta(theta.get(), batch_size, augmentation_angle,
+                 augmentation_zoom);
 
     // Train
     epoch_begin(batch_size, false);
