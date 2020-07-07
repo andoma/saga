@@ -11,6 +11,8 @@ using namespace saga;
 
 static int g_run = 1;
 
+typedef std::vector<std::shared_ptr<Tensor>> Stats;
+
 static void
 stop(int x)
 {
@@ -279,11 +281,21 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 }
 
 
+static void
+statsgrad(Graph &g, std::shared_ptr<Tensor> src, Stats *out)
+{
+  if(!out)
+    return;
+  auto s = g.addNode("stats", {{"x", src}}, {{"gradient", true}});
+  out->push_back(s->y());
+}
+
 
 
 static std::shared_ptr<Node>
 resnet(Graph &g, std::shared_ptr<Node> n, int output_classes,
-       int stage2, int stage3, int stage4, int stage5)
+       int stage2, int stage3, int stage4, int stage5,
+       Stats *stats)
 {
   n = g.addNode("spatialtransform",
                 {{"x", n->y()}},
@@ -301,21 +313,28 @@ resnet(Graph &g, std::shared_ptr<Node> n, int output_classes,
   n = g.addNode("maxpool", {{"x", n->y()}},
                 {{"size", 3}, {"stride", 2}, {"pad", 1}});
 
-  printf("n=%p\n", n->y().get());
+  statsgrad(g, n->y(), stats);
+
   for(int i = 0; i < stage2; i++) {
     n = g.addResNet(n->y(), 64,  false,
                     std::string("s2_") + std::to_string(i));
   }
+
+  statsgrad(g, n->y(), stats);
 
   for(int i = 0; i < stage3; i++) {
     n = g.addResNet(n->y(), 128,  i == 0,
                     std::string("s3_") + std::to_string(i));
   }
 
+  statsgrad(g, n->y(), stats);
+
   for(int i = 0; i < stage4; i++) {
     n = g.addResNet(n->y(), 256,  i == 0,
                     std::string("s4_") + std::to_string(i));
   }
+
+  statsgrad(g, n->y(), stats);
 
   for(int i = 0; i < stage5; i++) {
     n = g.addResNet(n->y(), 512,  i == 0,
@@ -332,7 +351,8 @@ resnet(Graph &g, std::shared_ptr<Node> n, int output_classes,
 
 
 static std::shared_ptr<Node>
-resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes)
+resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes,
+         Stats *stats)
 {
   n = g.addNode("spatialtransform",
                 {{"x", n->y()}},
@@ -350,14 +370,20 @@ resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes)
   n = g.addNode("maxpool", {{"x", n->y()}},
                 {{"size", 3}, {"stride", 2}, {"pad", 1}});
 
+  statsgrad(g, n->y(), stats);
+
   n = g.addResNetBottleNeck(n->y(), 64, 256,   false, "s2_1");
   n = g.addResNetBottleNeck(n->y(), 64, 256,   false, "s2_2");
   n = g.addResNetBottleNeck(n->y(), 64, 256,   false, "s2_3");
+
+  statsgrad(g, n->y(), stats);
 
   n = g.addResNetBottleNeck(n->y(), 128, 512,  true,  "s3_1");
   n = g.addResNetBottleNeck(n->y(), 128, 512,  false, "s3_2");
   n = g.addResNetBottleNeck(n->y(), 128, 512,  false, "s3_3");
   n = g.addResNetBottleNeck(n->y(), 128, 512,  false, "s3_4");
+
+  statsgrad(g, n->y(), stats);
 
   n = g.addResNetBottleNeck(n->y(), 256, 1024, true,  "s4_1");
   n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_2");
@@ -365,6 +391,8 @@ resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes)
   n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_4");
   n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_5");
   n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_6");
+
+  statsgrad(g, n->y(), stats);
 
   n = g.addResNetBottleNeck(n->y(), 512, 2048, true,  "s5_1");
   n = g.addResNetBottleNeck(n->y(), 512, 2048, false, "s5_2");
@@ -381,7 +409,7 @@ resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes)
 
 static std::shared_ptr<Node>
 make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
-             int output_classes)
+             int output_classes, Stats *stats)
 {
   if(name == "lecun") {
     return lecun(g, n, output_classes);
@@ -400,11 +428,11 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
   } else if(name == "vgg19+bn") {
     return vgg19(g, n, true, output_classes);
   } else if(name == "resnet-18") {
-    return resnet(g, n, output_classes, 2, 2, 2, 2);
+    return resnet(g, n, output_classes, 2, 2, 2, 2, stats);
   } else if(name == "resnet-34") {
-    return resnet(g, n, output_classes, 3, 4, 6, 3);
+    return resnet(g, n, output_classes, 3, 4, 6, 3, stats);
   } else if(name == "resnet-50") {
-    return resnet50(g, n, output_classes);
+    return resnet50(g, n, output_classes, stats);
   } else {
     return nullptr;
   }
@@ -498,6 +526,9 @@ test_classifier(int argc, char **argv,
     case 'C':
       tensor_layout = TensorLayout::NCHW;
       break;
+    case 'S':
+      stats = std::make_shared<Stats>();
+      break;
     }
   }
 
@@ -530,7 +561,7 @@ test_classifier(int argc, char **argv,
 
   auto postconv = n->y();
 
-  n = make_network(g, n, mode, output_labels);
+  n = make_network(g, n, mode, output_labels, stats.get());
   if(!n) {
     fprintf(stderr, "Network type %s not available\n", mode.c_str());
     exit(1);
@@ -601,6 +632,29 @@ test_classifier(int argc, char **argv,
         }
       }
    });
+
+  if(stats) {
+    for(size_t i = 0; i < stats->size(); i++) {
+      std::shared_ptr<Tensor> s = (*stats)[i];
+      bta.push_back({
+          .phase  = Phase::POST,
+          .which  = Which::VALUE,
+          .mode   = Mode::TRAIN,
+      .tensor = s,
+      .fn     = [=](TensorAccess &ta, long batch) {
+            if(batch == 0) {
+              printf("%s%zu: min:% e max:% e mean:% e stddev:% e\n",
+                     i  == 0 ? "\n" : "",
+                     i,
+                     ta.get({0}),
+                     ta.get({1}),
+                     ta.get({2}),
+                     ta.get({3}));
+            }
+          }
+        });
+    }
+  }
 
   auto ctx = createContext();
 
