@@ -269,8 +269,8 @@ class Nodes : public std::vector<std::shared_ptr<Node>> {
 public:
   using std::vector<std::shared_ptr<Node>>::vector;
 
-  iterator findSingleDownStreamNode(std::shared_ptr<Node> n,
-                                    std::shared_ptr<Tensor> t);
+  iterator findSingleDownStreamNode(std::shared_ptr<Tensor> t,
+                                    const std::string &type);
 };
 
 

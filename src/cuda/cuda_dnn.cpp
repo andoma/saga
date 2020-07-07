@@ -1286,9 +1286,6 @@ convert_fuse_nodes(CudaProgram &p,
                    std::shared_ptr<Node> a,
                    std::shared_ptr<Node> b)
 {
-  if(b->inputs_.get("x") != a->outputs_.get("y"))
-    return nullptr;
-
   float scale =
     a->attributes_.get("scale", 1.0f) * b->attributes_.get("scale", 1.0f);
 
@@ -1300,26 +1297,25 @@ convert_fuse_nodes(CudaProgram &p,
 }
 
 static Nodes
-convert_transform(CudaProgram &p, const Nodes &nodes)
+convert_transform(CudaProgram &p, const Nodes &input)
 {
-  Nodes r;
-  const ssize_t num_nodes = nodes.size();
+  Nodes nodes = input;
 
-  for(ssize_t i = 0; i < num_nodes; i++) {
-    std::shared_ptr<Node> n = nodes[i];
+ again:
 
-    if(i < num_nodes - 1 &&
-       nodes[i + 0]->type_ == "convert" &&
-       nodes[i + 1]->type_ == "convert") {
-      auto n2 = convert_fuse_nodes(p, nodes[i], nodes[i + 1]);
-      if(n2) {
-        i++;
-        n = n2;
-      }
+  for(auto &n : nodes) {
+    if(n->type_ != "convert")
+      continue;
+
+    auto it = nodes.findSingleDownStreamNode(n->y(), "convert");
+    if(it != nodes.end()) {
+      auto b = *it;
+      n = convert_fuse_nodes(p, n, *it);
+      nodes.erase(it);
+      goto again;
     }
-    r.push_back(n);
   }
-  return r;
+  return nodes;
 }
 
 

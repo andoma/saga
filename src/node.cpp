@@ -574,4 +574,33 @@ Node::y()
 {
   return outputs_.get("y");
 }
+
+
+
+Nodes::iterator
+Nodes::findSingleDownStreamNode(std::shared_ptr<Tensor> t,
+                                const std::string &type)
+{
+  Nodes::iterator it = end();
+
+  for(auto jt = begin(); jt != end(); jt++) {
+    const auto &n = *jt;
+    if(n->type_ != type)
+      continue;
+    for(const auto &s : n->inputs_) {
+      if(s.second == t) {
+        if(it == end()) {
+          it = jt;
+        } else {
+          // Multiple
+          return end();
+        }
+      }
+    }
+  }
+  return it;
+}
+
+
+
 }
