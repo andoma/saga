@@ -905,4 +905,69 @@ CudaContext::print()
   printf("  Total memory: %zd kbyte\n", memtotal / 1024);
 }
 
+bool
+CudaProgram::dumpGraphFromOps(const char *path, const CudaOps &ops)
+{
+  FILE *fp = fopen(path, "w");
+  if(fp == NULL) {
+    perror("fopen");
+    return false;
+  }
+
+  std::unordered_set<std::shared_ptr<CudaTensorStorage>> storage;
+
+  fprintf(fp, "digraph CudaOps {\n");
+
+
+  int i = 0;
+  for(auto &op : ops) {
+
+    fprintf(fp, "node [shape=circle,label=\"%s\"]; O%d;\n",
+            op->name().c_str(), i);
+    i++;
+
+    for(auto const &t : op->getInputs()) {
+      storage.insert(t->storage_);
+    }
+    for(auto const &t : op->getOutputs()) {
+      storage.insert(t->storage_);
+    }
+  }
+
+
+  for(auto const &s : storage) {
+    int id = s->id_;
+    fprintf(fp, "node [shape=box,label=\"T%d\"]; T%d;\n",
+            id, id);
+  }
+  fprintf(fp, "\n");
+
+
+  i = 0;
+  for(auto &op : ops) {
+
+    for(auto const &t : op->getInputs()) {
+      fprintf(fp, "T%d->O%d;\n", t->storage_->id_, i);
+
+    }
+    for(auto const &t : op->getOutputs()) {
+      fprintf(fp, "O%d->T%d;\n", i, t->storage_->id_);
+    }
+    i++;
+  }
+
+  fprintf(fp, "overlap=false\n");
+
+  fprintf(fp, "}\n");
+  fclose(fp);
+  return true;
+}
+
+
+bool
+CudaProgram::dumpGraph(const char *path)
+{
+  return dumpGraphFromOps(path, train_operations_);
+}
+
 }

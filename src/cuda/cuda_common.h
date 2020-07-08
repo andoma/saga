@@ -264,6 +264,11 @@ public:
   void progressDone();
 
 
+  bool dumpGraphFromOps(const char *path, const CudaOps &ops);
+
+  bool dumpGraph(const char *path) override;
+
+
 };
 
 
