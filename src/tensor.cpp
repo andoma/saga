@@ -274,13 +274,7 @@ Tensor::info() const
   if(name_) {
     ss << "\"" << *name_ << "\"";
   }
-  ss << "<" << datatype_str(data_type_) << ">";
-  const char *prefix = "[";
-  for(const auto &x : dims_) {
-    ss << prefix << x;
-    prefix = ", ";
-  }
-  ss << "]";
+  ss << "<" << datatype_str(data_type_) << ">" << dims_.to_string();
   return ss.str();
 }
 
