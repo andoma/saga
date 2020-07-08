@@ -485,14 +485,19 @@ test_classifier(int argc, char **argv,
   auto tensor_layout = TensorLayout::Auto;
   const char *savepath = NULL;
   const char *loadpath = NULL;
+  bool no_train = false;
 
   int augmentation_angle = 0;
   int augmentation_zoom = 0;
+  const char *graphdump = NULL;
 
   std::shared_ptr<std::vector<std::shared_ptr<Tensor>>> stats;
 
-  while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCS")) != -1) {
+  while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:")) != -1) {
     switch(opt) {
+    case 'n':
+      no_train = true;
+      break;
     case 's':
       savepath = optarg;
       break;
@@ -528,6 +533,9 @@ test_classifier(int argc, char **argv,
       break;
     case 'S':
       stats = std::make_shared<Stats>();
+      break;
+    case 'G':
+      graphdump = optarg;
       break;
     }
   }
@@ -676,17 +684,27 @@ test_classifier(int argc, char **argv,
   theta = p->resolveTensor(theta);
   postconv = p->resolveTensor(postconv);
   int epoch = 0;
-  while(g_run) {
-    if(theta)
-      fill_theta(theta.get(), batch_size, augmentation_angle,
-                 augmentation_zoom);
 
-    // Train
-    epoch_begin(batch_size, false);
+  if(graphdump) {
+    p->dumpGraph(graphdump);
+    exit(0);
+  }
+
+  while(g_run) {
+
     const int64_t t0 = get_ts();
-    loss_sum = 0;
-    if(p->train(train_inputs / batch_size) != ExecResult::OK)
-      break;
+
+    if(!no_train) {
+      if(theta)
+        fill_theta(theta.get(), batch_size, augmentation_angle,
+                   augmentation_zoom);
+
+      // Train
+      epoch_begin(batch_size, false);
+      loss_sum = 0;
+      if(p->train(train_inputs / batch_size) != ExecResult::OK)
+        break;
+    }
 
     // Test
     epoch_begin(batch_size, true);
