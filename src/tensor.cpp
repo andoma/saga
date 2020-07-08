@@ -74,6 +74,41 @@ Dims::elements() const
 }
 
 
+std::string
+Dims::to_string() const
+{
+  const char *prefix = "[";
+  std::stringstream ss;
+  for(const auto &d : *this) {
+    ss << prefix << d;
+    prefix = ", ";
+  }
+  ss << "]";
+  return ss.str();
+}
+
+
+bool
+Dims::similar(const Dims &o) const
+{
+  size_t oskip = 0;
+  while(oskip < o.size() && o[oskip] == 1)
+    oskip++;
+
+  size_t tskip = 0;
+  while(tskip < size() && (*this)[tskip] == 1)
+    tskip++;
+
+
+  if(size() - tskip != o.size() - oskip)
+    return false;
+
+  for(size_t i = 0; i < std::min(size() - tskip, o.size() - oskip); i++) {
+    if(o[oskip + i] != (*this)[tskip + i])
+      return false;
+  }
+  return true;
+}
 //------------------------------------------------------------------------
 
 static double

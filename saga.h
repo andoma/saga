@@ -83,6 +83,8 @@ public:
   Dims n(int64_t v) const;
   std::vector<int64_t> i64() const;
   size_t elements() const;
+  std::string to_string() const;
+  bool similar(const Dims &) const;
 };
 
 
