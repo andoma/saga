@@ -931,8 +931,26 @@ Tensor::find(Tensor::DataType data_type,
     auto it = named_tensors.find(*name);
     if(it != named_tensors.end()) {
       auto t = it->second;
-      assert(t->data_type_ == data_type);
-      assert(t->dims_ == size);
+
+      if(t->data_type_ != data_type) {
+        fprintf(stderr,
+                "Pre-initialized tensor %s datatype mismatch: "
+                "Loaded:%s != Requested:%s\n",
+                (*name).c_str(),
+                Tensor::DataTypeStr(t->data_type_),
+                Tensor::DataTypeStr(data_type));
+        exit(1);
+      }
+
+      if(!t->dims_.similar(size)) {
+        fprintf(stderr,
+                "Pre-initialized tensor %s dimensions mismatch: "
+                "Loaded:%s != Requested:%s\n",
+                (*name).c_str(),
+                t->dims_.to_string().c_str(),
+                size.to_string().c_str());
+        exit(1);
+      }
       return t;
     }
   }
