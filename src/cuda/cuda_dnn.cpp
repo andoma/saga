@@ -2082,7 +2082,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
   }
 
   std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override {
-    return {y_, sm_, sv_};
+    return {y_, sm_, sv_, m_, v_};
   }
 };
 
