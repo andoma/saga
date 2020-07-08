@@ -1146,6 +1146,9 @@ fc_setup(CudaProgram &p, const Node &n, bool training)
 
   p.fwd(fwd);
 
+  if(b)
+    p.fwd(std::make_shared<CudnnAddTensor>(b, y));
+
   if(!transW) {
     // Fix this
     return "fully connected with !transW not suppored";
