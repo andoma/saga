@@ -721,7 +721,7 @@ test_classifier(int argc, char **argv,
            (t1 - t0) / 1e6,
            (t2 - t1) / 1e6,
            loss_sum / train_inputs);
-    if(!g_run)
+    if(!g_run || percentage > 99)
       break;
   }
 
