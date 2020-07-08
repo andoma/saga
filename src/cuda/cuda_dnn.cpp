@@ -2440,18 +2440,32 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
   auto y = p.lower_tensor_batch(n.outputs_.get("y"));
 
-  bool bypass = !training && !n.attributes_.get("inference", false) &&
-    x->dims_ == y->dims_;
+  const bool disable =  !training && !n.attributes_.get("inference", false);
+  const bool bypass = disable && x->dims_ == y->dims_;
 
   if(bypass) {
     p.infer(std::make_shared<CudnnTransform>(x, y, 0.0f));
     return NULL;
   }
 
-  auto theta = p.lower_tensor_batch(n.inputs_.get("theta"));
-  if(!theta) {
-    return "theta tensor missing";
+  std::shared_ptr<CudaTensor> theta;
+
+  if(disable) {
+    auto th = makeCPUTensor(Tensor::DataType::FLOAT,
+                            Dims({1, 2, 3}), "theta.identity");
+    auto ta = th->access();
+    ta->set({0, 0, 0}, 1);
+    ta->set({0, 1, 1}, 1);
+
+    theta = p.lower_tensor_batch(th);
+
+  } else {
+    theta = p.lower_tensor_batch(n.inputs_.get("theta"));
+    if(!theta) {
+      return "theta tensor missing";
+    }
   }
+
   auto op = std::make_shared<CudnnSpatialTransformFwd>(p.ctx_, x, theta, y);
 
   if(training) {
