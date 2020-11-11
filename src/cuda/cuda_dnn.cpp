@@ -359,16 +359,28 @@ struct CudnnConvolutionDesc {
     if(s)
       return cudnnGetErrorString(s);
 
-    s = cudnnGetConvolutionForwardAlgorithm(p.ctx_->cudnn_,
-                                            x.desc_,
-                                            filter_desc_,
-                                            conv_desc_,
-                                            y.desc_,
-                                            CUDNN_CONVOLUTION_FWD_PREFER_FASTEST,
-                                            0,
-                                            &conv_fwd_algo_);
+    int count;
+    s = cudnnGetConvolutionForwardAlgorithmMaxCount(p.ctx_->cudnn_,
+                                                    &count);
     if(s)
       return cudnnGetErrorString(s);
+
+    cudnnConvolutionFwdAlgoPerf_t fwdalgos[count];
+
+    s = cudnnGetConvolutionForwardAlgorithm_v7(p.ctx_->cudnn_,
+                                               x.desc_,
+                                               filter_desc_,
+                                               conv_desc_,
+                                               y.desc_,
+                                               count, &count,
+                                               fwdalgos);
+    if(s)
+      return cudnnGetErrorString(s);
+
+    if(count == 0)
+      return "No forwarding algo found";
+
+    conv_fwd_algo_ = fwdalgos[0].algo;
 
     size_t workspace;
     s = cudnnGetConvolutionForwardWorkspaceSize(p.ctx_->cudnn_,
@@ -386,17 +398,28 @@ struct CudnnConvolutionDesc {
     if(!bwd)
       return NULL;
 
-
-    s = cudnnGetConvolutionBackwardDataAlgorithm(p.ctx_->cudnn_,
-                                                 filter_desc_,
-                                                 y.desc(),
-                                                 conv_desc_,
-                                                 x.desc(),
-                                                 CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST,
-                                                 0,
-                                                 &bwd_data_algo_);
+    s = cudnnGetConvolutionBackwardDataAlgorithmMaxCount(p.ctx_->cudnn_,
+                                                         &count);
     if(s)
       return cudnnGetErrorString(s);
+
+    cudnnConvolutionBwdDataAlgoPerf_t bwdalgos[count];
+
+    s = cudnnGetConvolutionBackwardDataAlgorithm_v7(p.ctx_->cudnn_,
+                                                    filter_desc_,
+                                                    y.desc(),
+                                                    conv_desc_,
+                                                    x.desc(),
+                                                    count, &count,
+                                                    bwdalgos);
+    if(s)
+      return cudnnGetErrorString(s);
+
+    if(count == 0)
+      return "No backward data algo found";
+
+    bwd_data_algo_ = bwdalgos[0].algo;
+
 
     s = cudnnGetConvolutionBackwardDataWorkspaceSize(p.ctx_->cudnn_,
                                                      filter_desc_,
@@ -410,16 +433,27 @@ struct CudnnConvolutionDesc {
 
     p.ctx_->workspace_.request(workspace);
 
-    s = cudnnGetConvolutionBackwardFilterAlgorithm(p.ctx_->cudnn_,
-                                                   x.desc(),
-                                                   y.desc(),
-                                                   conv_desc_,
-                                                   filter_desc_,
-                                                   CUDNN_CONVOLUTION_BWD_FILTER_PREFER_FASTEST,
-                                                   0,
-                                                   &bwd_filter_algo_);
+    s = cudnnGetConvolutionBackwardFilterAlgorithmMaxCount(p.ctx_->cudnn_,
+                                                           &count);
     if(s)
       return cudnnGetErrorString(s);
+
+    cudnnConvolutionBwdFilterAlgoPerf_t filteralgos[count];
+
+    s = cudnnGetConvolutionBackwardFilterAlgorithm_v7(p.ctx_->cudnn_,
+                                                      x.desc(),
+                                                      y.desc(),
+                                                      conv_desc_,
+                                                      filter_desc_,
+                                                      count, &count,
+                                                      filteralgos);
+    if(s)
+      return cudnnGetErrorString(s);
+
+    if(count == 0)
+      return "No backward filter algo found";
+
+    bwd_filter_algo_ = filteralgos[0].algo;
 
     s = cudnnGetConvolutionBackwardFilterWorkspaceSize(p.ctx_->cudnn_,
                                                        x.desc(),
