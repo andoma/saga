@@ -16,6 +16,6 @@ typedef uint16_t fp16;
 
 #define fp16_read(p) _cvtsh_ss(*(p))
 
-#define fp16_write(p, v) *(p) = _cvtss_sh(v)
+#define fp16_write(p, v) *(p) = _cvtss_sh((float)v, 0)
 
 #endif
