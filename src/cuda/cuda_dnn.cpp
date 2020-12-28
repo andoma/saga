@@ -25,7 +25,6 @@
  */
 
 #include <sstream>
-#include <x86intrin.h>
 #include "saga.h"
 #include "tensor.h"
 #include "context.h"
@@ -89,12 +88,12 @@ struct CudnnAdam : public CudaOperation {
       bytes_ = weights_->elements_ * 3 * sizeof(float);
       chkCuda(cudaMallocManaged(&temp_, bytes_, cudaMemAttachGlobal));
       {
-        const uint16_t *src = (const uint16_t *)weights->deviceMem();
+        const __half *src = (const __half *)weights->deviceMem();
         float *dst = temp_;
         for(int i = 0; i < weights->elements_; i++) {
           *dst++ = 0;
           *dst++ = 0;
-          *dst++ = _cvtsh_ss(*src++);
+          *dst++ = *src++;
         }
       }
       break;

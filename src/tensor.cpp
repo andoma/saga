@@ -35,12 +35,12 @@
 #include <sstream>
 
 #include <inttypes.h>
-#include <x86intrin.h>
 #include <math.h>
 
 
 #include "saga.h"
 #include "tensor.h"
+#include "fp16.h"
 
 #include "turbo_colormap.h"
 
@@ -120,7 +120,7 @@ get_float(const void *base, size_t offset)
 static double
 get_half(const void *base, size_t offset)
 {
-  return _cvtsh_ss(((const uint16_t *)base)[offset]);
+  return fp16_read((const fp16 *)base + offset);
 }
 
 static double
@@ -150,7 +150,7 @@ set_float(void *base, size_t offset, double v)
 static void
 set_half(void *base, size_t offset, double v)
 {
-  ((uint16_t *)base)[offset] = _cvtss_sh((float)v, 0);
+  fp16_write((fp16 *)base + offset, v);
 }
 
 static void
@@ -640,7 +640,7 @@ copy_tensor_T(T *dst, TensorAccess *ta, Dims &selem, int rank, const DimInfo *di
 
 
 static void
-copy_tensor_half(uint16_t *dst, TensorAccess *ta, Dims &selem, int rank, const DimInfo *di)
+copy_tensor_half(fp16 *dst, TensorAccess *ta, Dims &selem, int rank, const DimInfo *di)
 {
   const int n          = di->size;
   const int dst_stride = di->dst_stride;
@@ -650,7 +650,7 @@ copy_tensor_half(uint16_t *dst, TensorAccess *ta, Dims &selem, int rank, const D
     assert(dst_stride == 1);
     for(int i = 0; i < n; i++) {
       selem[src_dim] = i;
-      dst[i] = _cvtss_sh((float)ta->get(selem), 0);
+      fp16_write(dst + i, ta->get(selem));
     }
     return;
   }
@@ -753,7 +753,7 @@ copy_tensor(void *dst,
     copy_tensor_T((uint8_t *)dst, ta, selem, dis.size(), &dis[0]);
     break;
   case Tensor::DataType::HALF:
-    copy_tensor_half((uint16_t *)dst, ta, selem, dis.size(), &dis[0]);
+    copy_tensor_half((fp16 *)dst, ta, selem, dis.size(), &dis[0]);
     break;
   case Tensor::DataType::FLOAT:
     copy_tensor_T((float *)dst, ta, selem, dis.size(), &dis[0]);
