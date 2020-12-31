@@ -7,8 +7,9 @@
 
 #include <cudnn.h>
 #include <cublas_v2.h>
+#ifdef HAVE_NVIDIA_ML
 #include <nvml.h>
-
+#endif
 
 #define chkCUDNN(expression) {                                          \
     const cudnnStatus_t cudnn_status__ = (expression);                  \
@@ -115,8 +116,9 @@ public:
   cudaStream_t stream_ = 0;
   cudnnHandle_t cudnn_ = NULL;
   cublasHandle_t cublas_ = NULL;
+#ifdef HAVE_NVIDIA_ML
   nvmlDevice_t nvmldev_ = NULL;
-
+#endif
   int deviceId_;
   std::mutex mutex_;
 

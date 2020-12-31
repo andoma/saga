@@ -40,7 +40,9 @@ namespace saga {
 int
 CudaContext::init()
 {
+#ifdef HAVE_NVIDIA_ML
   nvmlInit();
+#endif
 
   cudaGetDevice(&deviceId_);
 
@@ -67,7 +69,9 @@ CudaContext::init()
   cublasSetStream(cublas_, stream_);
   cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH);
 
+#ifdef HAVE_NVIDIA_ML
   nvmlDeviceGetHandleByPciBusId_v2(pciid, &nvmldev_);
+#endif
   return 0;
 }
 
@@ -326,12 +330,13 @@ CudaProgram::progress(const char *what, long i, long batches,
          (memtotal - memfree) / (1024 * 1024),
          memtotal / (1024 * 1024));
 
+#ifdef HAVE_NVIDIA_ML
   nvmlUtilization_t util = {};
   if(!nvmlDeviceGetUtilizationRates(ctx_->nvmldev_, &util)) {
     printf(" | GpuUse: %3d%% MemUse: %3d%%",
            util.gpu, util.memory);
   }
-
+#endif
   if(isfinite(mp_scaling)) {
     printf(" | MPS: %1.1e", mp_scaling);
   }

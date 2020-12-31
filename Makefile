@@ -4,10 +4,8 @@ PREFIX ?= /usr/local
 
 O ?= build
 
-PROG=saga
-SONAME=libsaga.so.0
-
-CUDA_VERSION ?= 10.2
+PROG=${O}/saga
+SONAME=${O}/libsaga.so.0
 
 PKG_CONFIG ?= pkg-config
 
@@ -41,33 +39,46 @@ LDFLAGS-$(HAVE_DNNL)  += -L${DNNL_PATH}/lib -ldnnl
 ###########################################
 # Cuda
 
-HAVE_CUDA := $(subst 0,yes,$(subst 1,no,$(shell $(PKG_CONFIG) cuda-${CUDA_VERSION} cudart-${CUDA_VERSION}; echo $$?)))
+
+ifeq '$(shell which nvcc >/dev/null; echo $$?)' '0'
+# nvcc is in path (we assume we don't need pkg-config)
+# Ubuntu installs like this
+
+NVCC := nvcc
+LDFLAGS += -lnvidia-ml -lcudnn -lcublas -lnvjpeg -lcuda -lcudart -lpthread
+HAVE_CUDA := yes
+
+${O}/src/cuda/%.o : CPPFLAGS += -DHAVE_NVIDIA_ML
+SRCS-lib += src/cuda/cuda_jpeg.cpp
+
+
+else ifeq '$(shell $(PKG_CONFIG) cuda-10.2 ; echo $$?)' '0'
+HAVE_CUDA := yes
+PKGS += cuda-10.2 cudart-10.2
+NVCC := /usr/local/cuda-10.2/bin/nvcc
+LDFLAGS += -lcudnn -lcublas
+
+endif
+
+
+NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
 
 SRCS-lib-$(HAVE_CUDA) += \
 	src/cuda/cuda_common.cpp \
 	src/cuda/cuda_analysis.cpp \
 	src/cuda/cuda_dnn.cpp \
 	src/cuda/cuda_tensor.cpp \
-	src/cuda/cuda_jpeg.cpp \
 	src/cuda/cuda_kernels.cu \
-
-CPPFLAGS-$(HAVE_CUDA) += $(shell pkg-config --cflags cuda-${CUDA_VERSION} cudart-${CUDA_VERSION})
-LDFLAGS-$(HAVE_CUDA)  += $(shell pkg-config --libs   cuda-${CUDA_VERSION} cudart-${CUDA_VERSION})
-LDFLAGS-$(HAVE_CUDA)  += -lnvidia-ml -lcudnn -lcublas -lnvjpeg -lpthread
-
-NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
-NVCC := /usr/local/cuda-${CUDA_VERSION}/bin/nvcc
 
 
 ###########################################
 # Onnx & Protobuf
 
-HAVE_PROTOBUF := $(subst 0,yes,$(subst 1,no,$(shell $(PKG_CONFIG) protobuf; echo $$?)))
+HAVE_PROTOBUF := $(subst 0,yes,$(shell $(PKG_CONFIG) protobuf; echo $$?))
 
 SRCS-lib-$(HAVE_PROTOBUF) += src/onnx.cpp onnx/onnx.proto3
 
-CPPFLAGS-$(HAVE_PROTOBUF) += $(shell pkg-config --cflags protobuf)
-LDFLAGS-$(HAVE_PROTOBUF)  += $(shell pkg-config --libs protobuf)
+PKGS-$(HAVE_PROTOBUF) += protobuf
 
 ###########################################
 # Program
@@ -90,6 +101,9 @@ SRCS += $(SRCS-lib) $(SRCS-lib-yes)
 
 CPPFLAGS += $(CPPFLAGS-yes)
 LDFLAGS  += $(LDFLAGS-yes)
+
+CPPFLAGS += $(shell ${PKG_CONFIG} --cflags ${PKGS} ${PKGS-yes} 2>/dev/null)
+LDFLAGS  += $(shell ${PKG_CONFIG} --libs   ${PKGS} ${PKGS-yes} 2>/dev/null)
 
 OBJS := ${SRCS:%.cpp=${O}/%.o}
 OBJS := ${OBJS:%.proto3=${O}/%.proto3.o}
