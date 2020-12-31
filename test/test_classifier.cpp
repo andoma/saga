@@ -668,7 +668,7 @@ test_classifier(int argc, char **argv,
 
   auto p = ctx->createProgram(g, {
       .inference = true,
-      .training = true,
+      .training = !no_train,
       .batch_size = batch_size,
       .initial_learning_rate = learning_rate,
       .tensor_layout = tensor_layout,
