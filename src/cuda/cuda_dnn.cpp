@@ -245,7 +245,7 @@ convfwdalgostr(cudnnConvolutionFwdAlgo_t algo)
   case CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM:
     return "ImplicitPrecompGemm";
   case CUDNN_CONVOLUTION_FWD_ALGO_GEMM:
-    return "AlogGem";
+    return "Gemm";
   case CUDNN_CONVOLUTION_FWD_ALGO_DIRECT:
     return "Direct";
   case CUDNN_CONVOLUTION_FWD_ALGO_FFT:
