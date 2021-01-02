@@ -311,7 +311,7 @@ CudaProgram::runOps(const CudaOps &ops, long batch)
 
 void
 CudaProgram::progress(const char *what, long i, long batches,
-                      float mp_scaling)
+                      float mp_scaling, int64_t start_time)
 {
   if(!print_progress_)
     return;
@@ -339,6 +339,11 @@ CudaProgram::progress(const char *what, long i, long batches,
 #endif
   if(isfinite(mp_scaling)) {
     printf(" | MPS: %1.1e", mp_scaling);
+  }
+
+  if(i > 0) {
+    float time_per_batch = (Now() - start_time) / i;
+    printf(" | Bat/s: %3.2f", 1e6 / time_per_batch);
   }
 
   printf("\r");
@@ -378,6 +383,7 @@ CudaProgram::infer(long batches)
   }
 
   cudaStreamSynchronize(ctx_->stream_);
+  int64_t start = Now();
   for(long i = 0; i < batches; i++) {
 
     if(!runOps(infer_operations_, i)) {
@@ -402,7 +408,7 @@ CudaProgram::infer(long batches)
       return ExecResult::STOPPED;
     }
 
-    progress("Test", i, batches, NAN);
+    progress("Test", i, batches, NAN, start);
     cudaStreamSynchronize(ctx_->stream_);
   }
   issueBatchAccessOps(infer_post_, batches - 1);
@@ -434,6 +440,8 @@ CudaProgram::train(long batches)
 
   float current_mp_scaling = NAN;
 
+  int64_t start = Now();
+
   for(long i = 0; i < batches; i++) {
 
     if(!runOps(train_operations_, i)) {
@@ -459,7 +467,7 @@ CudaProgram::train(long batches)
       return ExecResult::STOPPED;
     }
 
-    progress("Train", i, batches, current_mp_scaling);
+    progress("Train", i, batches, current_mp_scaling, start);
     cudaStreamSynchronize(ctx_->stream_);
 
     if(mp_enabled_) {

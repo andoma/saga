@@ -261,7 +261,8 @@ public:
 
   bool runOps(const CudaOps &ops, long batch);
 
-  void progress(const char *what, long i, long batches, float mp_scaling);
+  void progress(const char *what, long i, long batches, float mp_scaling,
+                int64_t start_time);
 
   void progressDone();
 
