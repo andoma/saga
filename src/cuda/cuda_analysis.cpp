@@ -240,7 +240,7 @@ struct LiveAnalysis {
     }
 
     for(const auto &s : exported) {
-      const int id = s->id_;
+      const int id = s->m_id;
       lowest_id = std::min(lowest_id, id);
       highest_id = std::max(highest_id, id);
     }
@@ -257,7 +257,7 @@ struct LiveAnalysis {
     exported_gen_ = (uint32_t *)calloc(ln_words_, sizeof(uint32_t));
 
     for(const auto &s : exported) {
-      const int id = s->id_ - ln_id_base_;
+      const int id = s->m_id - ln_id_base_;
       bitset(exported_gen_, id);
     }
 
@@ -268,19 +268,19 @@ struct LiveAnalysis {
         const int id = t->storage_id() - ln_id_base_;
         bitset(ln->gen_, id);
         memory_usage_[id] = t->memoryUsage();
-        storage_[id] = t->storage_;
+        storage_[id] = t->m_storage;
       }
 
       for(const auto &t : op->getOutputs()) {
         const int id = t->storage_id() - ln_id_base_;
         bitset(ln->def_, id);
         memory_usage_[id] = t->memoryUsage();
-        storage_[id] = t->storage_;
+        storage_[id] = t->m_storage;
 
         // This is a bit of a hack.
         // If writing to an offset in the tensor's storage we assume
         // it's the non-first part of a concat (or similar operation)
-        if(t->offset_)
+        if(t->m_offset)
           bitset(ln->gen_, id);
 
       }

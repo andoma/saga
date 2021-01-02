@@ -235,11 +235,11 @@ Tensor::DataTypeSize(DataType dt)
 
 
 TensorStorage::TensorStorage(Tensor::DataType data_type)
-  : get_(datatype_get(data_type))
-  , set_(datatype_set(data_type))
-  , data_type_(data_type)
-  , element_size_(Tensor::DataTypeSize(data_type))
-  , data_(NULL)
+  : m_get(datatype_get(data_type))
+  , m_set(datatype_set(data_type))
+  , m_data_type(data_type)
+  , m_element_size(Tensor::DataTypeSize(data_type))
+  , m_data(NULL)
 {}
 
 
@@ -993,7 +993,7 @@ public:
     , buffer_size_(size[0] * strides[0] * Tensor::DataTypeSize(data_type))
     , mmaped_(NULL)
   {
-    data_ = calloc(1, buffer_size_);
+    m_data = calloc(1, buffer_size_);
   }
 
   HostTensorStorage(Tensor::DataType data_type, const Dims &size,
@@ -1004,7 +1004,7 @@ public:
     , buffer_size_(buffer_size)
     , mmaped_(mmaped_memory)
   {
-    data_ = data;
+    m_data = data;
   }
 
   ~HostTensorStorage()
@@ -1012,7 +1012,7 @@ public:
     if(mmaped_) {
       munmap(mmaped_, buffer_size_);
     } else {
-      free(data_);
+      free(m_data);
     }
   }
 };
@@ -1058,7 +1058,7 @@ public:
   }
 
   virtual void *getAddr(const Dims &element) {
-    const size_t o = offsetForElement(element) * storage_->element_size_;
+    const size_t o = offsetForElement(element) * storage_->m_element_size;
     char *p = (char *)storage_->data();
     return (void *)(p + o);
   };
@@ -1066,7 +1066,7 @@ public:
   virtual void copyBytesFrom(const Dims &element,
                              const void *data, size_t size)
   {
-    const size_t o = offsetForElement(element) * storage_->element_size_;
+    const size_t o = offsetForElement(element) * storage_->m_element_size;
     char *dst = (char *)storage_->data();
     memcpy(dst + o, data, size);
   }
@@ -1118,7 +1118,7 @@ public:
   CPUTensor(const Dims &size, const Dims &strides,
             std::shared_ptr<TensorStorage> storage, int64_t offset,
             const std::optional<std::string> &name)
-    : Tensor(storage->data_type_, size, name)
+    : Tensor(storage->m_data_type, size, name)
     , strides_(strides)
     , storage_(storage)
     , offset_(offset)

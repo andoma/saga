@@ -46,12 +46,12 @@ public:
 
   virtual void *deviceMem(int64_t offset);
 
-  const std::shared_ptr<CudaContext> ctx_;
-  const size_t size_;
-  const size_t element_size_;
-  const int id_;
+  const std::shared_ptr<CudaContext> m_ctx;
+  const size_t m_size;
+  const size_t m_element_size;
+  const int m_id;
 
-  void *mem_ = nullptr;
+  void *m_mem = nullptr;
 
 };
 
@@ -77,8 +77,8 @@ public:
   int flip();
   void prefetchGPU();
 
-  void *buffers_[2];
-  int index_;
+  void *m_buffers[2];
+  int m_index;
 };
 
 
@@ -135,7 +135,7 @@ public:
   Stats stats() override;
 
   cudnnTensorDescriptor_t desc() const {
-    return desc_;
+    return m_desc;
   }
 
   void *deviceMem() const;
@@ -149,20 +149,20 @@ public:
   void copyFromLocked(Tensor &t, int dst_broadcast_dimension = -1);
 
   int storage_id() const {
-    return storage_->id_;
+    return m_storage->m_id;
   }
 
   std::string shortname() const;
 
   size_t memoryUsage() const {
-    return storage_->size_;
+    return m_storage->m_size;
   }
 
-  const cudnnDataType_t type_;
-  int64_t offset_;
-  std::shared_ptr<CudaTensorStorage> storage_;
-  cudnnTensorDescriptor_t desc_;
-  std::shared_ptr<CudaTensor> grad_;
+  const cudnnDataType_t m_type;
+  int64_t m_offset;
+  std::shared_ptr<CudaTensorStorage> m_storage;
+  cudnnTensorDescriptor_t m_desc;
+  std::shared_ptr<CudaTensor> m_grad;
 };
 
 }

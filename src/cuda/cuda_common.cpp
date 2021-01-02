@@ -132,7 +132,7 @@ CudaProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
   auto it = tensors_.find(src);
   if(it != tensors_.end()) {
     auto t = it->second;
-    exported_storage_.push_back(t->storage_);
+    exported_storage_.push_back(t->m_storage);
     return t;
   }
   return nullptr;
@@ -156,7 +156,7 @@ CudaProgram::resolveTensorGradient_locked(std::shared_ptr<Tensor> src)
   auto it = tensors_.find(src);
   if(it != tensors_.end()) {
     auto t = it->second->makeSharedGrad();
-    exported_storage_.push_back(t->storage_);
+    exported_storage_.push_back(t->m_storage);
     return t;
   }
   return nullptr;
@@ -808,7 +808,7 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
     flips_.push_back(s);
 
     auto t = lower_tensor_batch(src);
-    t->grad_ = g;
+    t->m_grad = g;
     addPrePostOp(g, s, a);
   }
 }
@@ -940,16 +940,16 @@ CudaProgram::dumpGraphFromOps(const char *path, const CudaOps &ops)
     i++;
 
     for(auto const &t : op->getInputs()) {
-      storage.insert(t->storage_);
+      storage.insert(t->m_storage);
     }
     for(auto const &t : op->getOutputs()) {
-      storage.insert(t->storage_);
+      storage.insert(t->m_storage);
     }
   }
 
 
   for(auto const &s : storage) {
-    int id = s->id_;
+    int id = s->m_id;
     fprintf(fp, "node [shape=box,label=\"T%d\"]; T%d;\n",
             id, id);
   }
@@ -960,11 +960,11 @@ CudaProgram::dumpGraphFromOps(const char *path, const CudaOps &ops)
   for(auto &op : ops) {
 
     for(auto const &t : op->getInputs()) {
-      fprintf(fp, "T%d->O%d;\n", t->storage_->id_, i);
+      fprintf(fp, "T%d->O%d;\n", t->m_storage->m_id, i);
 
     }
     for(auto const &t : op->getOutputs()) {
-      fprintf(fp, "O%d->T%d;\n", i, t->storage_->id_);
+      fprintf(fp, "O%d->T%d;\n", i, t->m_storage->m_id);
     }
     i++;
   }

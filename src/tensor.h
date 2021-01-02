@@ -16,23 +16,23 @@ public:
   virtual ~TensorStorage() {};
 
   virtual double get(size_t offset) const {
-    return get_(data_, offset);
+    return m_get(m_data, offset);
   }
 
   virtual void set(size_t offset, double value) {
-    set_(data_, offset, value);
+    m_set(m_data, offset, value);
   }
 
   void *data() const {
-    return data_;
+    return m_data;
   }
 
-  getfn_t *get_;
-  setfn_t *set_;
-  const Tensor::DataType data_type_;
-  const size_t element_size_;
+  getfn_t *m_get;
+  setfn_t *m_set;
+  const Tensor::DataType m_data_type;
+  const size_t m_element_size;
 protected:
-  void *data_ = nullptr;
+  void *m_data = nullptr;
 };
 
 

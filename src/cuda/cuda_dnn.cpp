@@ -336,7 +336,7 @@ struct CudnnConvolutionDesc {
                     bool bwd) {
     cudnnStatus_t s;
     s = cudnnSetFilter4dDescriptor(filter_desc_,
-                                   x.type_,
+                                   x.m_type,
                                    p.tensorFormat(x.data_type_),
                                    w.dims_[0],
                                    w.dims_[1],
@@ -367,10 +367,10 @@ struct CudnnConvolutionDesc {
     cudnnConvolutionFwdAlgoPerf_t fwdalgos[count];
 
     s = cudnnGetConvolutionForwardAlgorithm_v7(p.ctx_->cudnn_,
-                                               x.desc_,
+                                               x.m_desc,
                                                filter_desc_,
                                                conv_desc_,
-                                               y.desc_,
+                                               y.m_desc,
                                                count, &count,
                                                fwdalgos);
     if(s)
@@ -383,10 +383,10 @@ struct CudnnConvolutionDesc {
 
     size_t workspace;
     s = cudnnGetConvolutionForwardWorkspaceSize(p.ctx_->cudnn_,
-                                                x.desc_,
+                                                x.m_desc,
                                                 filter_desc_,
                                                 conv_desc_,
-                                                y.desc_,
+                                                y.m_desc,
                                                 conv_fwd_algo_,
                                                 &workspace);
     if(s)
@@ -675,7 +675,7 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
 
   if(x->data_type_ == Tensor::DataType::HALF && !x->cpacked()) {
-    assert(!x->grad_);
+    assert(!x->m_grad);
 
     auto xx = std::make_shared<CudaTensor>(x->data_type_,
                                            x->dims_,
@@ -848,7 +848,7 @@ activation_setup(CudaProgram &p, const Node &n, bool training,
 
   p.fwd(fwd);
 
-  auto dx = x->grad_;
+  auto dx = x->m_grad;
   if(!dx)
     return NULL;
   auto dy = y->makeSharedGrad();
@@ -1007,7 +1007,7 @@ pooling_setup(CudaProgram &p, const Node &n, bool training,
 
   p.fwd(fwd);
 
-  auto dx = x->grad_;
+  auto dx = x->m_grad;
   if(!dx)
     return NULL;
   auto dy = y->makeSharedGrad();
@@ -1109,7 +1109,7 @@ struct CudaGemm : public CudaOperation {
     __half halpha = 1.0f, hbeta = 0.0f;
 
     cublasStatus_t s;
-    switch(a_->type_) {
+    switch(a_->m_type) {
     case CUDNN_DATA_FLOAT:
 
       s = cublasSgemm(p.ctx_->cublas_, transa_, transb_,
@@ -1210,7 +1210,7 @@ fc_setup(CudaProgram &p, const Node &n, bool training)
     p.upd(std::make_shared<CudnnAdam>(p, b, db));
   }
 
-  auto dx = x->grad_;
+  auto dx = x->m_grad;
 
   if(dx) {
     const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
@@ -1369,7 +1369,7 @@ struct CudaCatClassifierFwd : public CudaOperation {
   {}
 
   const char *exec(CudaProgram &p, long batch) {
-    switch(x_->type_) {
+    switch(x_->m_type) {
     case CUDNN_DATA_FLOAT:
       catclassifier_fwd_float_i32(x_->dims_[0],
                                   (const float *)x_->deviceMem(),
@@ -1417,7 +1417,7 @@ struct CudaCatClassifierBwd : public CudaOperation {
     const int c = x_->dims_[1];
     const float scale = 1.0f / n;
 
-    switch(x_->type_) {
+    switch(x_->m_type) {
     case CUDNN_DATA_FLOAT:
       catclassifier_bwd_float_i32(n,
                                   (const float *)x_->deviceMem(),
@@ -1470,7 +1470,7 @@ catclassifier_setup(CudaProgram &p, const Node &n, bool training)
   }
   p.fwd(op);
 
-  auto dx = x->grad_;
+  auto dx = x->m_grad;
   if(!dx)
     return NULL;
   auto dy = y->makeSharedGrad();
@@ -1588,7 +1588,7 @@ dropout_setup(CudaProgram &p, const Node &n, bool training)
   auto fwd = std::make_shared<CudnnDropoutFwd>(p, x, y, prob);
   p.fwd(fwd);
 
-  auto dx = x->grad_;
+  auto dx = x->m_grad;
   if(!dx)
     return NULL;
   auto dy = y->makeSharedGrad();
@@ -1611,7 +1611,7 @@ dropout_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 
   if(ly) {
     auto x = n->inputs_.get("x");
-    auto lx = std::make_shared<CudaTensor>(ly->storage_,
+    auto lx = std::make_shared<CudaTensor>(ly->m_storage,
                                            ly->dims_, p.tensorFormat(ly->data_type_),
                                            ly->namePostfix("dropout"));
     p.tensors_[x] = ly;
@@ -1619,7 +1619,7 @@ dropout_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
   } else {
 
     auto x = p.lower_tensor_batch(n->inputs_.get("x"));
-    ly = std::make_shared<CudaTensor>(x->storage_,
+    ly = std::make_shared<CudaTensor>(x->m_storage,
                                       x->dims_, p.tensorFormat(x->data_type_),
                                       x->namePostfix("dropout"));
     p.tensors_[y] = ly;
@@ -1939,12 +1939,12 @@ sum_setup(CudaProgram &p, const Node &n, bool training)
 
   auto dy = y->makeSharedGrad();
 
-  auto dx0 = x0->grad_;
+  auto dx0 = x0->m_grad;
   if(dx0) {
     const float beta = n.attributes_.get("dx0.beta", 0.0f);
     p.bwd(std::make_shared<CudnnTransform>(dy, dx0, beta));
   }
-  auto dx1 = x1->grad_;
+  auto dx1 = x1->m_grad;
   if(dx1) {
     const float beta = n.attributes_.get("dx1.beta", 0.0f);
     p.bwd(std::make_shared<CudnnTransform>(dy, dx1, beta));
@@ -2207,7 +2207,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
   }
 
   virtual bool killOutput(std::shared_ptr<CudaTensorStorage> s) {
-    if(dz_ && dz_->storage_ == s) {
+    if(dz_ && dz_->m_storage == s) {
       dz_.reset();
       assert(ops_ == CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION);
       ops_ = CUDNN_BATCHNORM_OPS_BN_ACTIVATION;
@@ -2431,7 +2431,7 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
                                                     CUDNN_DATA_FLOAT,
                                                     4,
                                                     dims));
-    grid_->storage_->alloc();
+    grid_->m_storage->alloc();
   }
 
   ~CudnnSpatialTransformFwd()
@@ -2560,16 +2560,16 @@ reshape_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
   auto dx = x->makeSharedGrad();
   auto y = n->outputs_.get("y");
 
-  auto yl = std::make_shared<CudaTensor>(x->storage_,
+  auto yl = std::make_shared<CudaTensor>(x->m_storage,
                                          y->dims_.n(p.batch_size_),
                                          CUDNN_TENSOR_NCHW,
                                          x->namePostfix("reshape"));
 
   p.tensors_[y] = yl;
-  yl->grad_ = std::make_shared<CudaTensor>(dx->storage_,
-                                           y->dims_.n(p.batch_size_),
-                                           CUDNN_TENSOR_NCHW,
-                                           x->namePostfix("reshape"));
+  yl->m_grad = std::make_shared<CudaTensor>(dx->m_storage,
+                                            y->dims_.n(p.batch_size_),
+                                            CUDNN_TENSOR_NCHW,
+                                            x->namePostfix("reshape"));
   return {};
 }
 
@@ -2612,9 +2612,9 @@ concat_transform_node(CudaProgram &p, const Node &n)
                                           xh->namePostfix("alias"));
     x->copyFromLocked(*xh);
     p.tensors_[xh] = x;
-    x->grad_ = std::make_shared<CudaTensor>(dy, xh->dims_.n(p.batch_size_),
-                                            element_offset,
-                                            xh->namePostfix("alias"));
+    x->m_grad = std::make_shared<CudaTensor>(dy, xh->dims_.n(p.batch_size_),
+                                             element_offset,
+                                             xh->namePostfix("alias"));
     element_offset[axis] += xh->dims_[axis];
   }
 }
@@ -2689,7 +2689,7 @@ stats_setup(CudaProgram &p, const Node &n, bool training)
 
   auto x = it->second;
   if(n.attributes_.get("gradient", false)) {
-    x = x->grad_;
+    x = x->m_grad;
 
     if(!x)
       return "x-tensor has no gradient";

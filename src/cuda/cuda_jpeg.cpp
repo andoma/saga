@@ -71,7 +71,7 @@ struct CudaJpeg : public CudaOperation,
     int rank;
     cudnnDataType_t data_type;
 
-    chkCUDNN(cudnnGetTensorNdDescriptor(y_->desc_, max_rank, &data_type,
+    chkCUDNN(cudnnGetTensorNdDescriptor(y_->m_desc, max_rank, &data_type,
                                         &rank, dimsA, stridesA));
 
     for(int i = 0; i < 2; i++) {
