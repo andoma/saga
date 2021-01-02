@@ -655,6 +655,13 @@ int
 CudaTensorStorageDoubleBuffered::flip()
 {
   index_++;
+
+  // For unified memory, these are required on Tegra (or we will get SIGBUS)
+  // but makes things slightly slower on x86_64
+#ifdef __aarch64__
+  cudaStreamAttachMemAsync(ctx_->stream_, data(1), size_, cudaMemAttachHost);
+  cudaStreamAttachMemAsync(ctx_->stream_, data(0), size_, cudaMemAttachGlobal);
+#endif
   return index_ & 1;
 }
 
