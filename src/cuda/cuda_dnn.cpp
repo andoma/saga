@@ -366,13 +366,13 @@ struct CudnnConvolutionDesc {
 
     cudnnConvolutionFwdAlgoPerf_t fwdalgos[count];
 
-    s = cudnnGetConvolutionForwardAlgorithm_v7(p.ctx_->cudnn_,
-                                               x.m_desc,
-                                               filter_desc_,
-                                               conv_desc_,
-                                               y.m_desc,
-                                               count, &count,
-                                               fwdalgos);
+    s = cudnnFindConvolutionForwardAlgorithm(p.ctx_->cudnn_,
+                                             x.m_desc,
+                                             filter_desc_,
+                                             conv_desc_,
+                                             y.m_desc,
+                                             count, &count,
+                                             fwdalgos);
     if(s)
       return cudnnGetErrorString(s);
 
@@ -404,13 +404,13 @@ struct CudnnConvolutionDesc {
 
     cudnnConvolutionBwdDataAlgoPerf_t bwdalgos[count];
 
-    s = cudnnGetConvolutionBackwardDataAlgorithm_v7(p.ctx_->cudnn_,
-                                                    filter_desc_,
-                                                    y.desc(),
-                                                    conv_desc_,
-                                                    x.desc(),
-                                                    count, &count,
-                                                    bwdalgos);
+    s = cudnnFindConvolutionBackwardDataAlgorithm(p.ctx_->cudnn_,
+                                                  filter_desc_,
+                                                  y.desc(),
+                                                  conv_desc_,
+                                                  x.desc(),
+                                                  count, &count,
+                                                  bwdalgos);
     if(s)
       return cudnnGetErrorString(s);
 
@@ -439,13 +439,13 @@ struct CudnnConvolutionDesc {
 
     cudnnConvolutionBwdFilterAlgoPerf_t filteralgos[count];
 
-    s = cudnnGetConvolutionBackwardFilterAlgorithm_v7(p.ctx_->cudnn_,
-                                                      x.desc(),
-                                                      y.desc(),
-                                                      conv_desc_,
-                                                      filter_desc_,
-                                                      count, &count,
-                                                      filteralgos);
+    s = cudnnFindConvolutionBackwardFilterAlgorithm(p.ctx_->cudnn_,
+                                                    x.desc(),
+                                                    y.desc(),
+                                                    conv_desc_,
+                                                    filter_desc_,
+                                                    count, &count,
+                                                    filteralgos);
     if(s)
       return cudnnGetErrorString(s);
 
