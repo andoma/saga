@@ -674,7 +674,8 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
 
-  if(x->data_type_ == Tensor::DataType::HALF && !x->cpacked()) {
+  if(p.ctx_->tensor_cores_ &&
+     x->data_type_ == Tensor::DataType::HALF && !x->cpacked()) {
     assert(!x->m_grad);
 
     auto xx = std::make_shared<CudaTensor>(x->data_type_,

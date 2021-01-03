@@ -123,6 +123,8 @@ public:
   std::mutex mutex_;
 
   int tensor_storage_id_gen_ = 0;
+
+  bool tensor_cores_ = false;
 };
 
 

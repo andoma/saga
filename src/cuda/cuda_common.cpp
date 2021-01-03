@@ -61,13 +61,15 @@ CudaContext::init()
          prop.canMapHostMemory ? "yes":"no",
          deviceId_, pciid);
 
+  tensor_cores_ = prop.major >= 7;
 
   chkCUDNN(cudnnCreate(&cudnn_));
   chkCUDNN(cudnnSetStream(cudnn_, stream_));
 
   cublasCreate(&cublas_);
   cublasSetStream(cublas_, stream_);
-  cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH);
+  if(tensor_cores_)
+    cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH);
 
 #ifdef HAVE_NVIDIA_ML
   nvmlDeviceGetHandleByPciBusId_v2(pciid, &nvmldev_);
@@ -181,7 +183,9 @@ CudaProgram::tensorFormat(Tensor::DataType data_type)
     switch(data_type) {
     case Tensor::DataType::U8:
     case Tensor::DataType::HALF:
-      return CUDNN_TENSOR_NHWC;
+      if(ctx_->tensor_cores_)
+        return CUDNN_TENSOR_NHWC;
+      // FALLTHRU
     default:
       return CUDNN_TENSOR_NCHW;
     }
