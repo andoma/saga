@@ -69,9 +69,9 @@ struct CudnnAdam : public CudaOperation {
     : CudaOperation("adam")
     , weights_(weights)
     , gradient_(gradient)
-    , learning_rate_(p.learning_rate_)
+    , learning_rate_(p.m_learning_rate)
     , iter_(0)
-    , ctx_(p.ctx_)
+    , ctx_(p.m_ctx)
   {
     assert(weights->dims_ == gradient->dims_);
 
@@ -132,16 +132,16 @@ struct CudnnAdam : public CudaOperation {
                  (float *)weights_->deviceMem(),
                  (const float *)gradient_->deviceMem(),
                  (float *)temp_, b1t, b2t, learning_rate_,
-                 p.ctx_->stream_);
+                 p.m_ctx->m_stream);
       break;
     case Tensor::DataType::HALF:
-      p.mp_enabled_ = true;
-      adam_mixed(weights_->elements_, 1.0f / p.mp_scaling_,
+      p.m_mp_enabled = true;
+      adam_mixed(weights_->elements_, 1.0f / p.m_mp_scaling,
                  (__half *)weights_->deviceMem(),
                  (const __half *)gradient_->deviceMem(),
                  (float *)temp_, b1t, b2t, learning_rate_,
-                 (int *)p.check_result_,
-                 p.ctx_->stream_);
+                 (int *)p.m_check_result,
+                 p.m_ctx->m_stream);
       break;
     default:
       return "Unsupported tensor datatype";
@@ -169,7 +169,7 @@ struct CudnnAddTensor : public CudnnOperation {
   cudnnStatus_t exec(CudaProgram &p)
   {
     float alpha = 1.0f;
-    return cudnnAddTensor(p.ctx_->cudnn_,
+    return cudnnAddTensor(p.m_ctx->m_cudnn,
                           &alpha, x_->desc(), x_->deviceMem(),
                           &alpha, y_->desc(), y_->deviceMem());
   }
@@ -205,7 +205,7 @@ struct CudnnTransform : public CudnnOperation {
 
   cudnnStatus_t exec(CudaProgram &p) {
     float alpha = 1.0f;
-    return cudnnTransformTensor(p.ctx_->cudnn_,
+    return cudnnTransformTensor(p.m_ctx->m_cudnn,
                                 &alpha,
                                 a_->desc(),
                                 a_->deviceMem(),
@@ -359,14 +359,14 @@ struct CudnnConvolutionDesc {
       return cudnnGetErrorString(s);
 
     int count;
-    s = cudnnGetConvolutionForwardAlgorithmMaxCount(p.ctx_->cudnn_,
+    s = cudnnGetConvolutionForwardAlgorithmMaxCount(p.m_ctx->m_cudnn,
                                                     &count);
     if(s)
       return cudnnGetErrorString(s);
 
     cudnnConvolutionFwdAlgoPerf_t fwdalgos[count];
 
-    s = cudnnFindConvolutionForwardAlgorithm(p.ctx_->cudnn_,
+    s = cudnnFindConvolutionForwardAlgorithm(p.m_ctx->m_cudnn,
                                              x.m_desc,
                                              filter_desc_,
                                              conv_desc_,
@@ -382,7 +382,7 @@ struct CudnnConvolutionDesc {
     conv_fwd_algo_ = fwdalgos[0].algo;
 
     size_t workspace;
-    s = cudnnGetConvolutionForwardWorkspaceSize(p.ctx_->cudnn_,
+    s = cudnnGetConvolutionForwardWorkspaceSize(p.m_ctx->m_cudnn,
                                                 x.m_desc,
                                                 filter_desc_,
                                                 conv_desc_,
@@ -392,19 +392,19 @@ struct CudnnConvolutionDesc {
     if(s)
       return cudnnGetErrorString(s);
 
-    p.ctx_->workspace_.request(workspace);
+    p.m_ctx->m_workspace.request(workspace);
 
     if(!bwd)
       return NULL;
 
-    s = cudnnGetConvolutionBackwardDataAlgorithmMaxCount(p.ctx_->cudnn_,
+    s = cudnnGetConvolutionBackwardDataAlgorithmMaxCount(p.m_ctx->m_cudnn,
                                                          &count);
     if(s)
       return cudnnGetErrorString(s);
 
     cudnnConvolutionBwdDataAlgoPerf_t bwdalgos[count];
 
-    s = cudnnFindConvolutionBackwardDataAlgorithm(p.ctx_->cudnn_,
+    s = cudnnFindConvolutionBackwardDataAlgorithm(p.m_ctx->m_cudnn,
                                                   filter_desc_,
                                                   y.desc(),
                                                   conv_desc_,
@@ -420,7 +420,7 @@ struct CudnnConvolutionDesc {
     bwd_data_algo_ = bwdalgos[0].algo;
 
 
-    s = cudnnGetConvolutionBackwardDataWorkspaceSize(p.ctx_->cudnn_,
+    s = cudnnGetConvolutionBackwardDataWorkspaceSize(p.m_ctx->m_cudnn,
                                                      filter_desc_,
                                                      y.desc(),
                                                      conv_desc_,
@@ -430,16 +430,16 @@ struct CudnnConvolutionDesc {
     if(s)
       return cudnnGetErrorString(s);
 
-    p.ctx_->workspace_.request(workspace);
+    p.m_ctx->m_workspace.request(workspace);
 
-    s = cudnnGetConvolutionBackwardFilterAlgorithmMaxCount(p.ctx_->cudnn_,
+    s = cudnnGetConvolutionBackwardFilterAlgorithmMaxCount(p.m_ctx->m_cudnn,
                                                            &count);
     if(s)
       return cudnnGetErrorString(s);
 
     cudnnConvolutionBwdFilterAlgoPerf_t filteralgos[count];
 
-    s = cudnnFindConvolutionBackwardFilterAlgorithm(p.ctx_->cudnn_,
+    s = cudnnFindConvolutionBackwardFilterAlgorithm(p.m_ctx->m_cudnn,
                                                     x.desc(),
                                                     y.desc(),
                                                     conv_desc_,
@@ -454,7 +454,7 @@ struct CudnnConvolutionDesc {
 
     bwd_filter_algo_ = filteralgos[0].algo;
 
-    s = cudnnGetConvolutionBackwardFilterWorkspaceSize(p.ctx_->cudnn_,
+    s = cudnnGetConvolutionBackwardFilterWorkspaceSize(p.m_ctx->m_cudnn,
                                                        x.desc(),
                                                        y.desc(),
                                                        conv_desc_,
@@ -464,7 +464,7 @@ struct CudnnConvolutionDesc {
     if(s)
       return cudnnGetErrorString(s);
 
-    p.ctx_->workspace_.request(workspace);
+    p.m_ctx->m_workspace.request(workspace);
 
     return NULL;
   }
@@ -491,15 +491,15 @@ struct CudnnConvolutionFwd : public CudnnOperation {
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    return cudnnConvolutionForward(ctx_->cudnn_, &alpha,
+    return cudnnConvolutionForward(ctx_->m_cudnn, &alpha,
                                    x_->desc(),
                                    x_->deviceMem(),
                                    desc_->filter_desc_,
                                    w_->deviceMem(),
                                    desc_->conv_desc_,
                                    desc_->conv_fwd_algo_,
-                                   ctx_->workspace_.ptr(),
-                                   ctx_->workspace_.size(),
+                                   ctx_->m_workspace.ptr(),
+                                   ctx_->m_workspace.size(),
                                    &beta,
                                    y_->desc(),
                                    y_->deviceMem());
@@ -537,7 +537,7 @@ struct CudnnConvolutionBwdBias : public CudnnOperation {
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    return cudnnConvolutionBackwardBias(ctx_->cudnn_, &alpha,
+    return cudnnConvolutionBackwardBias(ctx_->m_cudnn, &alpha,
                                         dy_->desc(),
                                         dy_->deviceMem(),
                                         &beta,
@@ -576,15 +576,15 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    return cudnnConvolutionBackwardFilter(ctx_->cudnn_, &alpha,
+    return cudnnConvolutionBackwardFilter(ctx_->m_cudnn, &alpha,
                                           x_->desc(),
                                           x_->deviceMem(),
                                           dy_->desc(),
                                           dy_->deviceMem(),
                                           desc_->conv_desc_,
                                           desc_->bwd_filter_algo_,
-                                          ctx_->workspace_.ptr(),
-                                          ctx_->workspace_.size(),
+                                          ctx_->m_workspace.ptr(),
+                                          ctx_->m_workspace.size(),
                                           &beta,
                                           desc_->filter_desc_,
                                           dw_->deviceMem());
@@ -626,15 +626,15 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
   {
     float alpha = 1.0f;
 
-    return cudnnConvolutionBackwardData(ctx_->cudnn_, &alpha,
+    return cudnnConvolutionBackwardData(ctx_->m_cudnn, &alpha,
                                         desc_->filter_desc_,
                                         w_->deviceMem(),
                                         dy_->desc(),
                                         dy_->deviceMem(),
                                         desc_->conv_desc_,
                                         desc_->bwd_data_algo_,
-                                        ctx_->workspace_.ptr(),
-                                        ctx_->workspace_.size(),
+                                        ctx_->m_workspace.ptr(),
+                                        ctx_->m_workspace.size(),
                                         &dx_beta_,
                                         dx_->desc(),
                                         dx_->deviceMem());
@@ -674,14 +674,14 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
 {
   auto x = p.lower_tensor_batch(n.inputs_.get("x"));
 
-  if(p.ctx_->tensor_cores_ &&
+  if(p.m_ctx->m_tensor_cores &&
      x->data_type_ == Tensor::DataType::HALF && !x->cpacked()) {
     assert(!x->m_grad);
 
     auto xx = std::make_shared<CudaTensor>(x->data_type_,
                                            x->dims_,
                                            CUDNN_TENSOR_NHWC,
-                                           p.ctx_,
+                                           p.m_ctx,
                                            x->namePostfix("nhwc"));
 
     auto tr = std::make_shared<CudnnTransform>(x, xx, 0.0f);
@@ -706,13 +706,13 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
     return err;
 
   if(!training) {
-    p.infer(std::make_shared<CudnnConvolutionFwd>(p.ctx_, desc, x, w, y));
+    p.infer(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y));
     if(b)
       p.infer(std::make_shared<CudnnAddTensor>(b, y));
     return NULL;
   }
 
-  p.fwd(std::make_shared<CudnnConvolutionFwd>(p.ctx_, desc, x, w, y));
+  p.fwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y));
   if(b)
     p.fwd(std::make_shared<CudnnAddTensor>(b, y));
 
@@ -720,18 +720,18 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
 
   if(b) {
     auto db = b->makePrivateGrad();
-    p.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.ctx_, dy, db));
+    p.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
     p.upd(std::make_shared<CudnnAdam>(p, b, db));
   }
 
   auto dw = w->makePrivateGrad();
-  p.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.ctx_, desc, x, dy, dw));
+  p.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, x, dy, dw));
   p.upd(std::make_shared<CudnnAdam>(p, w, dw));
 
   auto dx = x->makeSharedGrad();
   if(dx) {
     const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
-    p.bwd(std::make_shared<CudnnConvolutionBwdData>(p.ctx_, desc, w, dy, dx,
+    p.bwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w, dy, dx,
                                                     dx_beta));
   }
   return NULL;
@@ -774,7 +774,7 @@ struct CudnnActivationFwd : public CudnnOperation {
   cudnnStatus_t exec(CudaProgram &p) {
     float alpha = 1.0f;
 
-    return cudnnActivationForward(p.ctx_->cudnn_, desc_,
+    return cudnnActivationForward(p.m_ctx->m_cudnn, desc_,
                                   &alpha,
                                   x_->desc(), x_->deviceMem(),
                                   &y_beta_,
@@ -810,7 +810,7 @@ struct CudnnActivationBwd : public CudnnOperation {
   cudnnStatus_t exec(CudaProgram &p) {
     float alpha = 1.0f;
 
-    return cudnnActivationBackward(p.ctx_->cudnn_, fwd_->desc_,
+    return cudnnActivationBackward(p.m_ctx->m_cudnn, fwd_->desc_,
                                    &alpha,
                                    y_->desc(), y_->deviceMem(),
                                    dy_->desc(), dy_->deviceMem(),
@@ -918,7 +918,7 @@ struct CudnnPoolingFwd : public CudnnOperation {
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    return cudnnPoolingForward(p.ctx_->cudnn_, desc_,
+    return cudnnPoolingForward(p.m_ctx->m_cudnn, desc_,
                                &alpha,
                                x_->desc(), x_->deviceMem(),
                                &beta,
@@ -957,7 +957,7 @@ struct CudnnPoolingBwd : public CudnnOperation {
   cudnnStatus_t exec(CudaProgram &p) {
     float alpha = 1.0f;
 
-    return cudnnPoolingBackward(p.ctx_->cudnn_, fwd_->desc_,
+    return cudnnPoolingBackward(p.m_ctx->m_cudnn, fwd_->desc_,
                                 &alpha,
                                 y_->desc(), y_->deviceMem(),
                                 dy_->desc(), dy_->deviceMem(),
@@ -1113,7 +1113,7 @@ struct CudaGemm : public CudaOperation {
     switch(a_->m_type) {
     case CUDNN_DATA_FLOAT:
 
-      s = cublasSgemm(p.ctx_->cublas_, transa_, transb_,
+      s = cublasSgemm(p.m_ctx->m_cublas, transa_, transb_,
                       m_, n_, k_,
                       &alpha,
                       (const float *)a_->deviceMem(), lda_,
@@ -1122,7 +1122,7 @@ struct CudaGemm : public CudaOperation {
                       (float *)c_->deviceMem(), ldc_);
       break;
     case CUDNN_DATA_HALF:
-      s = cublasHgemm(p.ctx_->cublas_, transa_, transb_,
+      s = cublasHgemm(p.m_ctx->m_cublas, transa_, transb_,
                       m_, n_, k_,
                       &halpha,
                       (const __half *)a_->deviceMem(), lda_,
@@ -1267,7 +1267,7 @@ struct CudaConvert : public CudaOperation {
 
   const char *exec(CudaProgram &p, long batch) {
     algo_(x_->deviceMem(), y_->deviceMem(), x_->elements_, scale_,
-          p.ctx_->stream_);
+          p.m_ctx->m_stream);
     return NULL;
   }
 
@@ -1295,7 +1295,7 @@ convert_setup(CudaProgram &p, const Node &n, bool training)
   if(xh->data_type_ == yh->data_type_ && scale == 1.0f) {
     auto y = std::make_shared<CudaTensor>(x, x->dims_, std::vector<int64_t>{},
                                           xh->namePostfix("nop-convert"));
-    p.tensors_[yh] = y;
+    p.m_tensors[yh] = y;
     return NULL;
   }
 
@@ -1375,13 +1375,13 @@ struct CudaCatClassifierFwd : public CudaOperation {
       catclassifier_fwd_float_i32(x_->dims_[0],
                                   (const float *)x_->deviceMem(),
                                   (int32_t *)y_->deviceMem(), x_->dims_[1],
-                                  p.ctx_->stream_);
+                                  p.m_ctx->m_stream);
       break;
     case CUDNN_DATA_HALF:
       catclassifier_fwd_half_i32(x_->dims_[0],
                                  (const __half *)x_->deviceMem(),
                                  (int32_t *)y_->deviceMem(), x_->dims_[1],
-                                 p.ctx_->stream_);
+                                 p.m_ctx->m_stream);
       break;
     default:
       return "Unsupported tensor datatype";
@@ -1427,7 +1427,7 @@ struct CudaCatClassifierBwd : public CudaOperation {
                                   (const int32_t *)dy_->deviceMem(),
                                   loss_ ? (float *)loss_->deviceMem() : NULL,
                                   c, scale,
-                                  p.ctx_->stream_);
+                                  p.m_ctx->m_stream);
 
       break;
     case CUDNN_DATA_HALF:
@@ -1437,8 +1437,8 @@ struct CudaCatClassifierBwd : public CudaOperation {
                                  (const int32_t *)y_->deviceMem(),
                                  (const int32_t *)dy_->deviceMem(),
                                  loss_ ? (float *)loss_->deviceMem() : NULL,
-                                 c, scale * p.mp_scaling_,
-                                 p.ctx_->stream_);
+                                 c, scale * p.m_mp_scaling,
+                                 p.m_ctx->m_stream);
 
       break;
     default:
@@ -1505,16 +1505,16 @@ struct CudnnDropoutFwd : public CudnnOperation {
                   std::shared_ptr<CudaTensor> y,
                   float prob)
     : CudnnOperation("dropoutfwd")
-    , ctx_(p.ctx_), x_(x), y_(y)
+    , ctx_(p.m_ctx), x_(x), y_(y)
   {
     chkCUDNN(cudnnDropoutGetReserveSpaceSize(x_->desc(), &reserve_size_));
     chkCuda(cudaMalloc(&reserve_, reserve_size_));
 
-    chkCUDNN(cudnnDropoutGetStatesSize(p.ctx_->cudnn_, &states_size_));
+    chkCUDNN(cudnnDropoutGetStatesSize(p.m_ctx->m_cudnn, &states_size_));
     chkCuda(cudaMalloc(&states_, states_size_));
 
     chkCUDNN(cudnnCreateDropoutDescriptor(&desc_));
-    chkCUDNN(cudnnSetDropoutDescriptor(desc_, p.ctx_->cudnn_, prob,
+    chkCUDNN(cudnnSetDropoutDescriptor(desc_, p.m_ctx->m_cudnn, prob,
                                        states_, states_size_, 0));
   }
 
@@ -1527,7 +1527,7 @@ struct CudnnDropoutFwd : public CudnnOperation {
   }
 
   cudnnStatus_t exec(CudaProgram &p) {
-    return cudnnDropoutForward(p.ctx_->cudnn_, desc_,
+    return cudnnDropoutForward(p.m_ctx->m_cudnn, desc_,
                                x_->desc(), x_->deviceMem(),
                                y_->desc(), y_->deviceMem(),
                                reserve_, reserve_size_);
@@ -1560,7 +1560,7 @@ struct CudnnDropoutBwd : public CudnnOperation {
   }
 
   cudnnStatus_t exec(CudaProgram &p) {
-    return cudnnDropoutBackward(p.ctx_->cudnn_, fwd_->desc_,
+    return cudnnDropoutBackward(p.m_ctx->m_cudnn, fwd_->desc_,
                                 dy_->desc(), dy_->deviceMem(),
                                 dx_->desc(), dx_->deviceMem(),
                                 fwd_->reserve_, fwd_->reserve_size_);
@@ -1608,14 +1608,14 @@ static std::vector<std::shared_ptr<Node>>
 dropout_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 {
   auto y = n->outputs_.get("y");
-  auto ly = p.tensors_[y];
+  auto ly = p.m_tensors[y];
 
   if(ly) {
     auto x = n->inputs_.get("x");
     auto lx = std::make_shared<CudaTensor>(ly->m_storage,
                                            ly->dims_, p.tensorFormat(ly->data_type_),
                                            ly->namePostfix("dropout"));
-    p.tensors_[x] = ly;
+    p.m_tensors[x] = ly;
 
   } else {
 
@@ -1623,7 +1623,7 @@ dropout_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
     ly = std::make_shared<CudaTensor>(x->m_storage,
                                       x->dims_, p.tensorFormat(x->data_type_),
                                       x->namePostfix("dropout"));
-    p.tensors_[y] = ly;
+    p.m_tensors[y] = ly;
   }
   return {};
 }
@@ -1683,7 +1683,7 @@ struct CudnnBatchNormInference : public CudnnOperation {
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    return cudnnBatchNormalizationForwardInference(p. ctx_->cudnn_,
+    return cudnnBatchNormalizationForwardInference(p.m_ctx->m_cudnn,
                                                    CUDNN_BATCHNORM_SPATIAL,
                                                    &alpha, &beta,
                                                    x_->desc(),
@@ -1736,7 +1736,7 @@ struct CudnnBatchNormTrain : public CudnnOperation {
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    return cudnnBatchNormalizationForwardTraining(p.ctx_->cudnn_,
+    return cudnnBatchNormalizationForwardTraining(p.m_ctx->m_cudnn,
                                                   CUDNN_BATCHNORM_SPATIAL,
                                                   &alpha, &beta,
                                                   x_->desc(),
@@ -1787,7 +1787,7 @@ struct CudnnBatchNormBwd : public CudnnOperation {
   cudnnStatus_t exec(CudaProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
 
-    return cudnnBatchNormalizationBackward(p.ctx_->cudnn_,
+    return cudnnBatchNormalizationBackward(p.m_ctx->m_cudnn,
                                            CUDNN_BATCHNORM_SPATIAL,
                                            &alpha, &dx_beta_,
                                            &alpha, &beta,
@@ -1906,7 +1906,7 @@ struct CudnnOpTensor : public CudnnOperation {
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    return cudnnOpTensor(p.ctx_->cudnn_, desc_,
+    return cudnnOpTensor(p.m_ctx->m_cudnn, desc_,
                          &alpha, a_->desc(), a_->deviceMem(),
                          &alpha, b_->desc(), b_->deviceMem(),
                          &beta,  c_->desc(), c_->deviceMem());
@@ -1972,7 +1972,7 @@ struct CudnnSoftmaxFwd : public CudnnOperation {
 
     float alpha = 1.0f, beta = 0.0f;
 
-    return cudnnSoftmaxForward(p.ctx_->cudnn_,
+    return cudnnSoftmaxForward(p.m_ctx->m_cudnn,
                                CUDNN_SOFTMAX_ACCURATE,
                                CUDNN_SOFTMAX_MODE_CHANNEL,
                                &alpha,
@@ -2055,7 +2055,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
                          cudnnActivationMode_t activation_mode,
                          float actalpha)
   : CudnnOperation(std::string(bnopsstr(ops)) + "_fwd.persistent")
-  , ctx_(p.ctx_)
+  , ctx_(p.m_ctx)
   , x_(x), z_(z), s_(s), b_(b), m_(m), v_(v), y_(y), sm_(sm), sv_(sv)
   , epsilon_(epsilon), expavgf_(expavgf), ops_(ops)
   , mode_(CUDNN_BATCHNORM_SPATIAL_PERSISTENT)
@@ -2064,7 +2064,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
     chkCUDNN(cudnnSetActivationDescriptor(desc_, activation_mode,
                                           CUDNN_PROPAGATE_NAN, actalpha));
 
-    chkCUDNN(cudnnGetBatchNormalizationTrainingExReserveSpaceSize(p.ctx_->cudnn_,
+    chkCUDNN(cudnnGetBatchNormalizationTrainingExReserveSpaceSize(p.m_ctx->m_cudnn,
                                                                   mode_, ops_,
                                                                   desc_,
                                                                   x_->desc(),
@@ -2083,7 +2083,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    return cudnnBatchNormalizationForwardTrainingEx(ctx_->cudnn_,
+    return cudnnBatchNormalizationForwardTrainingEx(ctx_->m_cudnn,
                                                     mode_, ops_,
                                                     &alpha, &beta,
                                                     x_->desc(),
@@ -2102,8 +2102,8 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
                                                     sm_->deviceMem(),
                                                     sv_->deviceMem(),
                                                     desc_,
-                                                    ctx_->workspace_.ptr(),
-                                                    ctx_->workspace_.size(),
+                                                    ctx_->m_workspace.ptr(),
+                                                    ctx_->m_workspace.size(),
                                                     reserve_, reserve_size_);
   }
 
@@ -2143,7 +2143,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
     , ops_(ops), dx_beta_(dx_beta)
   {
     size_t workspace;
-    chkCUDNN(cudnnGetBatchNormalizationBackwardExWorkspaceSize(p.ctx_->cudnn_,
+    chkCUDNN(cudnnGetBatchNormalizationBackwardExWorkspaceSize(p.m_ctx->m_cudnn,
                                                                fwd->mode_,
                                                                fwd->ops_,
                                                                fwd->x_->desc(),
@@ -2154,7 +2154,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                                                                ds_->desc(),
                                                                fwd->desc_,
                                                                &workspace));
-    p.ctx_->workspace_.request(workspace);
+    p.m_ctx->m_workspace.request(workspace);
 
 
   }
@@ -2162,7 +2162,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
   cudnnStatus_t exec(CudaProgram &p) {
     float alpha = 1.0f, beta = 0.0f;
 
-    return cudnnBatchNormalizationBackwardEx(p.ctx_->cudnn_,
+    return cudnnBatchNormalizationBackwardEx(p.m_ctx->m_cudnn,
                                              fwd_->mode_, ops_,
                                              &alpha, &dx_beta_,
                                              &alpha, &beta,
@@ -2185,8 +2185,8 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                                              fwd_->sm_->deviceMem(),
                                              fwd_->sv_->deviceMem(),
                                              fwd_->desc_,
-                                             p.ctx_->workspace_.ptr(),
-                                             p.ctx_->workspace_.size(),
+                                             p.m_ctx->m_workspace.ptr(),
+                                             p.m_ctx->m_workspace.size(),
                                              fwd_->reserve_,
                                              fwd_->reserve_size_);
 
@@ -2212,7 +2212,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
       dz_.reset();
       assert(ops_ == CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION);
       ops_ = CUDNN_BATCHNORM_OPS_BN_ACTIVATION;
-      kind_ = std::string(bnopsstr(ops_)) + "_bwd.persistent";
+      m_kind = std::string(bnopsstr(ops_)) + "_bwd.persistent";
       return true;
     }
     return false;
@@ -2306,16 +2306,16 @@ batchnorm_persistent_transform_node(CudaProgram &p,
   if(x->dims_[1] % 4)
     return nullptr;
 
-  auto lx = p.tensors_.find(x);
-  if(lx != p.tensors_.end()) {
+  auto lx = p.m_tensors.find(x);
+  if(lx != p.m_tensors.end()) {
     if(!lx->second->cpacked())
       return nullptr;
   }
 
   auto y = relu ? relu->outputs_["y"] : bn->outputs_["y"];
 
-  auto ly = p.tensors_.find(y);
-  if(ly != p.tensors_.end()) {
+  auto ly = p.m_tensors.find(y);
+  if(ly != p.m_tensors.end()) {
     if(!ly->second->cpacked())
       return nullptr;
   }
@@ -2444,12 +2444,12 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
     float alpha = 1.0f, beta = 0.0f;
     cudnnStatus_t s;
 
-    s = cudnnSpatialTfGridGeneratorForward(p.ctx_->cudnn_, desc_,
+    s = cudnnSpatialTfGridGeneratorForward(p.m_ctx->m_cudnn, desc_,
                                            theta_->deviceMem(),
                                            grid_->deviceMem());
     if(s)
       return s;
-    return cudnnSpatialTfSamplerForward(p.ctx_->cudnn_, desc_,
+    return cudnnSpatialTfSamplerForward(p.m_ctx->m_cudnn, desc_,
                                         &alpha,
                                         x_->desc(), x_->deviceMem(),
                                         grid_->deviceMem(),
@@ -2500,7 +2500,7 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
     }
   }
 
-  auto op = std::make_shared<CudnnSpatialTransformFwd>(p.ctx_, x, theta, y);
+  auto op = std::make_shared<CudnnSpatialTransformFwd>(p.m_ctx, x, theta, y);
 
   if(training) {
     p.fwd(op);
@@ -2562,13 +2562,13 @@ reshape_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
   auto y = n->outputs_.get("y");
 
   auto yl = std::make_shared<CudaTensor>(x->m_storage,
-                                         y->dims_.n(p.batch_size_),
+                                         y->dims_.n(p.m_batch_size),
                                          CUDNN_TENSOR_NCHW,
                                          x->namePostfix("reshape"));
 
-  p.tensors_[y] = yl;
+  p.m_tensors[y] = yl;
   yl->m_grad = std::make_shared<CudaTensor>(dx->m_storage,
-                                            y->dims_.n(p.batch_size_),
+                                            y->dims_.n(p.m_batch_size),
                                             CUDNN_TENSOR_NCHW,
                                             x->namePostfix("reshape"));
   return {};
@@ -2608,12 +2608,12 @@ concat_transform_node(CudaProgram &p, const Node &n)
   auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
 
   for(const auto &xh : n.inputs_.getv("x")) {
-    auto x = std::make_shared<CudaTensor>(y, xh->dims_.n(p.batch_size_),
+    auto x = std::make_shared<CudaTensor>(y, xh->dims_.n(p.m_batch_size),
                                           element_offset,
                                           xh->namePostfix("alias"));
     x->copyFromLocked(*xh);
-    p.tensors_[xh] = x;
-    x->m_grad = std::make_shared<CudaTensor>(dy, xh->dims_.n(p.batch_size_),
+    p.m_tensors[xh] = x;
+    x->m_grad = std::make_shared<CudaTensor>(dy, xh->dims_.n(p.m_batch_size),
                                              element_offset,
                                              xh->namePostfix("alias"));
     element_offset[axis] += xh->dims_[axis];
@@ -2658,11 +2658,11 @@ struct CudaStats : public CudaOperation {
     switch(x_->data_type_) {
     case Tensor::DataType::FLOAT:
       tensor_stats_float(x_->elements_, (const float *)x_->deviceMem(),
-                         (float *)y_->deviceMem(), p.ctx_->stream_);
+                         (float *)y_->deviceMem(), p.m_ctx->m_stream);
       break;
     case Tensor::DataType::HALF:
       tensor_stats_half(x_->elements_, (const __half *)x_->deviceMem(),
-                        (float *)y_->deviceMem(), p.ctx_->stream_);
+                        (float *)y_->deviceMem(), p.m_ctx->m_stream);
       break;
     default:
       return "Unsupported datatype";
@@ -2684,8 +2684,8 @@ struct CudaStats : public CudaOperation {
 static const char *
 stats_setup(CudaProgram &p, const Node &n, bool training)
 {
-  auto it = p.tensors_.find(n.inputs_.get("x"));
-  if(it == p.tensors_.end())
+  auto it = p.m_tensors.find(n.inputs_.get("x"));
+  if(it == p.m_tensors.end())
     return "x-tensor not found";
 
   auto x = it->second;

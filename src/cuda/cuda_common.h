@@ -49,45 +49,45 @@ struct CudaTmpMem {
   CudaTmpMem(CudaTmpMem const&) = delete;
 
   CudaTmpMem(size_t initial = 0)
-    : requested_(initial)
+    : m_requested(initial)
   {}
 
   ~CudaTmpMem()
   {
-    chkCuda(cudaFree(ptr_));
+    chkCuda(cudaFree(m_ptr));
   }
 
   void request(size_t size)
   {
-    requested_ = std::max(requested_, size);
+    m_requested = std::max(m_requested, size);
   }
 
   void alloc()
   {
-    if(requested_ <= size_)
+    if(m_requested <= m_size)
       return;
 
-    chkCuda(cudaFree(ptr_));
+    chkCuda(cudaFree(m_ptr));
 
-    size_ = requested_;
-    chkCuda(cudaMallocManaged(&ptr_, size_, cudaMemAttachGlobal));
+    m_size = m_requested;
+    chkCuda(cudaMallocManaged(&m_ptr, m_size, cudaMemAttachGlobal));
   }
 
 
   void *ptr() const
   {
-    return ptr_;
+    return m_ptr;
   }
 
   size_t size() const
   {
-    return size_;
+    return m_size;
   }
 
 private:
-  void *ptr_ = nullptr;
-  size_t size_ = 0;
-  size_t requested_ = 0;
+  void *m_ptr = nullptr;
+  size_t m_size = 0;
+  size_t m_requested = 0;
 };
 
 
@@ -100,7 +100,7 @@ class CudaContext : public Context,
 public:
 
   CudaContext()
-    : workspace_(4096)
+    : m_workspace(4096)
   {}
 
   int init();
@@ -111,28 +111,28 @@ public:
 
   void print() override;
 
-  CudaTmpMem workspace_;
+  CudaTmpMem m_workspace;
 
-  cudaStream_t stream_ = 0;
-  cudnnHandle_t cudnn_ = NULL;
-  cublasHandle_t cublas_ = NULL;
+  cudaStream_t m_stream = 0;
+  cudnnHandle_t m_cudnn = NULL;
+  cublasHandle_t m_cublas = NULL;
 #ifdef HAVE_NVIDIA_ML
-  nvmlDevice_t nvmldev_ = NULL;
+  nvmlDevice_t m_nvmldev = NULL;
 #endif
-  int deviceId_;
-  std::mutex mutex_;
+  int m_deviceId;
+  std::mutex m_mutex;
 
-  int tensor_storage_id_gen_ = 0;
+  int m_tensor_storage_id_gen = 0;
 
-  bool tensor_cores_ = false;
+  bool m_tensor_cores = false;
 };
 
 
 struct CudaBatchAccessOp {
-  std::shared_ptr<CudaTensor> tensor_;
-  std::shared_ptr<CudaTensorStorageDoubleBuffered> storage_;
-  BatchTensorAccessFn fn_;
-  bool prefetch_ = false;
+  std::shared_ptr<CudaTensor> m_tensor;
+  std::shared_ptr<CudaTensorStorageDoubleBuffered> m_storage;
+  BatchTensorAccessFn m_fn;
+  bool m_prefetch = false;
 };
 
 typedef std::vector<CudaBatchAccessOp> CudaBatchAccessOps;
@@ -152,21 +152,21 @@ public:
               float learning_rate,
               StopCheck stop_check,
               bool print_progress)
-    : ctx_(ctx)
-    , tensor_layout_(tensor_layout)
-    , batch_size_(batch_size)
-    , learning_rate_(learning_rate)
-    , mp_scaling_(batch_size)
-    , stop_check_(stop_check)
-    , print_progress_(print_progress)
+    : m_ctx(ctx)
+    , m_tensor_layout(tensor_layout)
+    , m_batch_size(batch_size)
+    , m_learning_rate(learning_rate)
+    , m_mp_scaling(batch_size)
+    , m_stop_check(stop_check)
+    , m_print_progress(print_progress)
   {
-    chkCuda(cudaMallocManaged(&check_result_, sizeof(int), cudaMemAttachGlobal));
-    chkCuda(cudaMemset(check_result_, 0, sizeof(int)));
+    chkCuda(cudaMallocManaged(&m_check_result, sizeof(int), cudaMemAttachGlobal));
+    chkCuda(cudaMemset(m_check_result, 0, sizeof(int)));
   }
 
   ~CudaProgram()
   {
-    chkCuda(cudaFree(check_result_));
+    chkCuda(cudaFree(m_check_result));
   }
 
 
@@ -177,52 +177,52 @@ public:
   void print(bool detailed) const override;
   void debug(bool) override;
 
-  const std::shared_ptr<CudaContext> ctx_;
-  const TensorLayout tensor_layout_;
-  const int batch_size_;
-  const float learning_rate_;
-  bool debug_ = false;
+  const std::shared_ptr<CudaContext> m_ctx;
+  const TensorLayout m_tensor_layout;
+  const int m_batch_size;
+  const float m_learning_rate;
+  bool m_debug = false;
 
-  bool finalized_ = false;
+  bool m_finalized = false;
 
   // Tensors we've handed out external handles to
   // Their storage need to be kept alive all the time
-  std::vector<std::shared_ptr<CudaTensorStorage>> exported_storage_;
+  std::vector<std::shared_ptr<CudaTensorStorage>> m_exported_storage;
 
   std::unordered_map<std::shared_ptr<Tensor>,
-                     std::shared_ptr<CudaTensor>> tensors_;
+                     std::shared_ptr<CudaTensor>> m_tensors;
 
   std::unordered_map<std::shared_ptr<Tensor>,
-                     std::shared_ptr<CudaOperation>> load_map_;
+                     std::shared_ptr<CudaOperation>> m_load_map;
 
-  CudaOps load_operations_;
-  CudaOps infer_operations_;
-  CudaOps train_operations_;
+  CudaOps m_load_operations;
+  CudaOps m_infer_operations;
+  CudaOps m_train_operations;
 
-  CudaOps fwd_operations_;
-  CudaOps bwd_operations_;
-  CudaOps upd_operations_;
+  CudaOps m_fwd_operations;
+  CudaOps m_bwd_operations;
+  CudaOps m_upd_operations;
 
-  CudaBatchAccessOps infer_pre_;
-  CudaBatchAccessOps infer_post_;
-  CudaBatchAccessOps train_pre_;
-  CudaBatchAccessOps train_post_;
+  CudaBatchAccessOps m_infer_pre;
+  CudaBatchAccessOps m_infer_post;
+  CudaBatchAccessOps m_train_pre;
+  CudaBatchAccessOps m_train_post;
 
-  std::vector<std::shared_ptr<CudaTensorStorageDoubleBuffered>> flips_;
+  std::vector<std::shared_ptr<CudaTensorStorageDoubleBuffered>> m_flips;
 
-  std::shared_ptr<CudaMemoryLayout> train_memory_layout_;
-  std::shared_ptr<CudaMemoryLayout> infer_memory_layout_;
+  std::shared_ptr<CudaMemoryLayout> m_train_memory_layout;
+  std::shared_ptr<CudaMemoryLayout> m_infer_memory_layout;
 
-  CudaTmpMem tensor_mem_;
+  CudaTmpMem m_tensor_mem;
 
-  void *check_result_;
-  float mp_scaling_;
-  bool mp_enabled_ = false;
+  void *m_check_result;
+  float m_mp_scaling;
+  bool m_mp_enabled = false;
 
-  StopCheck stop_check_;
-  bool print_progress_ = true;
-  bool print_progress_pending_nl_ = false;
-  time_t print_progress_ts_ = 0;
+  StopCheck m_stop_check;
+  bool m_print_progress = true;
+  bool m_print_progress_pending_nl = false;
+  time_t m_print_progress_ts = 0;
 
   void finalize();
 
@@ -297,7 +297,7 @@ public:
 
   void print(bool full = false) const;
 
-  std::string name() const { return kind_; }
+  std::string name() const { return m_kind; }
 
   virtual std::string info() const { return ""; };
 
@@ -305,11 +305,11 @@ public:
 
 protected:
 
-  CudaOperation(std::string kind) : kind_(kind) {}
+  CudaOperation(std::string kind) : m_kind(kind) {}
 
   CudaOperation() = delete;
 
-  std::string kind_;
+  std::string m_kind;
 };
 
 

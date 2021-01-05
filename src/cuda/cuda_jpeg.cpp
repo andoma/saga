@@ -191,7 +191,7 @@ struct CudaJpegSync : public CudaOperation {
 
   const char *exec(CudaProgram &p, long batch)
   {
-    chkCuda(cudaStreamWaitEvent(p.ctx_->stream_, j_->event_, 0));
+    chkCuda(cudaStreamWaitEvent(p.m_ctx->m_stream, j_->event_, 0));
     return NULL;
   }
 
@@ -218,22 +218,22 @@ static const char *
 jpegdecoder_setup(CudaProgram &p, const Node &n, bool training)
 {
   auto yh = n.outputs_.get("y");
-  auto j = p.load_map_[yh];
+  auto j = p.m_load_map[yh];
 
   if(!j) {
 
     // Lower into a double buffered tensor
-    auto dims = yh->dims_.n(p.batch_size_);
+    auto dims = yh->dims_.n(p.m_batch_size);
 
     auto fmt = CUDNN_TENSOR_NHWC;
     auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(yh->data_type_,
                                                                dims, fmt,
-                                                               p.ctx_);
+                                                               p.m_ctx);
     auto y = std::make_shared<CudaTensor>(s, dims, fmt);
 
-    p.tensors_[yh] = y;
-    j = std::make_shared<CudaJpeg>(p, s, y, n.loader_, p.batch_size_);
-    p.load_map_[yh] = j;
+    p.m_tensors[yh] = y;
+    j = std::make_shared<CudaJpeg>(p, s, y, n.loader_, p.m_batch_size);
+    p.m_load_map[yh] = j;
   }
 
   if(training)

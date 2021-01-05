@@ -45,7 +45,7 @@ CudaTensorStorage::CudaTensorStorage(Tensor::DataType data_type, size_t size,
   , m_ctx(ctx)
   , m_size(size)
   , m_element_size(Tensor::DataTypeSize(data_type))
-  , m_id(++ctx->tensor_storage_id_gen_)
+  , m_id(++ctx->m_tensor_storage_id_gen)
 {
 }
 
@@ -105,11 +105,11 @@ public:
       m_strides.push_back(strides[i]);
     }
 
-    m_storage->m_ctx->mutex_.lock();
+    m_storage->m_ctx->m_mutex.lock();
   }
 
   ~CudaTensorAccess() {
-    m_storage->m_ctx->mutex_.unlock();
+    m_storage->m_ctx->m_mutex.unlock();
   }
 
   Dims strides() { return m_strides; }
@@ -126,7 +126,7 @@ public:
 
   virtual double get(const Dims &element) {
     if(!m_sync) {
-      cudaStreamSynchronize(m_storage->m_ctx->stream_);
+      cudaStreamSynchronize(m_storage->m_ctx->m_stream);
       m_sync = true;
     }
     return m_storage->get(offsetForElement(element));
@@ -509,7 +509,7 @@ CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
   chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type,
                                       &rank, dims, strides));
 
-  cudaStreamSynchronize(m_storage->m_ctx->stream_);
+  cudaStreamSynchronize(m_storage->m_ctx->m_stream);
 
   if(!copy_tensor(m_storage->deviceMem(m_offset),
                   dims_.size(),
@@ -538,24 +538,24 @@ CudaTensor::stats()
 
   auto ctx = m_storage->m_ctx;
 
-  ctx->workspace_.alloc();
+  ctx->m_workspace.alloc();
 
-  float *output = (float *)ctx->workspace_.ptr();
+  float *output = (float *)ctx->m_workspace.ptr();
 
   switch(m_type) {
   case CUDNN_DATA_FLOAT:
     tensor_stats_float(elements_, (const float *)deviceMem(),
-                       output, ctx->stream_);
+                       output, ctx->m_stream);
     break;
   case CUDNN_DATA_HALF:
     tensor_stats_half(elements_, (const __half *)deviceMem(),
-                      output, ctx->stream_);
+                      output, ctx->m_stream);
     break;
   default:
     return Tensor::stats();
   }
 
-  cudaStreamSynchronize(ctx->stream_);
+  cudaStreamSynchronize(ctx->m_stream);
 
   const float min  = output[0];
   const float max  = output[1];
@@ -661,7 +661,7 @@ CudaTensorStorageDoubleBuffered::flip()
 void
 CudaTensorStorageDoubleBuffered::prefetchGPU()
 {
-  cudaMemPrefetchAsync(data(1), m_size, m_ctx->deviceId_, m_ctx->stream_);
+  cudaMemPrefetchAsync(data(1), m_size, m_ctx->m_deviceId, m_ctx->m_stream);
 }
 
 
@@ -735,15 +735,15 @@ void
 CudaProgram::issueBatchAccessOps(const CudaBatchAccessOps ops, long batch)
 {
 #ifdef __aarch64__
-  cudaStreamSynchronize(ctx_->stream_);
+  cudaStreamSynchronize(ctx_->m_stream);
 #endif
   for(const auto &op : ops) {
-    CudaTensorBatchAccess ta(op.storage_.get(),
-                             op.tensor_->m_desc,
-                             op.tensor_->m_offset);
-    op.fn_(ta, batch);
+    CudaTensorBatchAccess ta(op.m_storage.get(),
+                             op.m_tensor->m_desc,
+                             op.m_tensor->m_offset);
+    op.m_fn(ta, batch);
 #if 0
-    if(op.prefetch_)
+    if(op.m_prefetch)
       op.m_storage->prefetchGPU();
 #endif
   }
@@ -752,7 +752,7 @@ CudaProgram::issueBatchAccessOps(const CudaBatchAccessOps ops, long batch)
 void
 CudaProgram::flipDoubleBufferedTensors()
 {
-  for(const auto &s : flips_) {
+  for(const auto &s : m_flips) {
     s->flip();
   }
 }

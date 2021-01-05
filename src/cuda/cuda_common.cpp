@@ -44,35 +44,35 @@ CudaContext::init()
   nvmlInit();
 #endif
 
-  cudaGetDevice(&deviceId_);
+  cudaGetDevice(&m_deviceId);
 
   struct cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, deviceId_);
+  cudaGetDeviceProperties(&prop, m_deviceId);
 
-  chkCuda(cudaStreamCreateWithFlags(&stream_,
+  chkCuda(cudaStreamCreateWithFlags(&m_stream,
                                     cudaStreamNonBlocking));
 
   char pciid[32];
-  cudaDeviceGetPCIBusId(pciid, sizeof(pciid), deviceId_);
+  cudaDeviceGetPCIBusId(pciid, sizeof(pciid), m_deviceId);
 
   printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s id:%d at %s\n",
          prop.name, prop.major, prop.minor,
          prop.concurrentKernels ? "yes":"no",
          prop.canMapHostMemory ? "yes":"no",
-         deviceId_, pciid);
+         m_deviceId, pciid);
 
-  tensor_cores_ = prop.major >= 7;
+  m_tensor_cores = prop.major >= 7;
 
-  chkCUDNN(cudnnCreate(&cudnn_));
-  chkCUDNN(cudnnSetStream(cudnn_, stream_));
+  chkCUDNN(cudnnCreate(&m_cudnn));
+  chkCUDNN(cudnnSetStream(m_cudnn, m_stream));
 
-  cublasCreate(&cublas_);
-  cublasSetStream(cublas_, stream_);
-  if(tensor_cores_)
-    cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH);
+  cublasCreate(&m_cublas);
+  cublasSetStream(m_cublas, m_stream);
+  if(m_tensor_cores)
+    cublasSetMathMode(m_cublas, CUBLAS_TENSOR_OP_MATH);
 
 #ifdef HAVE_NVIDIA_ML
-  nvmlDeviceGetHandleByPciBusId_v2(pciid, &nvmldev_);
+  nvmlDeviceGetHandleByPciBusId_v2(pciid, &m_nvmldev);
 #endif
   return 0;
 }
@@ -103,25 +103,25 @@ registerCudaContext(void)
 void
 CudaProgram::infer(const std::shared_ptr<CudaOperation> &op)
 {
-  infer_operations_.push_back(op);
+  m_infer_operations.push_back(op);
 }
 
 void
 CudaProgram::fwd(const std::shared_ptr<CudaOperation> &op)
 {
-  fwd_operations_.push_back(op);
+  m_fwd_operations.push_back(op);
 }
 
 void
 CudaProgram::bwd(const std::shared_ptr<CudaOperation> &op)
 {
-  bwd_operations_.insert(bwd_operations_.begin(), op);
+  m_bwd_operations.insert(m_bwd_operations.begin(), op);
 }
 
 void
 CudaProgram::upd(const std::shared_ptr<CudaOperation> &op)
 {
-  upd_operations_.push_back(op);
+  m_upd_operations.push_back(op);
 }
 
 
@@ -131,10 +131,10 @@ CudaProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
   if(src == nullptr)
     return nullptr;
 
-  auto it = tensors_.find(src);
-  if(it != tensors_.end()) {
+  auto it = m_tensors.find(src);
+  if(it != m_tensors.end()) {
     auto t = it->second;
-    exported_storage_.push_back(t->m_storage);
+    m_exported_storage.push_back(t->m_storage);
     return t;
   }
   return nullptr;
@@ -143,7 +143,7 @@ CudaProgram::resolveTensor_locked(std::shared_ptr<Tensor> src)
 std::shared_ptr<Tensor>
 CudaProgram::resolveTensor(std::shared_ptr<Tensor> src)
 {
-  std::scoped_lock lock(ctx_->mutex_);
+  std::scoped_lock lock(m_ctx->m_mutex);
   return resolveTensor_locked(src);
 }
 
@@ -155,10 +155,10 @@ CudaProgram::resolveTensorGradient_locked(std::shared_ptr<Tensor> src)
   if(src == nullptr)
     return nullptr;
 
-  auto it = tensors_.find(src);
-  if(it != tensors_.end()) {
+  auto it = m_tensors.find(src);
+  if(it != m_tensors.end()) {
     auto t = it->second->makeSharedGrad();
-    exported_storage_.push_back(t->m_storage);
+    m_exported_storage.push_back(t->m_storage);
     return t;
   }
   return nullptr;
@@ -169,7 +169,7 @@ CudaProgram::resolveTensorGradient_locked(std::shared_ptr<Tensor> src)
 std::shared_ptr<Tensor>
 CudaProgram::resolveTensorGradient(std::shared_ptr<Tensor> src)
 {
-  std::scoped_lock lock(ctx_->mutex_);
+  std::scoped_lock lock(m_ctx->m_mutex);
   return resolveTensorGradient_locked(src);
 }
 
@@ -177,13 +177,13 @@ CudaProgram::resolveTensorGradient(std::shared_ptr<Tensor> src)
 cudnnTensorFormat_t
 CudaProgram::tensorFormat(Tensor::DataType data_type)
 {
-  switch(tensor_layout_) {
+  switch(m_tensor_layout) {
   case TensorLayout::Auto:
 
     switch(data_type) {
     case Tensor::DataType::U8:
     case Tensor::DataType::HALF:
-      if(ctx_->tensor_cores_)
+      if(m_ctx->m_tensor_cores)
         return CUDNN_TENSOR_NHWC;
       // FALLTHRU
     default:
@@ -207,8 +207,8 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t rank)
   if(src == nullptr)
     return nullptr;
 
-  auto it = tensors_.find(src);
-  if(it != tensors_.end()) {
+  auto it = m_tensors.find(src);
+  if(it != m_tensors.end()) {
     return it->second;
   }
 
@@ -223,11 +223,11 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t rank)
                                         dims,
                                         rank == 2 ? CUDNN_TENSOR_NCHW :
                                         tensorFormat(src->data_type_),
-                                        ctx_,
+                                        m_ctx,
                                         src->name_);
 
   t->copyFromLocked(*src, 0);
-  tensors_[src] = t;
+  m_tensors[src] = t;
   return t;
 }
 
@@ -238,14 +238,14 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
   if(src == nullptr)
     return nullptr;
 
-  auto it = tensors_.find(src);
-  if(it != tensors_.end()) {
+  auto it = m_tensors.find(src);
+  if(it != m_tensors.end()) {
     return it->second;
   }
 
   auto t = std::make_shared<CudaTensor>(src->data_type_, blueprint);
   t->copyFromLocked(*src, 0);
-  tensors_[src] = t;
+  m_tensors[src] = t;
   return t;
 }
 
@@ -256,19 +256,19 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
   if(src == nullptr)
     return nullptr;
 
-  auto it = tensors_.find(src);
-  if(it != tensors_.end()) {
+  auto it = m_tensors.find(src);
+  if(it != m_tensors.end()) {
     return it->second;
   }
 
   auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                        src->dims_.n(batch_size_),
+                                        src->dims_.n(m_batch_size),
                                         tensor_format,
-                                        ctx_,
+                                        m_ctx,
                                         src->name_);
 
   t->copyFromLocked(*src, 0);
-  tensors_[src] = t;
+  m_tensors[src] = t;
   return t;
 }
 
@@ -289,7 +289,7 @@ CudaProgram::setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml)
   if(!cml)
     return;
 
-  void *base = tensor_mem_.ptr();
+  void *base = m_tensor_mem.ptr();
   for(const auto &kv : cml->table_) {
     void *ptr = (void *)((char *)base + kv.second);
     //    printf("Tensor T%d gets %p\n", kv.first->id_, ptr);
@@ -317,12 +317,12 @@ void
 CudaProgram::progress(const char *what, long i, long batches,
                       float mp_scaling, int64_t start_time)
 {
-  if(!print_progress_)
+  if(!m_print_progress)
     return;
   time_t now = time(NULL);
-  if(now == print_progress_ts_)
+  if(now == m_print_progress_ts)
     return;
-  print_progress_ts_ = now;
+  m_print_progress_ts = now;
 
   printf("\033[K");
 
@@ -336,7 +336,7 @@ CudaProgram::progress(const char *what, long i, long batches,
 
 #ifdef HAVE_NVIDIA_ML
   nvmlUtilization_t util = {};
-  if(!nvmlDeviceGetUtilizationRates(ctx_->nvmldev_, &util)) {
+  if(!nvmlDeviceGetUtilizationRates(m_ctx->m_nvmldev, &util)) {
     printf(" | GpuUse: %3d%% MemUse: %3d%%",
            util.gpu, util.memory);
   }
@@ -352,16 +352,16 @@ CudaProgram::progress(const char *what, long i, long batches,
 
   printf("\r");
   fflush(stdout);
-  print_progress_pending_nl_ = true;
+  m_print_progress_pending_nl = true;
 }
 
 void
 CudaProgram::progressDone(void)
 {
-  if(!print_progress_pending_nl_)
+  if(!m_print_progress_pending_nl)
     return;
   printf("\n");
-  print_progress_pending_nl_ = false;
+  m_print_progress_pending_nl = false;
 }
 
 
@@ -372,50 +372,50 @@ CudaProgram::infer(long batches)
   if(batches == 0)
     return ExecResult::OK;
 
-  if(stop_check_ && stop_check_())
+  if(m_stop_check && m_stop_check())
     return ExecResult::STOPPED;
 
   finalize();
 
-  setupTensorStorage(infer_memory_layout_);
+  setupTensorStorage(m_infer_memory_layout);
 
-  issueBatchAccessOps(infer_pre_, 0);
+  issueBatchAccessOps(m_infer_pre, 0);
 
   flipDoubleBufferedTensors();
-  if(!runOps(load_operations_, 0)) {
+  if(!runOps(m_load_operations, 0)) {
     return ExecResult::ERROR;
   }
 
-  cudaStreamSynchronize(ctx_->stream_);
+  cudaStreamSynchronize(m_ctx->m_stream);
   int64_t start = Now();
   for(long i = 0; i < batches; i++) {
 
-    if(!runOps(infer_operations_, i)) {
+    if(!runOps(m_infer_operations, i)) {
       progressDone();
       return ExecResult::ERROR;
     }
     if(i < batches - 1)
-      issueBatchAccessOps(infer_pre_, i + 1);
+      issueBatchAccessOps(m_infer_pre, i + 1);
     if(i > 0)
-      issueBatchAccessOps(infer_post_, i - 1);
+      issueBatchAccessOps(m_infer_post, i - 1);
 
     flipDoubleBufferedTensors();
     if(i < batches - 1) {
-      if(!runOps(load_operations_, i + 1)) {
+      if(!runOps(m_load_operations, i + 1)) {
         progressDone();
         return ExecResult::ERROR;
       }
     }
 
-    if(stop_check_ && stop_check_()) {
+    if(m_stop_check && m_stop_check()) {
       progressDone();
       return ExecResult::STOPPED;
     }
 
     progress("Test", i, batches, NAN, start);
-    cudaStreamSynchronize(ctx_->stream_);
+    cudaStreamSynchronize(m_ctx->m_stream);
   }
-  issueBatchAccessOps(infer_post_, batches - 1);
+  issueBatchAccessOps(m_infer_post, batches - 1);
   progressDone();
   return ExecResult::OK;
 }
@@ -427,20 +427,20 @@ CudaProgram::train(long batches)
   if(batches == 0)
     return ExecResult::OK;
 
-  if(stop_check_ && stop_check_())
+  if(m_stop_check && m_stop_check())
     return ExecResult::STOPPED;
 
   finalize();
 
-  setupTensorStorage(train_memory_layout_);
+  setupTensorStorage(m_train_memory_layout);
 
-  issueBatchAccessOps(train_pre_, 0);
+  issueBatchAccessOps(m_train_pre, 0);
   flipDoubleBufferedTensors();
-  if(!runOps(load_operations_, 0)) {
+  if(!runOps(m_load_operations, 0)) {
     return ExecResult::ERROR;
   }
 
-  cudaStreamSynchronize(ctx_->stream_);
+  cudaStreamSynchronize(m_ctx->m_stream);
 
   float current_mp_scaling = NAN;
 
@@ -448,44 +448,44 @@ CudaProgram::train(long batches)
 
   for(long i = 0; i < batches; i++) {
 
-    if(!runOps(train_operations_, i)) {
+    if(!runOps(m_train_operations, i)) {
       progressDone();
       return ExecResult::ERROR;
     }
 
     if(i < batches - 1)
-      issueBatchAccessOps(train_pre_, i + 1);
+      issueBatchAccessOps(m_train_pre, i + 1);
     if(i > 0)
-      issueBatchAccessOps(train_post_, i - 1);
+      issueBatchAccessOps(m_train_post, i - 1);
 
     flipDoubleBufferedTensors();
     if(i < batches - 1) {
-      if(!runOps(load_operations_, i + 1)) {
+      if(!runOps(m_load_operations, i + 1)) {
         progressDone();
         return ExecResult::ERROR;
       }
     }
 
-    if(stop_check_ && stop_check_()) {
+    if(m_stop_check && m_stop_check()) {
       progressDone();
       return ExecResult::STOPPED;
     }
 
     progress("Train", i, batches, current_mp_scaling, start);
-    cudaStreamSynchronize(ctx_->stream_);
+    cudaStreamSynchronize(m_ctx->m_stream);
 
-    if(mp_enabled_) {
-      if(*(int *)check_result_) {
-        mp_scaling_ *= 0.5;
-        *(int *)check_result_ = 0;
+    if(m_mp_enabled) {
+      if(*(int *)m_check_result) {
+        m_mp_scaling *= 0.5;
+        *(int *)m_check_result = 0;
       } else {
-        mp_scaling_ *= 1.01;
+        m_mp_scaling *= 1.01;
       }
-      current_mp_scaling = mp_scaling_;
+      current_mp_scaling = m_mp_scaling;
     }
   }
 
-  issueBatchAccessOps(train_post_, batches - 1);
+  issueBatchAccessOps(m_train_post, batches - 1);
   progressDone();
   return ExecResult::OK;
 }
@@ -541,10 +541,10 @@ CudaOperation::print(bool full) const
 void
 CudaProgram::print(bool detailed) const
 {
-  std::scoped_lock lock(ctx_->mutex_);
-  printf("\nInference: (%zd ops)\n", infer_operations_.size());
+  std::scoped_lock lock(m_ctx->m_mutex);
+  printf("\nInference: (%zd ops)\n", m_infer_operations.size());
   int index = 0;
-  for(const auto &op : infer_operations_) {
+  for(const auto &op : m_infer_operations) {
     if(detailed) {
       op->print(true);
     } else {
@@ -554,9 +554,9 @@ CudaProgram::print(bool detailed) const
     index++;
   }
 
-  printf("\nTraining: (%zd ops):\n", train_operations_.size());
+  printf("\nTraining: (%zd ops):\n", m_train_operations.size());
   index = 0;
-  for(const auto &op : train_operations_) {
+  for(const auto &op : m_train_operations) {
     if(detailed) {
       op->print(true);
     } else {
@@ -570,7 +570,7 @@ CudaProgram::print(bool detailed) const
 void
 CudaProgram::debug(bool on)
 {
-  debug_ = on;
+  m_debug = on;
 }
 
 
@@ -753,25 +753,25 @@ CudaProgram::addPrePostOp(std::shared_ptr<CudaTensor> t,
                           std::shared_ptr<CudaTensorStorageDoubleBuffered> s,
                           const BatchTensorAccess &a)
 {
-  auto op = CudaBatchAccessOp{.tensor_ = t, .storage_ = s, .fn_ = a.fn};
+  auto op = CudaBatchAccessOp{.m_tensor = t, .m_storage = s, .m_fn = a.fn};
 
   if(a.phase == Phase::PRE) {
-    op.prefetch_ = true;
+    op.m_prefetch = true;
     if(a.mode == Mode::INFER || a.mode == Mode::ALL)
-      infer_pre_.push_back(op);
+      m_infer_pre.push_back(op);
 
     if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
-      train_pre_.push_back(op);
+      m_train_pre.push_back(op);
 
   } else {
 
-    exported_storage_.push_back(s);
+    m_exported_storage.push_back(s);
 
     if(a.mode == Mode::INFER || a.mode == Mode::ALL)
-      infer_post_.push_back(op);
+      m_infer_post.push_back(op);
 
     if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
-      train_post_.push_back(op);
+      m_train_post.push_back(op);
   }
 }
 
@@ -784,16 +784,17 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
       continue;
 
     auto src = a.tensor;
-    auto dims = src->dims_.n(batch_size_);
+    auto dims = src->dims_.n(m_batch_size);
 
     auto fmt = tensorFormat(src->data_type_);
     auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(src->data_type_,
-                                                               dims, fmt, ctx_);
+                                                               dims, fmt,
+                                                               m_ctx);
     auto t = std::make_shared<CudaTensor>(s, dims, fmt);
 
-    flips_.push_back(s);
+    m_flips.push_back(s);
     t->copyFromLocked(*src);
-    tensors_[src] = t;
+    m_tensors[src] = t;
     addPrePostOp(t, s, a);
   }
 
@@ -803,13 +804,14 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
       continue;
 
     auto src = a.tensor;
-    auto dims = src->dims_.n(batch_size_);
+    auto dims = src->dims_.n(m_batch_size);
 
     auto fmt = tensorFormat(src->data_type_);
     auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(src->data_type_,
-                                                               dims, fmt, ctx_);
+                                                               dims, fmt,
+                                                               m_ctx);
     auto g = std::make_shared<CudaTensor>(s, dims, fmt);
-    flips_.push_back(s);
+    m_flips.push_back(s);
 
     auto t = lower_tensor_batch(src);
     t->m_grad = g;
@@ -824,7 +826,7 @@ CudaContext::createProgram(const Graph &g,
                            const ProgramConfig &pc,
                            const BatchTensorAccessors &accessors)
 {
-  std::scoped_lock lock(mutex_);
+  std::scoped_lock lock(m_mutex);
 
   auto p = std::make_shared<CudaProgram>(shared_from_this(),
                                          pc.tensor_layout,
@@ -850,21 +852,21 @@ CudaContext::createProgram(const Graph &g,
       }
     }
 
-    assert(p->infer_operations_.empty());
+    assert(p->m_infer_operations.empty());
 
-    p->train_operations_.insert(p->train_operations_.end(),
-                                p->fwd_operations_.begin(),
-                                p->fwd_operations_.end());
-    p->train_operations_.insert(p->train_operations_.end(),
-                                p->bwd_operations_.begin(),
-                                p->bwd_operations_.end());
-    p->train_operations_.insert(p->train_operations_.end(),
-                                p->upd_operations_.begin(),
-                                p->upd_operations_.end());
+    p->m_train_operations.insert(p->m_train_operations.end(),
+                                 p->m_fwd_operations.begin(),
+                                 p->m_fwd_operations.end());
+    p->m_train_operations.insert(p->m_train_operations.end(),
+                                 p->m_bwd_operations.begin(),
+                                 p->m_bwd_operations.end());
+    p->m_train_operations.insert(p->m_train_operations.end(),
+                                 p->m_upd_operations.begin(),
+                                 p->m_upd_operations.end());
 
-    p->fwd_operations_.clear();
-    p->bwd_operations_.clear();
-    p->upd_operations_.clear();
+    p->m_fwd_operations.clear();
+    p->m_bwd_operations.clear();
+    p->m_upd_operations.clear();
 
   }
 
@@ -881,35 +883,39 @@ CudaContext::createProgram(const Graph &g,
     }
   }
 
-  for(const auto &kv : p->load_map_) {
-    p->load_operations_.push_back(kv.second);
+  for(const auto &kv : p->m_load_map) {
+    p->m_load_operations.push_back(kv.second);
   }
 
-  p->load_map_.clear();
+  p->m_load_map.clear();
   return p;
 }
 
 void
 CudaProgram::finalize()
 {
-  if(finalized_)
+  if(m_finalized)
     return;
-  finalized_ = true;
+  m_finalized = true;
 
-  if(train_operations_.size()) {
-    train_operations_ = reduceLiveranges(train_operations_, exported_storage_);
-    train_memory_layout_ = memoryLayout(train_operations_, exported_storage_);
-    tensor_mem_.request(train_memory_layout_->size_);
+  if(m_train_operations.size()) {
+    m_train_operations = reduceLiveranges(m_train_operations,
+                                          m_exported_storage);
+
+    m_train_memory_layout = memoryLayout(m_train_operations,
+                                         m_exported_storage);
+    m_tensor_mem.request(m_train_memory_layout->size_);
   }
 
-  if(infer_operations_.size()) {
-    infer_memory_layout_ = memoryLayout(infer_operations_, exported_storage_);
-    tensor_mem_.request(infer_memory_layout_->size_);
+  if(m_infer_operations.size()) {
+    m_infer_memory_layout = memoryLayout(m_infer_operations,
+                                         m_exported_storage);
+    m_tensor_mem.request(m_infer_memory_layout->size_);
   }
 
-  tensor_mem_.alloc();
+  m_tensor_mem.alloc();
 
-  ctx_->workspace_.alloc();
+  m_ctx->m_workspace.alloc();
 }
 
 
@@ -984,7 +990,7 @@ CudaProgram::dumpGraphFromOps(const char *path, const CudaOps &ops)
 bool
 CudaProgram::dumpGraph(const char *path)
 {
-  return dumpGraphFromOps(path, train_operations_);
+  return dumpGraphFromOps(path, m_train_operations);
 }
 
 }
