@@ -1,5 +1,7 @@
 -include local.mk
 
+include mkglue/cuda.mk
+
 PREFIX ?= /usr/local
 
 O ?= build
@@ -40,27 +42,6 @@ LDFLAGS-$(HAVE_DNNL)  += -L${DNNL_PATH}/lib -ldnnl
 # Cuda
 
 
-ifeq '$(shell which nvcc >/dev/null; echo $$?)' '0'
-# nvcc is in path (we assume we don't need pkg-config)
-# Ubuntu installs like this
-
-NVCC := nvcc
-LDFLAGS += -lnvidia-ml -lcudnn -lcublas -lnvjpeg -lcuda -lcudart -lpthread
-HAVE_CUDA := yes
-
-${O}/src/cuda/%.o : CPPFLAGS += -DHAVE_NVIDIA_ML
-SRCS-lib += src/cuda/cuda_jpeg.cpp
-
-
-else ifeq '$(shell $(PKG_CONFIG) cuda-10.2 ; echo $$?)' '0'
-HAVE_CUDA := yes
-PKGS += cuda-10.2 cudart-10.2
-NVCC := /usr/local/cuda-10.2/bin/nvcc
-LDFLAGS += -lcudnn -lcublas
-
-endif
-
-
 NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
 
 SRCS-lib-$(HAVE_CUDA) += \
@@ -70,6 +51,10 @@ SRCS-lib-$(HAVE_CUDA) += \
 	src/cuda/cuda_tensor.cpp \
 	src/cuda/cuda_kernels.cu \
 
+CPPFLAGS += ${CUDA_CPPFLAGS}
+LDFLAGS += ${CUDA_LDFLAGS}
+
+LDFLAGS-$(HAVE_CUDA) += -lcudnn -lcublas
 
 ###########################################
 # Onnx & Protobuf

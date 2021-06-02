@@ -1,0 +1,3 @@
+[submodule "mkglue"]
+	path = mkglue
+	url = https://github.com/andoma/mkglue
