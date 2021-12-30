@@ -38,8 +38,8 @@
 #include <math.h>
 
 
-#include "saga.h"
-#include "tensor.h"
+#include "saga.hpp"
+#include "tensor.hpp"
 #include "fp16.h"
 
 #include "turbo_colormap.h"

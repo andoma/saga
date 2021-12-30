@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include "saga.h"
+#include "saga.hpp"
 
 using namespace saga;
 

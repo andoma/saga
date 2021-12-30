@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-#include "saga.h"
+#include "saga.hpp"
 
 using namespace saga;
 

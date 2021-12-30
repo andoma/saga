@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <numeric>
 
-#include "saga.h"
+#include "saga.hpp"
 #include "test_classifier.h"
 #include "cli.h"
 

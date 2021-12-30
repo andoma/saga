@@ -1,6 +1,6 @@
 #include <map>
-#include "saga.h"
-#include "context.h"
+#include "saga.hpp"
+#include "context.hpp"
 
 
 namespace saga {

@@ -25,7 +25,7 @@
  */
 
 #include <math.h>
-#include "saga.h"
+#include "saga.hpp"
 
 namespace saga {
 

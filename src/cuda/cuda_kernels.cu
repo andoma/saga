@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "cuda_kernels.h"
+#include "cuda_kernels.hpp"
 
 namespace saga {
 

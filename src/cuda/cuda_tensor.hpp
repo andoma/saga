@@ -26,9 +26,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "saga.h"
+#include "saga.hpp"
 
-#include "cuda_common.h"
+#include "cuda_common.hpp"
 
 namespace saga {
 

@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <libgen.h>
 
-#include "saga.h"
+#include "saga.hpp"
 #include "cli.h"
 
 using namespace saga;

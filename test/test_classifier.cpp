@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <signal.h>
 
-#include "saga.h"
+#include "saga.hpp"
 
 using namespace saga;
 

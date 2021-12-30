@@ -1,6 +1,6 @@
 // -*-c++-*-
 
-#include "saga.h"
+#include "saga.hpp"
 
 namespace saga {
 

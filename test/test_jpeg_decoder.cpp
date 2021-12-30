@@ -9,7 +9,7 @@
 #include <numeric>
 #include <string.h>
 
-#include "saga.h"
+#include "saga.hpp"
 #include "cli.h"
 
 using namespace saga;

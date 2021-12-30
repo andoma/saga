@@ -27,13 +27,13 @@
 #include <sstream>
 #include <map>
 
-#include "saga.h"
-#include "tensor.h"
-#include "context.h"
+#include "saga.hpp"
+#include "tensor.hpp"
+#include "context.hpp"
 
-#include "cuda_common.h"
-#include "cuda_tensor.h"
-#include "cuda_analysis.h"
+#include "cuda_common.hpp"
+#include "cuda_tensor.hpp"
+#include "cuda_analysis.hpp"
 
 namespace saga {
 

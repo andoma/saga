@@ -28,7 +28,7 @@
 #include <errno.h>
 #include <string.h>
 #include <dirent.h>
-#include "saga.h"
+#include "saga.hpp"
 
 namespace saga {
 

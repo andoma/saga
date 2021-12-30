@@ -1,7 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "saga.h"
+#include "saga.hpp"
 #include "test/cli.h"
 
 
