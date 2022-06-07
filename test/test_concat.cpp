@@ -7,56 +7,47 @@
 
 #include "saga.hpp"
 
-
 using namespace saga;
-
-
-
 
 int
 test_concat_main(int argc, char **argv)
 {
-  int batch_size = 2;
+    int batch_size = 2;
 
-  Network net(true);
+    Network net(true);
 
+    std::vector<float> test(24 + 14);
+    for(int i = 0; i < 24; i++) test[i] = i;
 
-  std::vector<float> test(24+14);
-  for(int i = 0; i < 24; i++)
-    test[i] = i;
+    Tensor i1(Size(batch_size, 3, 2, 2), Tensor::Type::FLOAT);
 
-  Tensor i1(Size(batch_size, 3, 2, 2), Tensor::Type::FLOAT);
+    auto c1 = net.addLayer(makeInput(&i1, true));
+    i1.load(test);
+    c1->output()->dump("c1");
 
-  auto c1 = net.addLayer(makeInput(&i1, true));
-  i1.load(test);
-  c1->output()->dump("c1");
+    Tensor i2(Size(batch_size, 2, 2, 2), Tensor::Type::FLOAT);
 
+    for(int i = 0; i < 24; i++) test[i] = 100 + i;
 
-  Tensor i2(Size(batch_size, 2, 2, 2), Tensor::Type::FLOAT);
+    i2.load(test);
+    auto c2 = net.addLayer(makeInput(&i2, true));
+    c2->output()->dump("c2");
 
-  for(int i = 0; i < 24; i++)
-    test[i] = 100 + i;
+    auto tail = net.addLayer(makeConcat({c1.get(), c2.get()}, net));
 
-  i2.load(test);
-  auto c2 = net.addLayer(makeInput(&i2, true));
-  c2->output()->dump("c2");
+    net.forward(true);
 
-  auto tail = net.addLayer(makeConcat({c1.get(), c2.get()}, net));
+    tail->output()->dump("output");
 
-  net.forward(true);
+    for(int i = 0; i < 24 + 16; i++) test[i] = 1000 + i;
 
-  tail->output()->dump("output");
+    tail->gradient()->load(test);
+    tail->gradient()->dump("g");
 
-  for(int i = 0; i < 24 + 16; i++)
-    test[i] = 1000 + i;
+    net.backprop(0);
 
-  tail->gradient()->load(test);
-  tail->gradient()->dump("g");
+    c1->gradient()->dump("c1g");
+    c2->gradient()->dump("c2g");
 
-  net.backprop(0);
-
-  c1->gradient()->dump("c1g");
-  c2->gradient()->dump("c2g");
-
-  return 0;
+    return 0;
 }

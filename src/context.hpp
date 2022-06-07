@@ -8,11 +8,11 @@ class Context;
 
 // These are by priority, highest to lowest
 enum class ContextType {
-  CUDA,
-  DNNL,
+    CUDA,
+    DNNL,
 };
 
 void registerContextFactory(ContextType type,
                             std::shared_ptr<Context> (*fn)(void));
 
-};
+};  // namespace saga

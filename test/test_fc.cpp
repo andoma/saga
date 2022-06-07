@@ -12,65 +12,59 @@ using namespace saga;
 int
 test_fc_main(int argc, char **argv)
 {
-  int batch_size = 2;
+    int batch_size = 2;
 
-  int opt;
+    int opt;
 
-  auto dt = Tensor::Type::FLOAT;
+    auto dt = Tensor::Type::FLOAT;
 
-  while((opt = getopt(argc, argv, "b:h")) != -1) {
-    switch(opt) {
-    case 'b':
-      batch_size = atoi(optarg);
-      break;
-    case 'h':
-      dt = Tensor::Type::HALF;
-      break;
+    while((opt = getopt(argc, argv, "b:h")) != -1) {
+        switch(opt) {
+        case 'b':
+            batch_size = atoi(optarg);
+            break;
+        case 'h':
+            dt = Tensor::Type::HALF;
+            break;
+        }
     }
-  }
 
-  Network net(true);
+    Network net(true);
 
-  Tensor i1(Size(batch_size, 4, 1, 1), dt);
+    Tensor i1(Size(batch_size, 4, 1, 1), dt);
 
+    auto input = net.addLayer(makeInput(&i1, true));
 
+    auto w = std::make_shared<Tensor>(Size(4, 4, 1, 1), dt);
+    w->allocate(CUDNN_TENSOR_NHWC);
+    for(int i = 0; i < 4; i++)
+        for(int j = 0; j < 4; j++) w->set(i, j, 0, 0, i * 10 + j);
+    net.named_tensors_["w"] = w;
 
-  auto input = net.addLayer(makeInput(&i1, true));
+    auto b = std::make_shared<Tensor>(Size(1, 4, 1, 1), dt);
+    b->allocate(CUDNN_TENSOR_NHWC);
+    b->fill(1);
+    net.named_tensors_["b"] = b;
+    for(int j = 0; j < 4; j++) b->set(0, j, 0, 0, j * 70);
 
-  auto w = std::make_shared<Tensor>(Size(4, 4, 1, 1), dt);
-  w->allocate(CUDNN_TENSOR_NHWC);
-  for(int i = 0; i < 4; i++)
-    for(int j = 0; j < 4; j++)
-      w->set(i, j, 0, 0, i * 10 + j);
-  net.named_tensors_["w"] = w;
+    auto l = net.addLayer(makeFullyConnected(4, *input, net, "w", "b"));
 
-  auto b = std::make_shared<Tensor>(Size(1, 4, 1, 1), dt);
-  b->allocate(CUDNN_TENSOR_NHWC);
-  b->fill(1);
-  net.named_tensors_["b"] = b;
-  for(int j = 0; j < 4; j++)
-    b->set(0, j, 0, 0, j * 70);
+    for(int n = 0; n < batch_size; n++)
+        for(int c = 0; c < 4; c++) i1.set(n, c, 0, 0, n * 100 + c);
 
-  auto l = net.addLayer(makeFullyConnected(4, *input, net, "w", "b"));
+    net.forward();
 
-  for(int n = 0; n < batch_size; n++)
-    for(int c = 0; c < 4; c++)
-      i1.set(n, c, 0, 0, n * 100 + c);
+    input->output()->dump("input");
+    w->dump("weights");
+    b->dump("bias");
 
-  net.forward();
+    l->output()->dump("output");
 
-  input->output()->dump("input");
-  w->dump("weights");
-  b->dump("bias");
+    auto grad = l->gradient();
+    for(int n = 0; n < batch_size; n++)
+        for(int c = 0; c < 4; c++) grad->set(n, c, 0, 0, n * 10 + c);
 
-  l->output()->dump("output");
+    net.backprop(0);
 
-  auto grad = l->gradient();
-  for(int n = 0; n < batch_size; n++)
-    for(int c = 0; c < 4; c++)
-      grad->set(n, c, 0, 0, n * 10 + c);
-
-  net.backprop(0);
-
-  return 0;
+    return 0;
 }

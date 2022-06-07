@@ -13,12 +13,11 @@
 
 using namespace saga;
 
-static int64_t __attribute__((unused))
-get_ts(void)
+static int64_t __attribute__((unused)) get_ts(void)
 {
-  struct timespec tv;
-  clock_gettime(CLOCK_MONOTONIC, &tv);
-  return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
+    struct timespec tv;
+    clock_gettime(CLOCK_MONOTONIC, &tv);
+    return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
 }
 
 #if 0
@@ -38,95 +37,82 @@ static const int table_and[12] = {
 #endif
 
 static const int table_xor[12] = {
-  0, 0, 1,
-  0, 1, 0,
-  1, 0, 0,
-  1, 1, 1,
+    0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1,
 };
-
-
-
-
-
 
 extern int
 minimal_main(int argc, char **argv)
 {
-  int opt;
+    int opt;
 
-  auto dt = Tensor::DataType::FLOAT;
+    auto dt = Tensor::DataType::FLOAT;
 
-  while((opt = getopt(argc, argv, "h")) != -1) {
-    switch(opt) {
-    case 'h':
-      dt = Tensor::DataType::HALF;
-      break;
+    while((opt = getopt(argc, argv, "h")) != -1) {
+        switch(opt) {
+        case 'h':
+            dt = Tensor::DataType::HALF;
+            break;
+        }
     }
-  }
 
-  argc -= optind;
-  argv += optind;
+    argc -= optind;
+    argv += optind;
 
-  Graph g;
+    Graph g;
 
-  auto x = std::make_shared<Tensor>(dt, Dims({1, 2}), "input");
-  std::shared_ptr<Node> n;
-  n = g.addNode("fc", {{"x", x}}, {{"outputs", 2}, {"bias", true}});
-  n = g.addNode("relu", {{"x", n->y()}}, {});
-  n = g.addNode("fc", {{"x", n->y()}}, {{"outputs", 2}, {"bias", true}});
-  n = g.addNode("catclassifier", {{"x", n->y()}}, {});
+    auto x = std::make_shared<Tensor>(dt, Dims({1, 2}), "input");
+    std::shared_ptr<Node> n;
+    n = g.addNode("fc", {{"x", x}}, {{"outputs", 2}, {"bias", true}});
+    n = g.addNode("relu", {{"x", n->y()}}, {});
+    n = g.addNode("fc", {{"x", n->y()}}, {{"outputs", 2}, {"bias", true}});
+    n = g.addNode("catclassifier", {{"x", n->y()}}, {});
 
-  auto loss = n->outputs_["loss"];
-  auto y = n->y();
-  g.print();
+    auto loss = n->outputs_["loss"];
+    auto y = n->y();
+    g.print();
 
-  auto ctx = createContext();
-  auto p = ctx->createProgram(g, {
-      .inference = true,
-      .training = true,
-      .batch_size = 4,
-      .initial_learning_rate = 1e-3,
-      .tensor_layout = TensorLayout::NCHW
-    });
+    auto ctx = createContext();
+    auto p = ctx->createProgram(g, {.inference = true,
+                                    .training = true,
+                                    .batch_size = 4,
+                                    .initial_learning_rate = 1e-3,
+                                    .tensor_layout = TensorLayout::NCHW});
 
-  p->print();
+    p->print();
 
-  x = p->resolveTensor(x);
-  auto dy = p->resolveTensorGradient(y);
-  y = p->resolveTensor(y);
+    x = p->resolveTensor(x);
+    auto dy = p->resolveTensorGradient(y);
+    y = p->resolveTensor(y);
 
-  loss = p->resolveTensor(loss);
+    loss = p->resolveTensor(loss);
 
-  printf("x: %s\n", x->info().c_str());
-  printf("y: %s\n", y->info().c_str());
-  printf("dy: %s\n", dy->info().c_str());
+    printf("x: %s\n", x->info().c_str());
+    printf("y: %s\n", y->info().c_str());
+    printf("dy: %s\n", dy->info().c_str());
 
-  const int *tbl = table_xor;
-  for(int i = 0; i < 4; i++) {
-    x->access()->set({i, 0}, tbl[0]);
-    x->access()->set({i, 1}, tbl[1]);
-    dy->access()->set({i}, tbl[2]);
-    tbl += 3;
-  }
-
-  x->print("X");
-  dy->print("DY");
-
-  int iter = 0;
-  while(1) {
-    p->train();
-    iter++;
-    if((iter % 10000) == 0) {
-      loss->print("LOSS");
-      y->print("Y");
+    const int *tbl = table_xor;
+    for(int i = 0; i < 4; i++) {
+        x->access()->set({i, 0}, tbl[0]);
+        x->access()->set({i, 1}, tbl[1]);
+        dy->access()->set({i}, tbl[2]);
+        tbl += 3;
     }
-  }
 
-  return 0;
+    x->print("X");
+    dy->print("DY");
+
+    int iter = 0;
+    while(1) {
+        p->train();
+        iter++;
+        if((iter % 10000) == 0) {
+            loss->print("LOSS");
+            y->print("Y");
+        }
+    }
+
+    return 0;
 }
 
-
-SAGA_CLI_CMD("minimal",
-             "minimal [OPTIONS ...]",
-             "Run some minimal tests",
+SAGA_CLI_CMD("minimal", "minimal [OPTIONS ...]", "Run some minimal tests",
              minimal_main);

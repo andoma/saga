@@ -24,7 +24,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-
 #include <sstream>
 #include "saga.hpp"
 #include "tensor.hpp"
@@ -34,10 +33,7 @@
 #include "cuda_tensor.hpp"
 #include "cuda_kernels.hpp"
 
-
 namespace saga {
-
-
 
 CudaTensorStorage::CudaTensorStorage(Tensor::DataType data_type, size_t size,
                                      const std::shared_ptr<CudaContext> &ctx)
@@ -49,127 +45,120 @@ CudaTensorStorage::CudaTensorStorage(Tensor::DataType data_type, size_t size,
 {
 }
 
-
 CudaTensorStorage::~CudaTensorStorage()
 {
-  if(m_mem)
-    assert(m_mem == m_data);
-  chkCuda(cudaFree(m_mem));
+    if(m_mem)
+        assert(m_mem == m_data);
+    chkCuda(cudaFree(m_mem));
 }
 
 void
 CudaTensorStorage::alloc()
 {
-  if(m_mem)
-    return;
-  chkCuda(cudaMallocManaged(&m_mem, m_size, cudaMemAttachGlobal));
-  chkCuda(cudaMemset(m_mem, 0, m_size));
-  m_data = m_mem;
+    if(m_mem)
+        return;
+    chkCuda(cudaMallocManaged(&m_mem, m_size, cudaMemAttachGlobal));
+    chkCuda(cudaMemset(m_mem, 0, m_size));
+    m_data = m_mem;
 }
 
 void
 CudaTensorStorage::setTmpMem(void *p)
 {
-  if(m_mem)
-    return;
-  m_data = p;
+    if(m_mem)
+        return;
+    m_data = p;
 }
 
-void *CudaTensorStorage::deviceMem(int64_t offset)
+void *
+CudaTensorStorage::deviceMem(int64_t offset)
 {
-  return (void *)((char *)m_data + offset * m_element_size);
+    return (void *)((char *)m_data + offset * m_element_size);
 }
-
-
 
 class CudaTensorAccess : public TensorAccess {
-
 public:
-  CudaTensorAccess(std::shared_ptr<CudaTensorStorage> storage,
-                   cudnnTensorDescriptor_t desc,
-                   int64_t offset)
-    : m_storage(storage)
-    , m_offset(offset)
-    , m_sync(false)
-  {
-    const int max_rank = 8;
-    int dims[max_rank];
-    int strides[max_rank];
-    int rank;
-    cudnnDataType_t data_type;
+    CudaTensorAccess(std::shared_ptr<CudaTensorStorage> storage,
+                     cudnnTensorDescriptor_t desc, int64_t offset)
+      : m_storage(storage), m_offset(offset), m_sync(false)
+    {
+        const int max_rank = 8;
+        int dims[max_rank];
+        int strides[max_rank];
+        int rank;
+        cudnnDataType_t data_type;
 
-    chkCUDNN(cudnnGetTensorNdDescriptor(desc, max_rank, &data_type,
-                                        &rank, dims, strides));
+        chkCUDNN(cudnnGetTensorNdDescriptor(desc, max_rank, &data_type, &rank,
+                                            dims, strides));
 
-    for(int i = 0; i < rank; i++) {
-      m_strides.push_back(strides[i]);
+        for(int i = 0; i < rank; i++) {
+            m_strides.push_back(strides[i]);
+        }
+
+        m_storage->m_ctx->m_mutex.lock();
     }
 
-    m_storage->m_ctx->m_mutex.lock();
-  }
+    ~CudaTensorAccess() { m_storage->m_ctx->m_mutex.unlock(); }
 
-  ~CudaTensorAccess() {
-    m_storage->m_ctx->m_mutex.unlock();
-  }
+    Dims strides() { return m_strides; }
 
-  Dims strides() { return m_strides; }
+    void *data() { return m_storage->data(); }
 
-  void *data() { return m_storage->data(); }
-
-  int64_t offsetForElement(const Dims &element) const {
-    size_t offset = m_offset;
-    for(size_t i = 0; i < element.size() && i < m_strides.size(); i++) {
-      offset += element[i] * m_strides[i];
+    int64_t offsetForElement(const Dims &element) const
+    {
+        size_t offset = m_offset;
+        for(size_t i = 0; i < element.size() && i < m_strides.size(); i++) {
+            offset += element[i] * m_strides[i];
+        }
+        return offset;
     }
-    return offset;
-  }
 
-  virtual double get(const Dims &element) {
-    if(!m_sync) {
-      cudaStreamSynchronize(m_storage->m_ctx->m_stream);
-      m_sync = true;
+    virtual double get(const Dims &element)
+    {
+        if(!m_sync) {
+            cudaStreamSynchronize(m_storage->m_ctx->m_stream);
+            m_sync = true;
+        }
+        return m_storage->get(offsetForElement(element));
+    };
+
+    virtual void set(const Dims &element, double value)
+    {
+        m_storage->set(offsetForElement(element), value);
     }
-    return m_storage->get(offsetForElement(element));
-  };
 
-  virtual void set(const Dims &element, double value) {
-    m_storage->set(offsetForElement(element), value);
-  }
+    virtual void copyBytesFrom(const Dims &element, const void *data,
+                               size_t size)
+    {
+        const size_t o = offsetForElement(element) * m_storage->m_element_size;
+        char *dst = (char *)m_storage->data();
+        cudaMemcpy(dst + o, data, size, cudaMemcpyHostToDevice);
+    }
 
-  virtual void copyBytesFrom(const Dims &element,
-                             const void *data, size_t size) {
-    const size_t o = offsetForElement(element) * m_storage->m_element_size;
-    char *dst = (char *)m_storage->data();
-    cudaMemcpy(dst + o, data, size, cudaMemcpyHostToDevice);
-  }
-
-  Dims m_strides;
-  const std::shared_ptr<CudaTensorStorage> m_storage;
-  const int64_t m_offset;
-  bool m_sync;
+    Dims m_strides;
+    const std::shared_ptr<CudaTensorStorage> m_storage;
+    const int64_t m_offset;
+    bool m_sync;
 };
-
-
 
 cudnnDataType_t
 cudnnDataType_from_dataType(Tensor::DataType data_type)
 {
-  switch(data_type) {
-  case Tensor::DataType::FLOAT:
-    return CUDNN_DATA_FLOAT;
-  case Tensor::DataType::HALF:
-    return CUDNN_DATA_HALF;
-  case Tensor::DataType::U8:
-    return CUDNN_DATA_UINT8;
-  case Tensor::DataType::I32:
-    return CUDNN_DATA_INT32;
-  default:
-    fprintf(stderr, "Unsupported data_type %d for cuda tensor\n",
-            (int)data_type);
-    abort();
-  }
+    switch(data_type) {
+    case Tensor::DataType::FLOAT:
+        return CUDNN_DATA_FLOAT;
+    case Tensor::DataType::HALF:
+        return CUDNN_DATA_HALF;
+    case Tensor::DataType::U8:
+        return CUDNN_DATA_UINT8;
+    case Tensor::DataType::I32:
+        return CUDNN_DATA_INT32;
+    default:
+        fprintf(stderr, "Unsupported data_type %d for cuda tensor\n",
+                (int)data_type);
+        abort();
+    }
 }
-
 
 CudaTensor::CudaTensor(DataType data_type, const Dims &size,
                        cudnnTensorFormat_t format,
@@ -179,20 +168,17 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size,
   , m_type(cudnnDataType_from_dataType(data_type))
   , m_offset(0)
 {
-  chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-  assert(size.size() >= 0 && size.size() <= 4);
-  chkCUDNN(cudnnSetTensor4dDescriptor(m_desc, format, m_type,
-                                      size[0],
-                                      size.size() > 1 ? size[1] : 1,
-                                      size.size() > 2 ? size[2] : 1,
-                                      size.size() > 3 ? size[3] : 1));
+    chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
+    assert(size.size() >= 0 && size.size() <= 4);
+    chkCUDNN(cudnnSetTensor4dDescriptor(
+        m_desc, format, m_type, size[0], size.size() > 1 ? size[1] : 1,
+        size.size() > 2 ? size[2] : 1, size.size() > 3 ? size[3] : 1));
 
-  size_t bytes;
-  chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
+    size_t bytes;
+    chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
 
-  m_storage = std::make_shared<CudaTensorStorage>(data_type, bytes, ctx);
+    m_storage = std::make_shared<CudaTensorStorage>(data_type, bytes, ctx);
 }
-
 
 CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
                        const Dims &size, cudnnTensorFormat_t format,
@@ -201,83 +187,73 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
   , m_type(cudnnDataType_from_dataType(storage->m_data_type))
   , m_offset(0)
 {
-  chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-  assert(size.size() >= 0 && size.size() <= 4);
-  chkCUDNN(cudnnSetTensor4dDescriptor(m_desc, format, m_type,
-                                      size[0],
-                                      size.size() > 1 ? size[1] : 1,
-                                      size.size() > 2 ? size[2] : 1,
-                                      size.size() > 3 ? size[3] : 1));
-  m_storage = storage;
+    chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
+    assert(size.size() >= 0 && size.size() <= 4);
+    chkCUDNN(cudnnSetTensor4dDescriptor(
+        m_desc, format, m_type, size[0], size.size() > 1 ? size[1] : 1,
+        size.size() > 2 ? size[2] : 1, size.size() > 3 ? size[3] : 1));
+    m_storage = storage;
 }
 
-
-CudaTensor::CudaTensor(std::shared_ptr<CudaTensor> alias,
-                       const Dims &size, std::vector<int64_t> offset_element,
+CudaTensor::CudaTensor(std::shared_ptr<CudaTensor> alias, const Dims &size,
+                       std::vector<int64_t> offset_element,
                        const std::optional<const std::string> &name)
   : Tensor(alias->m_storage->m_data_type, size, name)
   , m_type(cudnnDataType_from_dataType(alias->m_storage->m_data_type))
   , m_offset(alias->m_offset)
   , m_storage(alias->m_storage)
 {
-  const int max_rank = 8;
-  int dimsA[max_rank];
-  int stridesA[max_rank];
-  int rank;
-  cudnnDataType_t data_type;
+    const int max_rank = 8;
+    int dimsA[max_rank];
+    int stridesA[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
 
-  chkCUDNN(cudnnGetTensorNdDescriptor(alias->m_desc, max_rank, &data_type,
-                                      &rank, dimsA, stridesA));
+    chkCUDNN(cudnnGetTensorNdDescriptor(alias->m_desc, max_rank, &data_type,
+                                        &rank, dimsA, stridesA));
 
-  assert(data_type == m_type);
-  for(size_t i = 0; i < size.size(); i++) {
-    dimsA[i] = size[i];
-  }
+    assert(data_type == m_type);
+    for(size_t i = 0; i < size.size(); i++) {
+        dimsA[i] = size[i];
+    }
 
-  chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-  chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, rank, dimsA, stridesA));
+    chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
+    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, rank, dimsA, stridesA));
 
-  for(size_t i = 0; i < size.size() && i < offset_element.size(); i++) {
-    m_offset += offset_element[i] * stridesA[i];
-  }
+    for(size_t i = 0; i < size.size() && i < offset_element.size(); i++) {
+        m_offset += offset_element[i] * stridesA[i];
+    }
 }
 
 CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
-                       const Dims &size,
-                       int64_t offset,
-                       const int *strides,
+                       const Dims &size, int64_t offset, const int *strides,
                        const std::optional<const std::string> &name)
   : Tensor(storage->m_data_type, size, name)
   , m_type(cudnnDataType_from_dataType(storage->m_data_type))
   , m_offset(offset)
   , m_storage(storage)
 {
-  chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-  chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(),
-                                      &size[0], strides));
+    chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
+    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(), &size[0],
+                                        strides));
 }
 
-
-CudaTensor::CudaTensor(DataType data_type,
-                       const Dims &size,
-                       const int *strides,
+CudaTensor::CudaTensor(DataType data_type, const Dims &size, const int *strides,
                        const std::shared_ptr<CudaContext> &ctx,
                        const std::optional<const std::string> &name)
   : Tensor(data_type, size, name)
   , m_type(cudnnDataType_from_dataType(data_type))
 {
-  chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-  chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(),
-                                      &size[0], strides));
-  size_t bytes;
-  chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
+    chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
+    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(), &size[0],
+                                        strides));
+    size_t bytes;
+    chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
 
-  m_storage = std::make_shared<CudaTensorStorage>(data_type, bytes, ctx);
+    m_storage = std::make_shared<CudaTensorStorage>(data_type, bytes, ctx);
 }
 
-
-CudaTensor::CudaTensor(const CudaTensor &o,
-                       cudnnTensorFormat_t format,
+CudaTensor::CudaTensor(const CudaTensor &o, cudnnTensorFormat_t format,
                        const std::optional<const std::string> &postfix)
   : CudaTensor(o.data_type_, o.dims_, format, o.m_storage->m_ctx,
                postfix ? o.namePostfix(*postfix) : std::nullopt)
@@ -290,472 +266,436 @@ CudaTensor::CudaTensor(const CudaTensor &o,
   , m_type(cudnnDataType_from_dataType(data_type_))
   , m_offset(0)
 {
-  const int max_rank = 8;
-  int dimsA[max_rank];
-  int stridesA[max_rank];
-  int rank;
-  cudnnDataType_t data_type;
+    const int max_rank = 8;
+    int dimsA[max_rank];
+    int stridesA[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
 
-  chkCUDNN(cudnnGetTensorNdDescriptor(o.m_desc, max_rank, &data_type,
-                                      &rank, dimsA, stridesA));
+    chkCUDNN(cudnnGetTensorNdDescriptor(o.m_desc, max_rank, &data_type, &rank,
+                                        dimsA, stridesA));
 
-  chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-  chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, rank,
-                                      dimsA, stridesA));
-  size_t bytes;
-  chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
+    chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
+    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, rank, dimsA, stridesA));
+    size_t bytes;
+    chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
 
-  m_storage = std::make_shared<CudaTensorStorage>(data_type_, bytes,
-                                                 o.m_storage->m_ctx);
+    m_storage = std::make_shared<CudaTensorStorage>(data_type_, bytes,
+                                                    o.m_storage->m_ctx);
 }
 
-
-CudaTensor::CudaTensor(DataType data_type,
-                       const CudaTensor &o,
+CudaTensor::CudaTensor(DataType data_type, const CudaTensor &o,
                        const std::optional<const std::string> &name)
   : Tensor(data_type, o.dims_, name)
   , m_type(cudnnDataType_from_dataType(data_type))
   , m_offset(0)
 {
-  const int max_rank = 8;
-  int dimsA[max_rank];
-  int stridesA[max_rank];
-  int rank;
-  cudnnDataType_t data_type_o;
+    const int max_rank = 8;
+    int dimsA[max_rank];
+    int stridesA[max_rank];
+    int rank;
+    cudnnDataType_t data_type_o;
 
-  chkCUDNN(cudnnGetTensorNdDescriptor(o.m_desc, max_rank, &data_type_o,
-                                      &rank, dimsA, stridesA));
+    chkCUDNN(cudnnGetTensorNdDescriptor(o.m_desc, max_rank, &data_type_o, &rank,
+                                        dimsA, stridesA));
 
-  chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-  chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, rank,
-                                      dimsA, stridesA));
-  size_t bytes;
-  chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
+    chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
+    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, rank, dimsA, stridesA));
+    size_t bytes;
+    chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
 
-  m_storage = std::make_shared<CudaTensorStorage>(data_type_, bytes,
-                                                 o.m_storage->m_ctx);
+    m_storage = std::make_shared<CudaTensorStorage>(data_type_, bytes,
+                                                    o.m_storage->m_ctx);
 }
 
-
-CudaTensor::~CudaTensor()
-{
-  chkCUDNN(cudnnDestroyTensorDescriptor(m_desc));
-}
+CudaTensor::~CudaTensor() { chkCUDNN(cudnnDestroyTensorDescriptor(m_desc)); }
 
 std::unique_ptr<TensorAccess>
 CudaTensor::access()
 {
-  if(!m_storage->data()) {
-    m_storage->alloc();
-  }
-  return std::make_unique<CudaTensorAccess>(m_storage, m_desc, m_offset);
+    if(!m_storage->data()) {
+        m_storage->alloc();
+    }
+    return std::make_unique<CudaTensorAccess>(m_storage, m_desc, m_offset);
 }
 
 std::shared_ptr<Tensor>
 CudaTensor::slice(const Dims &offset, const Dims &size)
 {
-  const int max_rank = 8;
-  int dimsA[max_rank];
-  int stridesA[max_rank];
-  int rank;
-  cudnnDataType_t data_type;
+    const int max_rank = 8;
+    int dimsA[max_rank];
+    int stridesA[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
 
-  chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type,
-                                      &rank, dimsA, stridesA));
+    chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type, &rank,
+                                        dimsA, stridesA));
 
-  int64_t o = m_offset;
+    int64_t o = m_offset;
 
-  for(int i = 0; i < rank && i < (ssize_t)offset.size(); i++) {
-    o += offset[i] * stridesA[i];
-  }
+    for(int i = 0; i < rank && i < (ssize_t)offset.size(); i++) {
+        o += offset[i] * stridesA[i];
+    }
 
-  return std::make_shared<CudaTensor>(m_storage, size, o, stridesA,
-                                      namePostfix("slice"));
+    return std::make_shared<CudaTensor>(m_storage, size, o, stridesA,
+                                        namePostfix("slice"));
 }
-
-
 
 std::shared_ptr<CudaTensor>
 CudaTensor::makeSharedGrad()
 {
-  if(!m_grad)
-    m_grad = std::make_shared<CudaTensor>(*this, namePostfix("grad"));
+    if(!m_grad)
+        m_grad = std::make_shared<CudaTensor>(*this, namePostfix("grad"));
 
-  return m_grad;
+    return m_grad;
 }
-
 
 std::shared_ptr<CudaTensor>
 CudaTensor::makePrivateGrad()
 {
-  return std::make_shared<CudaTensor>(*this, namePostfix("private_grad"));
+    return std::make_shared<CudaTensor>(*this, namePostfix("private_grad"));
 }
-
 
 void *
 CudaTensor::deviceMem() const
 {
-  return m_storage->deviceMem(m_offset);
+    return m_storage->deviceMem(m_offset);
 };
-
 
 std::string
 CudaTensor::shortname() const
 {
-  std::stringstream ss;
-  ss << "T" << m_storage->m_id;
-  if(name_) {
-    ss << "\"" << *name_ << "\"";
-  }
+    std::stringstream ss;
+    ss << "T" << m_storage->m_id;
+    if(name_) {
+        ss << "\"" << *name_ << "\"";
+    }
 
-  if(m_offset) {
-    ss << "[" << m_offset << "]";
-  }
+    if(m_offset) {
+        ss << "[" << m_offset << "]";
+    }
 
-  return ss.str();
+    return ss.str();
 }
-
 
 std::string
 CudaTensor::info() const
 {
-  std::stringstream ss;
-  ss << "T" << m_storage->m_id;
-  if(name_)
-    ss << "\"" << *name_ << "\"";
+    std::stringstream ss;
+    ss << "T" << m_storage->m_id;
+    if(name_)
+        ss << "\"" << *name_ << "\"";
 
-  const int max_rank = 8;
-  int dims[max_rank];
-  int strides[max_rank];
-  int rank;
-  cudnnDataType_t data_type;
+    const int max_rank = 8;
+    int dims[max_rank];
+    int strides[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
 
-  chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type,
-                                      &rank, dims, strides));
-  switch(data_type) {
-  case CUDNN_DATA_FLOAT:
-    ss << "<float>";
-    break;
-  case CUDNN_DATA_HALF:
-    ss << "<half>";
-    break;
-  case CUDNN_DATA_UINT8:
-    ss << "<u8>";
-    break;
-  case CUDNN_DATA_INT32:
-    ss << "<i32>";
-    break;
-  default:
-    ss << "<?>";
-    break;
-  }
+    chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type, &rank,
+                                        dims, strides));
+    switch(data_type) {
+    case CUDNN_DATA_FLOAT:
+        ss << "<float>";
+        break;
+    case CUDNN_DATA_HALF:
+        ss << "<half>";
+        break;
+    case CUDNN_DATA_UINT8:
+        ss << "<u8>";
+        break;
+    case CUDNN_DATA_INT32:
+        ss << "<i32>";
+        break;
+    default:
+        ss << "<?>";
+        break;
+    }
 
-  const char *prefix = "";
-  ss << "[";
-  for(int i = 0; i < rank; i++) {
-    ss << prefix << dims[i];
-    prefix = ", ";
-  }
-  ss << "]";
+    const char *prefix = "";
+    ss << "[";
+    for(int i = 0; i < rank; i++) {
+        ss << prefix << dims[i];
+        prefix = ", ";
+    }
+    ss << "]";
 
-  prefix = "";
-  ss << "{";
-  for(int i = 0; i < rank; i++) {
-    ss << prefix << strides[i];
-    prefix = ", ";
-  }
-  ss << "}@cuda:" << m_storage->deviceMem(0);
+    prefix = "";
+    ss << "{";
+    for(int i = 0; i < rank; i++) {
+        ss << prefix << strides[i];
+        prefix = ", ";
+    }
+    ss << "}@cuda:" << m_storage->deviceMem(0);
 
-  if(m_storage->m_mem) {
-    ss << "<static>";
-  }
+    if(m_storage->m_mem) {
+        ss << "<static>";
+    }
 
-  if(m_offset) {
-    ss << " + " << m_offset;
-  }
-  return ss.str();
+    if(m_offset) {
+        ss << " + " << m_offset;
+    }
+    return ss.str();
 }
 
-bool CudaTensor::cpacked() const
+bool
+CudaTensor::cpacked() const
 {
-  const int max_rank = 8;
-  int dims[max_rank];
-  int strides[max_rank];
-  int rank;
-  cudnnDataType_t data_type;
+    const int max_rank = 8;
+    int dims[max_rank];
+    int strides[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
 
-  chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type,
-                                      &rank, dims, strides));
+    chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type, &rank,
+                                        dims, strides));
 
-  return strides[1] == 1;
+    return strides[1] == 1;
 }
 
 void
 CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
 {
-  const int max_rank = 8;
-  int dims[max_rank];
-  int strides[max_rank];
-  int rank;
-  cudnnDataType_t data_type;
+    const int max_rank = 8;
+    int dims[max_rank];
+    int strides[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
 
-  auto ta = t.access();
-  if(ta == nullptr) {
-    return;
-  }
+    auto ta = t.access();
+    if(ta == nullptr) {
+        return;
+    }
 
-  m_storage->alloc();
+    m_storage->alloc();
 
-  chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type,
-                                      &rank, dims, strides));
+    chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type, &rank,
+                                        dims, strides));
 
-  cudaStreamSynchronize(m_storage->m_ctx->m_stream);
+    cudaStreamSynchronize(m_storage->m_ctx->m_stream);
 
-  if(!copy_tensor(m_storage->deviceMem(m_offset),
-                  dims_.size(),
-                  &dims_[0],
-                  &strides[0],
-                  data_type_,
-                  t, ta.get(),
-                  dst_broadcast_dimension)) {
-    fprintf(stderr,
-            "Cuda Tensor copy failed\n"
-            "From: %s\n"
-            "  To: %s\n",
-            t.info().c_str(),
-            info().c_str());
-    abort();
-  }
+    if(!copy_tensor(m_storage->deviceMem(m_offset), dims_.size(), &dims_[0],
+                    &strides[0], data_type_, t, ta.get(),
+                    dst_broadcast_dimension)) {
+        fprintf(stderr,
+                "Cuda Tensor copy failed\n"
+                "From: %s\n"
+                "  To: %s\n",
+                t.info().c_str(), info().c_str());
+        abort();
+    }
 }
-
 
 Tensor::Stats
 CudaTensor::stats()
 {
-  auto s = m_storage;
-  if(s == nullptr)
-    return Stats({0,0,0,0});
+    auto s = m_storage;
+    if(s == nullptr)
+        return Stats({0, 0, 0, 0});
 
-  auto ctx = m_storage->m_ctx;
+    auto ctx = m_storage->m_ctx;
 
-  ctx->m_workspace.alloc();
+    ctx->m_workspace.alloc();
 
-  float *output = (float *)ctx->m_workspace.ptr();
+    float *output = (float *)ctx->m_workspace.ptr();
 
-  switch(m_type) {
-  case CUDNN_DATA_FLOAT:
-    tensor_stats_float(elements_, (const float *)deviceMem(),
-                       output, ctx->m_stream);
-    break;
-  case CUDNN_DATA_HALF:
-    tensor_stats_half(elements_, (const __half *)deviceMem(),
-                      output, ctx->m_stream);
-    break;
-  default:
-    return Tensor::stats();
-  }
+    switch(m_type) {
+    case CUDNN_DATA_FLOAT:
+        tensor_stats_float(elements_, (const float *)deviceMem(), output,
+                           ctx->m_stream);
+        break;
+    case CUDNN_DATA_HALF:
+        tensor_stats_half(elements_, (const __half *)deviceMem(), output,
+                          ctx->m_stream);
+        break;
+    default:
+        return Tensor::stats();
+    }
 
-  cudaStreamSynchronize(ctx->m_stream);
+    cudaStreamSynchronize(ctx->m_stream);
 
-  const float min  = output[0];
-  const float max  = output[1];
-  const float mean = output[2];
-  const float var  = output[3];
+    const float min = output[0];
+    const float max = output[1];
+    const float mean = output[2];
+    const float var = output[3];
 
-  return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrtf(var)});
+    return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrtf(var)});
 }
-
 
 size_t
 size_from_params(const Dims &size, cudnnTensorFormat_t format,
                  cudnnDataType_t data_type)
 {
-  cudnnTensorDescriptor_t desc;
-  chkCUDNN(cudnnCreateTensorDescriptor(&desc));
-  assert(size.size() >= 0 && size.size() <= 4);
+    cudnnTensorDescriptor_t desc;
+    chkCUDNN(cudnnCreateTensorDescriptor(&desc));
+    assert(size.size() >= 0 && size.size() <= 4);
 
-  chkCUDNN(cudnnSetTensor4dDescriptor(desc, format, data_type,
-                                      size[0],
-                                      size.size() > 1 ? size[1] : 1,
-                                      size.size() > 2 ? size[2] : 1,
-                                      size.size() > 3 ? size[3] : 1));
+    chkCUDNN(cudnnSetTensor4dDescriptor(
+        desc, format, data_type, size[0], size.size() > 1 ? size[1] : 1,
+        size.size() > 2 ? size[2] : 1, size.size() > 3 ? size[3] : 1));
 
-  size_t bytes;
-  chkCUDNN(cudnnGetTensorSizeInBytes(desc, &bytes));
+    size_t bytes;
+    chkCUDNN(cudnnGetTensorSizeInBytes(desc, &bytes));
 
-  cudnnDestroyTensorDescriptor(desc);
-  return bytes;
+    cudnnDestroyTensorDescriptor(desc);
+    return bytes;
 }
 
-
-CudaTensorStorageDoubleBuffered::CudaTensorStorageDoubleBuffered(Tensor::DataType data_type,
-                                                                 Dims &dims,
-                                                                 cudnnTensorFormat_t format,
-                                                                 const std::shared_ptr<CudaContext> &ctx)
-  : CudaTensorStorage(data_type, size_from_params(dims, format, cudnnDataType_from_dataType(data_type)), ctx)
+CudaTensorStorageDoubleBuffered::CudaTensorStorageDoubleBuffered(
+    Tensor::DataType data_type, Dims &dims, cudnnTensorFormat_t format,
+    const std::shared_ptr<CudaContext> &ctx)
+  : CudaTensorStorage(
+        data_type,
+        size_from_params(dims, format, cudnnDataType_from_dataType(data_type)),
+        ctx)
   , m_index(0)
 {
-
-  for(int i = 0; i < 2; i++) {
-    chkCuda(cudaMallocManaged(&m_buffers[i], m_size, cudaMemAttachGlobal));
-    chkCuda(cudaMemset(m_buffers[i], 0, m_size));
-  }
+    for(int i = 0; i < 2; i++) {
+        chkCuda(cudaMallocManaged(&m_buffers[i], m_size, cudaMemAttachGlobal));
+        chkCuda(cudaMemset(m_buffers[i], 0, m_size));
+    }
 }
-
 
 CudaTensorStorageDoubleBuffered::~CudaTensorStorageDoubleBuffered()
 {
-  for(int i = 0; i < 2; i++) {
-    chkCuda(cudaFree(m_buffers[i]));
-  }
+    for(int i = 0; i < 2; i++) {
+        chkCuda(cudaFree(m_buffers[i]));
+    }
 }
-
 
 void *
 CudaTensorStorageDoubleBuffered::deviceMem(int64_t offset)
 {
-  void *buf = m_buffers[m_index & 1];
+    void *buf = m_buffers[m_index & 1];
 
-  void *r = (void *)((char *)buf + offset * m_element_size);
-  return r;
+    void *r = (void *)((char *)buf + offset * m_element_size);
+    return r;
 }
-
 
 void *
 CudaTensorStorageDoubleBuffered::data(int buffer) const
 {
-  return m_buffers[(buffer + m_index) & 1];
-}
-
-
-double
-CudaTensorStorageDoubleBuffered::get(size_t offset) const {
-  return m_get(data(0), offset);
+    return m_buffers[(buffer + m_index) & 1];
 }
 
 double
-CudaTensorStorageDoubleBuffered::get(size_t offset, int buffer) const {
-  return m_get(data(buffer), offset);
+CudaTensorStorageDoubleBuffered::get(size_t offset) const
+{
+    return m_get(data(0), offset);
 }
 
+double
+CudaTensorStorageDoubleBuffered::get(size_t offset, int buffer) const
+{
+    return m_get(data(buffer), offset);
+}
 
 void
 CudaTensorStorageDoubleBuffered::set(size_t offset, double value)
 {
-  m_set(data(0), offset, value);
+    m_set(data(0), offset, value);
 }
 
 void
 CudaTensorStorageDoubleBuffered::set(size_t offset, double value, int buffer)
 {
-  m_set(data(buffer), offset, value);
+    m_set(data(buffer), offset, value);
 }
 
 int
 CudaTensorStorageDoubleBuffered::flip()
 {
-  m_index++;
-  return m_index & 1;
+    m_index++;
+    return m_index & 1;
 }
 
 void
 CudaTensorStorageDoubleBuffered::prefetchGPU()
 {
-  cudaMemPrefetchAsync(data(1), m_size, m_ctx->m_deviceId, m_ctx->m_stream);
+    cudaMemPrefetchAsync(data(1), m_size, m_ctx->m_deviceId, m_ctx->m_stream);
 }
 
-
-
-
-
-
 class CudaTensorBatchAccess : public TensorAccess {
-
-  static const int MAX_RANK = 8;
+    static const int MAX_RANK = 8;
 
 public:
-  CudaTensorBatchAccess(CudaTensorStorageDoubleBuffered *storage,
-                        cudnnTensorDescriptor_t desc,
-                        int64_t offset)
-    : m_storage(storage)
-    , m_offset(offset)
-  {
-    int dims[MAX_RANK];
-    cudnnDataType_t data_type;
+    CudaTensorBatchAccess(CudaTensorStorageDoubleBuffered *storage,
+                          cudnnTensorDescriptor_t desc, int64_t offset)
+      : m_storage(storage), m_offset(offset)
+    {
+        int dims[MAX_RANK];
+        cudnnDataType_t data_type;
 
-    chkCUDNN(cudnnGetTensorNdDescriptor(desc, MAX_RANK, &data_type,
-                                        &m_rank, dims, m_strides));
-  }
-
-  int64_t offsetForElement(const Dims &element) const {
-    size_t offset = m_offset;
-    for(int i = 0; i < (int)element.size() && i < m_rank; i++) {
-      offset += element[i] * m_strides[i];
+        chkCUDNN(cudnnGetTensorNdDescriptor(desc, MAX_RANK, &data_type, &m_rank,
+                                            dims, m_strides));
     }
-    return offset;
-  }
 
-  Dims strides() override {
-    abort();
-  }
+    int64_t offsetForElement(const Dims &element) const
+    {
+        size_t offset = m_offset;
+        for(int i = 0; i < (int)element.size() && i < m_rank; i++) {
+            offset += element[i] * m_strides[i];
+        }
+        return offset;
+    }
 
-  void *data() override {
-    abort();
-  };
+    Dims strides() override { abort(); }
 
-  void copyBytesFrom(const Dims &element,
-                     const void *data, size_t size) override {
-    const size_t o = offsetForElement(element) * m_storage->m_element_size;
-    char *dst = (char *)m_storage->data(1);
-    cudaMemcpy(dst + o, data, size, cudaMemcpyHostToDevice);
-  }
+    void *data() override { abort(); };
 
-  void *getAddr(const Dims &element) override {
-    size_t off = offsetForElement(element) * m_storage->m_element_size;
-    return (void *)((char *)m_storage->data(1) + off);
-  };
+    void copyBytesFrom(const Dims &element, const void *data,
+                       size_t size) override
+    {
+        const size_t o = offsetForElement(element) * m_storage->m_element_size;
+        char *dst = (char *)m_storage->data(1);
+        cudaMemcpy(dst + o, data, size, cudaMemcpyHostToDevice);
+    }
 
-  double get(const Dims &element) override {
-    return m_storage->get(offsetForElement(element), 1);
-  };
+    void *getAddr(const Dims &element) override
+    {
+        size_t off = offsetForElement(element) * m_storage->m_element_size;
+        return (void *)((char *)m_storage->data(1) + off);
+    };
 
-  void set(const Dims &element, double value) override {
-    m_storage->set(offsetForElement(element), value, 1);
-  }
+    double get(const Dims &element) override
+    {
+        return m_storage->get(offsetForElement(element), 1);
+    };
 
+    void set(const Dims &element, double value) override
+    {
+        m_storage->set(offsetForElement(element), value, 1);
+    }
 
-  CudaTensorStorageDoubleBuffered *m_storage;
-  int64_t m_offset;
-  int m_rank;
-  int m_strides[MAX_RANK];
+    CudaTensorStorageDoubleBuffered *m_storage;
+    int64_t m_offset;
+    int m_rank;
+    int m_strides[MAX_RANK];
 };
-
 
 void
 CudaProgram::issueBatchAccessOps(const CudaBatchAccessOps ops, long batch)
 {
 #ifdef __aarch64__
-  cudaStreamSynchronize(ctx_->m_stream);
+    cudaStreamSynchronize(ctx_->m_stream);
 #endif
-  for(const auto &op : ops) {
-    CudaTensorBatchAccess ta(op.m_storage.get(),
-                             op.m_tensor->m_desc,
-                             op.m_tensor->m_offset);
-    op.m_fn(ta, batch);
+    for(const auto &op : ops) {
+        CudaTensorBatchAccess ta(op.m_storage.get(), op.m_tensor->m_desc,
+                                 op.m_tensor->m_offset);
+        op.m_fn(ta, batch);
 #if 0
     if(op.m_prefetch)
       op.m_storage->prefetchGPU();
 #endif
-  }
+    }
 }
 
 void
 CudaProgram::flipDoubleBufferedTensors()
 {
-  for(const auto &s : m_flips) {
-    s->flip();
-  }
+    for(const auto &s : m_flips) {
+        s->flip();
+    }
 }
 
-
-}
+}  // namespace saga

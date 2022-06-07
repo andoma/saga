@@ -35,147 +35,137 @@ namespace saga {
 void
 Graph::print() const
 {
-  for(const auto &n : nodes_) {
-    n->print();
-  }
+    for(const auto &n : nodes_) {
+        n->print();
+    }
 }
 
 std::shared_ptr<Node>
-Graph::addNode(const std::string &type,
-               const Tensors &inputs,
+Graph::addNode(const std::string &type, const Tensors &inputs,
                const Attributes &attributes,
                const std::optional<const std::string> &name)
 {
-  auto nodes = Node::make(type, inputs, attributes, tensors_, name);
-  nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
-  if(nodes_.size() == 0)
-    return nullptr;
-  return nodes_[nodes_.size() - 1];
+    auto nodes = Node::make(type, inputs, attributes, tensors_, name);
+    nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
+    if(nodes_.size() == 0)
+        return nullptr;
+    return nodes_[nodes_.size() - 1];
 }
 
 std::shared_ptr<Node>
-Graph::addNode(const std::string &type,
-               Loader loader,
+Graph::addNode(const std::string &type, Loader loader,
                const Attributes &attributes)
 {
-  auto nodes = Node::make(type, loader, attributes);
-  nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
-  if(nodes_.size() == 0)
-    return nullptr;
-  return nodes_[nodes_.size() - 1];
+    auto nodes = Node::make(type, loader, attributes);
+    nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
+    if(nodes_.size() == 0)
+        return nullptr;
+    return nodes_[nodes_.size() - 1];
 }
-
-
 
 std::unordered_set<std::shared_ptr<Tensor>>
 Graph::inputTensors() const
 {
-  std::unordered_set<std::shared_ptr<Tensor>> inputs;
+    std::unordered_set<std::shared_ptr<Tensor>> inputs;
 
-  for(const auto &n : nodes_) {
-    for(auto &t : n->inputs_) {
-      inputs.insert(t.second);
+    for(const auto &n : nodes_) {
+        for(auto &t : n->inputs_) {
+            inputs.insert(t.second);
+        }
     }
-  }
-  for(const auto &n : nodes_) {
-    for(auto &t : n->outputs_) {
-      inputs.erase(t.second);
+    for(const auto &n : nodes_) {
+        for(auto &t : n->outputs_) {
+            inputs.erase(t.second);
+        }
     }
-  }
-  return inputs;
+    return inputs;
 }
-
-
 
 std::unordered_set<std::shared_ptr<Tensor>>
 Graph::outputTensors() const
 {
-  std::unordered_set<std::shared_ptr<Tensor>> outputs;
+    std::unordered_set<std::shared_ptr<Tensor>> outputs;
 
-  for(const auto &n : nodes_) {
-    for(auto &t : n->outputs_) {
-      outputs.insert(t.second);
+    for(const auto &n : nodes_) {
+        for(auto &t : n->outputs_) {
+            outputs.insert(t.second);
+        }
     }
-  }
-  for(const auto &n : nodes_) {
-    for(auto &t : n->inputs_) {
-      outputs.erase(t.second);
+    for(const auto &n : nodes_) {
+        for(auto &t : n->inputs_) {
+            outputs.erase(t.second);
+        }
     }
-  }
-  return outputs;
+    return outputs;
 }
-
 
 std::pair<TensorMapping, TensorMapping>
 Graph::tensorMappings() const
 {
-  std::unordered_map<std::shared_ptr<Tensor>,
-                     std::vector<std::pair<std::string,
-                                           std::shared_ptr<Node>>>> input_usage;
-  std::unordered_map<std::shared_ptr<Tensor>,
-                     std::vector<std::pair<std::string,
-                                           std::shared_ptr<Node>>>> output_usage;
+    std::unordered_map<
+        std::shared_ptr<Tensor>,
+        std::vector<std::pair<std::string, std::shared_ptr<Node>>>>
+        input_usage;
+    std::unordered_map<
+        std::shared_ptr<Tensor>,
+        std::vector<std::pair<std::string, std::shared_ptr<Node>>>>
+        output_usage;
 
-  for(const auto &n : nodes_) {
-    for(const auto &t : n->inputs_) {
-      input_usage[t.second].push_back(std::make_pair(t.first, n));
+    for(const auto &n : nodes_) {
+        for(const auto &t : n->inputs_) {
+            input_usage[t.second].push_back(std::make_pair(t.first, n));
+        }
+        for(const auto &t : n->outputs_) {
+            output_usage[t.second].push_back(std::make_pair(t.first, n));
+        }
     }
-    for(const auto &t : n->outputs_) {
-      output_usage[t.second].push_back(std::make_pair(t.first, n));
-    }
-  }
-  return {input_usage, output_usage};
+    return {input_usage, output_usage};
 }
-
 
 void
 Graph::loadTensors(const char *path)
 {
-  struct dirent **namelist;
-  int n = scandir(path, &namelist, NULL, NULL);
-  if(n == -1) {
-    fprintf(stderr, "Unable to load tensors from %s -- %s\n",
-            path, strerror(errno));
-    return;
-  }
-
-  while(n--) {
-    const char *fname = namelist[n]->d_name;
-    if(fname[0] != '.') {
-      char filepath[PATH_MAX];
-      snprintf(filepath, sizeof(filepath), "%s/%s", path, fname);
-      auto t = Tensor::load(filepath, fname);
-      if(t) {
-        tensors_[fname] = t;
-        printf("Loaded %s: %s\n", fname, t->info().c_str());
-      }
+    struct dirent **namelist;
+    int n = scandir(path, &namelist, NULL, NULL);
+    if(n == -1) {
+        fprintf(stderr, "Unable to load tensors from %s -- %s\n", path,
+                strerror(errno));
+        return;
     }
-    free(namelist[n]);
-  }
-  free(namelist);
-}
 
+    while(n--) {
+        const char *fname = namelist[n]->d_name;
+        if(fname[0] != '.') {
+            char filepath[PATH_MAX];
+            snprintf(filepath, sizeof(filepath), "%s/%s", path, fname);
+            auto t = Tensor::load(filepath, fname);
+            if(t) {
+                tensors_[fname] = t;
+                printf("Loaded %s: %s\n", fname, t->info().c_str());
+            }
+        }
+        free(namelist[n]);
+    }
+    free(namelist);
+}
 
 bool
 Graph::saveTensors(const char *path, Program *p)
 {
-  char filepath[PATH_MAX];
-  mkdir(path, 0777);
-  for(const auto &it : tensors_) {
+    char filepath[PATH_MAX];
+    mkdir(path, 0777);
+    for(const auto &it : tensors_) {
+        auto t = it.second;
+        if(p != NULL)
+            t = p->resolveTensor(t);
 
-    auto t = it.second;
-    if(p != NULL)
-      t = p->resolveTensor(t);
-
-    printf("Saving tensor %s : %s\n", it.first.c_str(),
-           t->info().c_str());
-    snprintf(filepath, sizeof(filepath), "%s/%s", path, it.first.c_str());
-    if(!t->save(filepath))
-      return false;
-  }
-  return true;
+        printf("Saving tensor %s : %s\n", it.first.c_str(), t->info().c_str());
+        snprintf(filepath, sizeof(filepath), "%s/%s", path, it.first.c_str());
+        if(!t->save(filepath))
+            return false;
+    }
+    return true;
 }
-
 
 // -----------------------------------------------------------------------
 // Node creation helpers
@@ -185,133 +175,127 @@ std::shared_ptr<Node>
 Graph::addConvert(std::shared_ptr<Tensor> input, Tensor::DataType dt,
                   float scale)
 {
-  return addNode("convert", {{"x", input}},
-                 {{"scale", scale}, {"datatype", (int)dt}});
+    return addNode("convert", {{"x", input}},
+                   {{"scale", scale}, {"datatype", (int)dt}});
 }
-
 
 std::shared_ptr<Node>
-Graph::addJpegDecoder(int width, int height, Tensor::DataType dt,
-                      Loader loader)
+Graph::addJpegDecoder(int width, int height, Tensor::DataType dt, Loader loader)
 {
-  auto n = addNode("jpegdecoder", loader,
-                   {{"width", width}, {"height", height}});
+    auto n =
+        addNode("jpegdecoder", loader, {{"width", width}, {"height", height}});
 
-  return addConvert(n->y(), dt, 1 / 255.0f);
+    return addConvert(n->y(), dt, 1 / 255.0f);
 }
-
 
 std::shared_ptr<Node>
 Graph::addSpatialTransform(std::shared_ptr<Tensor> input,
-                           std::shared_ptr<Tensor> theta,
-                           int width,
-                           int height,
+                           std::shared_ptr<Tensor> theta, int width, int height,
                            bool inference)
 {
-  Attributes a;
-  if(width > 0)
-    a["width"] = width;
-  if(height > 0)
-    a["height"] = height;
-  a["inference"] = inference;
+    Attributes a;
+    if(width > 0)
+        a["width"] = width;
+    if(height > 0)
+        a["height"] = height;
+    a["inference"] = inference;
 
-  return addNode("spatialtransform", {{"x", input}, {"theta", theta}}, a);
+    return addNode("spatialtransform", {{"x", input}, {"theta", theta}}, a);
 }
-
-
-
 
 std::shared_ptr<Node>
 Graph::addResNetBottleNeck(std::shared_ptr<Tensor> input,
                            int squeeze_activations, int output_activations,
                            bool downsample, const std::string &name)
 {
-  std::shared_ptr<Node> a;
-  std::shared_ptr<Tensor> x1;
-  a = addNode("conv", {{"x", input}},
+    std::shared_ptr<Node> a;
+    std::shared_ptr<Tensor> x1;
+    a = addNode("conv", {{"x", input}},
                 {{"size", 1},
                  {"activations", squeeze_activations},
                  {"stride", 1},
-                 {"pad", 0}}, name + "-conv-1");
-  a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-1");
-  a = addNode("relu", {{"x", a->y()}}, {});
+                 {"pad", 0}},
+                name + "-conv-1");
+    a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-1");
+    a = addNode("relu", {{"x", a->y()}}, {});
 
-  a = addNode("conv", {{"x", a->y()}},
+    a = addNode("conv", {{"x", a->y()}},
                 {{"size", 3},
                  {"activations", squeeze_activations},
                  {"stride", downsample ? 2 : 1},
-                 {"pad", 1}}, name + "-conv-2");
-  a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-2");
-  a = addNode("relu", {{"x", a->y()}}, {});
+                 {"pad", 1}},
+                name + "-conv-2");
+    a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-2");
+    a = addNode("relu", {{"x", a->y()}}, {});
 
-  a = addNode("conv", {{"x", a->y()}},
+    a = addNode("conv", {{"x", a->y()}},
                 {{"size", 1},
                  {"activations", output_activations},
                  {"stride", 1},
-                 {"pad", 0}}, name + "-conv-3");
-  a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-3");
+                 {"pad", 0}},
+                name + "-conv-3");
+    a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-3");
 
-  bool need_projection = a->y()->dims_ != input->dims_;
+    bool need_projection = a->y()->dims_ != input->dims_;
 
-  if(need_projection) {
-    auto c = addNode("conv", {{"x", input}},
-                     {{"size", 1},
-                      {"activations", output_activations},
-                      {"stride", downsample ? 2 : 1},
-                      {"pad", 0}}, name + "-conv-p");
-    c = addNode("batchnorm", {{"x", c->y()}}, {}, name + "-bn-p");
-    x1 = c->y();
-  } else {
-    x1 = input;
-  }
+    if(need_projection) {
+        auto c = addNode("conv", {{"x", input}},
+                         {{"size", 1},
+                          {"activations", output_activations},
+                          {"stride", downsample ? 2 : 1},
+                          {"pad", 0}},
+                         name + "-conv-p");
+        c = addNode("batchnorm", {{"x", c->y()}}, {}, name + "-bn-p");
+        x1 = c->y();
+    } else {
+        x1 = input;
+    }
 
-  auto s = addNode("sum", {{"x0", a->y()}, {"x1", x1}}, {});
-  return addNode("relu", {{"x", s->y()}}, {});
+    auto s = addNode("sum", {{"x0", a->y()}, {"x1", x1}}, {});
+    return addNode("relu", {{"x", s->y()}}, {});
 }
-
-
-
 
 std::shared_ptr<Node>
-Graph::addResNet(std::shared_ptr<Tensor> input,
-                 int output_activations,
+Graph::addResNet(std::shared_ptr<Tensor> input, int output_activations,
                  bool downsample, const std::string &name)
 {
-  std::shared_ptr<Node> a;
-  std::shared_ptr<Tensor> x1;
+    std::shared_ptr<Node> a;
+    std::shared_ptr<Tensor> x1;
 
-  a = addNode("conv", {{"x", input}},
+    a = addNode("conv", {{"x", input}},
                 {{"size", 3},
                  {"activations", output_activations},
                  {"stride", downsample ? 2 : 1},
-                 {"pad", 1}}, name + "-conv-1");
-  a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-1");
-  a = addNode("relu", {{"x", a->y()}}, {});
+                 {"pad", 1}},
+                name + "-conv-1");
+    a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-1");
+    a = addNode("relu", {{"x", a->y()}}, {});
 
-  a = addNode("conv", {{"x", a->y()}},
+    a = addNode("conv", {{"x", a->y()}},
                 {{"size", 3},
                  {"activations", output_activations},
                  {"stride", 1},
-                 {"pad", 1}}, name + "-conv-2");
-  a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-2");
+                 {"pad", 1}},
+                name + "-conv-2");
+    a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-2");
 
-  bool need_projection = a->y()->dims_ != input->dims_;
+    bool need_projection = a->y()->dims_ != input->dims_;
 
-  if(need_projection) {
-    auto c = addNode("conv", {{"x", input}},
-                     {{"size", 1},
-                      {"activations", output_activations},
-                      {"stride", downsample ? 2 : 1},
-                      {"pad", 0}}, name + "-conv-p");
-    c = addNode("batchnorm", {{"x", c->y()}}, {}, name + "-bn-p");
-    x1 = c->y();
-  } else {
-    x1 = input;
-  }
+    if(need_projection) {
+        auto c = addNode("conv", {{"x", input}},
+                         {{"size", 1},
+                          {"activations", output_activations},
+                          {"stride", downsample ? 2 : 1},
+                          {"pad", 0}},
+                         name + "-conv-p");
+        c = addNode("batchnorm", {{"x", c->y()}}, {}, name + "-bn-p");
+        x1 = c->y();
+    } else {
+        x1 = input;
+    }
 
-  auto s = addNode("sum", {{"x0", a->y()}, {"x1", x1}}, {});
-  return addNode("relu", {{"x", s->y()}}, {});
+    auto s = addNode("sum", {{"x0", a->y()}, {"x1", x1}}, {});
+    return addNode("relu", {{"x", s->y()}}, {});
 }
 
-
-}
+}  // namespace saga

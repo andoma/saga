@@ -1,0 +1,15 @@
+BasedOnStyle: Google
+IndentWidth: 4
+AccessModifierOffset: -4
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 2
+SortIncludes: false
+AlignConsecutiveMacros: true
+AllowShortIfStatementsOnASingleLine: Never
+ColumnLimit: 80
+SpaceBeforeParens: Never
+AlwaysBreakAfterDefinitionReturnType: TopLevel
+IndentCaseLabels: false
