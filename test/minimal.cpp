@@ -101,14 +101,11 @@ minimal_main(int argc, char **argv)
   printf("y: %s\n", y->info().c_str());
   printf("dy: %s\n", dy->info().c_str());
 
-  auto xa = x->access();
-  auto dya = dy->access();
-
   const int *tbl = table_xor;
   for(int i = 0; i < 4; i++) {
-    xa->set({i, 0}, tbl[0]);
-    xa->set({i, 1}, tbl[1]);
-    dya->set({i}, tbl[2]);
+    x->access()->set({i, 0}, tbl[0]);
+    x->access()->set({i, 1}, tbl[1]);
+    dy->access()->set({i}, tbl[2]);
     tbl += 3;
   }
 
