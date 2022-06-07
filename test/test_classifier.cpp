@@ -586,53 +586,51 @@ test_classifier(int argc, char **argv,
   // Compute loss after minibatch completed
 
   bta.push_back({
-      .phase  = Phase::POST,
-      .which  = Which::VALUE,
-      .mode   = Mode::TRAIN,
-      .tensor = n->outputs_["loss"],
-      .fn     = [&](TensorAccess &ta, long batch) {
-        for(int i = 0; i < batch_size; i++) {
-          loss_sum += ta.get({i});
-        }
-      }
-    });
+          Phase::POST,
+          Which::VALUE,
+          Mode::TRAIN,
+          n->outputs_["loss"],
+          [&](TensorAccess &ta, long batch) {
+              for(int i = 0; i < batch_size; i++) {
+                  loss_sum += ta.get({i});
+              }
+          }
+      });
 
   // Load classes to train before batch starts
 
   bta.push_back({
-      .phase  = Phase::PRE,
-      .which  = Which::GRADIENT,
-      .mode   = Mode::TRAIN,
-      .tensor = n->outputs_["y"],
-      .fn     = [&](TensorAccess &ta, long batch) {
-
-        const size_t offset = batch * batch_size;
-        for(int i = 0; i < batch_size; i++) {
-          ta.set({i}, get_label(offset + i));
-        }
-
-      }
-    });
+          Phase::PRE,
+          Which::GRADIENT,
+          Mode::TRAIN,
+          n->outputs_["y"],
+          [&](TensorAccess &ta, long batch) {
+              const size_t offset = batch * batch_size;
+              for(int i = 0; i < batch_size; i++) {
+                  ta.set({i}, get_label(offset + i));
+              }
+          }
+      });
 
   // Load input tensors
 
   bta.push_back({
-      .phase  = Phase::PRE,
-      .which  = Which::VALUE,
-      .mode   = Mode::ALL,
-      .tensor = x,
-      .fn     = load_inputs
-    });
+          Phase::PRE,
+          Which::VALUE,
+          Mode::ALL,
+          x,
+          load_inputs
+      });
 
 
   // Check results after test
 
   bta.push_back({
-      .phase  = Phase::POST,
-      .which  = Which::VALUE,
-      .mode   = Mode::INFER,
-      .tensor = n->outputs_["y"],
-      .fn     = [&](TensorAccess &ta, long batch) {
+          Phase::POST,
+          Which::VALUE,
+          Mode::INFER,
+          n->outputs_["y"],
+          [&](TensorAccess &ta, long batch) {
         size_t base = batch * batch_size;
         for(int i = 0; i < batch_size; i++) {
           if(ta.get({i}) == get_label(base + i))
@@ -645,11 +643,11 @@ test_classifier(int argc, char **argv,
     for(size_t i = 0; i < stats->size(); i++) {
       std::shared_ptr<Tensor> s = (*stats)[i];
       bta.push_back({
-          .phase  = Phase::POST,
-          .which  = Which::VALUE,
-          .mode   = Mode::TRAIN,
-      .tensor = s,
-      .fn     = [=](TensorAccess &ta, long batch) {
+          Phase::POST,
+          Which::VALUE,
+           Mode::TRAIN,
+           s,
+           [=](TensorAccess &ta, long batch) {
             if(batch == 0) {
               printf("%s%zu: min:% e max:% e mean:% e stddev:% e\n",
                      i  == 0 ? "\n" : "",

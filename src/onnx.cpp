@@ -41,7 +41,7 @@
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/io/coded_stream.h>
 
-#include "saga.h"
+#include "saga.hpp"
 
 using namespace google::protobuf::io;
 using namespace std;
@@ -286,7 +286,7 @@ make_tensor(const onnx::ValueInfoProto &vip)
   const auto &shape = tp.tensor_type().shape();
 
   Dims dims;
-  for(const auto dim : shape.dim()) {
+  for(const auto &dim : shape.dim()) {
     int d;
     switch(dim.value_case()) {
     case onnx::TensorShapeProto_Dimension::kDimValue:
