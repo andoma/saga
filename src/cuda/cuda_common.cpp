@@ -856,6 +856,10 @@ CudaProgram::finalize()
     m_tensor_mem.alloc();
 
     m_ctx->m_workspace.alloc();
+
+    printf("Tensor memory: %zd MB\n", m_tensor_mem.requested() / 1048576);
+    printf("Workspace memory: %zd MB\n",
+           m_ctx->m_workspace.requested() / 1048576);
 }
 
 void

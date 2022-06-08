@@ -67,6 +67,8 @@ struct CudaTmpMem {
 
     size_t size() const { return m_size; }
 
+    size_t requested() const { return m_requested; }
+
 private:
     void *m_ptr = nullptr;
     size_t m_size = 0;
