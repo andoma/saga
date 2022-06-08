@@ -1125,6 +1125,9 @@ struct CudaConvert : public CudaOperation {
         } else if(x_->data_type_ == Tensor::DataType::FLOAT &&
                   y_->data_type_ == Tensor::DataType::HALF) {
             algo_ = convert_float_half;
+        } else if(x_->data_type_ == Tensor::DataType::I16 &&
+                  y_->data_type_ == Tensor::DataType::HALF) {
+            algo_ = convert_i16_half;
         } else {
             algo_ = NULL;
         }

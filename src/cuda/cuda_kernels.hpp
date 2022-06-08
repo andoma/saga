@@ -28,6 +28,9 @@ void convert_u8_float(const void *src, void *dst, int elements, float scale,
 void convert_u8_half(const void *src, void *dst, int elements, float scale,
                      cudaStream_t stream);
 
+void convert_i16_half(const void *src, void *dst, int elements, float scale,
+                      cudaStream_t stream);
+
 void convert_float_half(const void *src, void *dst, int elements, float scale,
                         cudaStream_t stream);
 

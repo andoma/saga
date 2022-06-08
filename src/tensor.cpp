@@ -133,6 +133,12 @@ get_i32(const void *base, size_t offset)
     return ((const int32_t *)base)[offset];
 }
 
+static double
+get_i16(const void *base, size_t offset)
+{
+    return ((const int16_t *)base)[offset];
+}
+
 static void
 set_float(void *base, size_t offset, double v)
 {
@@ -163,6 +169,12 @@ set_i32(void *base, size_t offset, double v)
     ((int32_t *)base)[offset] = v;
 }
 
+static void
+set_i16(void *base, size_t offset, double v)
+{
+    ((int16_t *)base)[offset] = v;
+}
+
 TensorStorage::getfn_t *
 datatype_get(Tensor::DataType dt)
 {
@@ -177,6 +189,8 @@ datatype_get(Tensor::DataType dt)
         return &get_i64;
     case Tensor::DataType::I32:
         return &get_i32;
+    case Tensor::DataType::I16:
+        return &get_i16;
     default:
         abort();
     }
@@ -196,6 +210,8 @@ datatype_set(Tensor::DataType dt)
         return &set_i64;
     case Tensor::DataType::I32:
         return &set_i32;
+    case Tensor::DataType::I16:
+        return &set_i16;
     default:
         abort();
     }
@@ -215,6 +231,8 @@ datatype_str(Tensor::DataType dt)
         return "i64";
     case Tensor::DataType::I32:
         return "i32";
+    case Tensor::DataType::I16:
+        return "i16";
     default:
         return "?";
     }
@@ -240,6 +258,8 @@ Tensor::DataTypeSize(DataType dt)
         return 8;
     case Tensor::DataType::I32:
         return 4;
+    case Tensor::DataType::I16:
+        return 2;
     default:
         abort();
     }

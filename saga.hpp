@@ -123,6 +123,7 @@ public:
         FLOAT,
         INT64,
         I32,
+        I16,
     };
 
     static size_t DataTypeSize(DataType dt);
