@@ -283,6 +283,20 @@ convbwdfilteralgostr(cudnnConvolutionBwdFilterAlgo_t algo)
     }
 }
 
+static std::string
+cudnn_conv_hash_key(CudaTensor &x, CudaTensor &w, CudaTensor &y, int pad,
+                    int stride)
+{
+    auto xkey = x.hashkey();
+    auto wkey = w.hashkey();
+    auto ykey = y.hashkey();
+
+    char buf[512];
+    snprintf(buf, sizeof(buf), "%s|%s|%s|%d|%d", xkey.c_str(), wkey.c_str(),
+             ykey.c_str(), pad, stride);
+    return buf;
+}
+
 struct CudnnConvolutionDesc {
     cudnnConvolutionDescriptor_t conv_desc_;
     cudnnFilterDescriptor_t filter_desc_;
@@ -306,6 +320,8 @@ struct CudnnConvolutionDesc {
     const char *setup(CudaProgram &p, CudaTensor &x, CudaTensor &w,
                       CudaTensor &y, int pad, int stride, bool bwd)
     {
+        auto algo_key = cudnn_conv_hash_key(x, w, y, pad, stride);
+
         cudnnStatus_t s;
         s = cudnnSetFilter4dDescriptor(filter_desc_, x.m_type,
                                        p.tensorFormat(x.data_type_), w.dims_[0],
@@ -323,25 +339,31 @@ struct CudnnConvolutionDesc {
         if(s)
             return cudnnGetErrorString(s);
 
-        int count;
-        s = cudnnGetConvolutionForwardAlgorithmMaxCount(p.m_ctx->m_cudnn,
-                                                        &count);
-        if(s)
-            return cudnnGetErrorString(s);
+        auto fwd_algo_key = std::string("conv.fwd;") + algo_key;
+        if(auto it = p.m_algo_hash.find(fwd_algo_key);
+           it != p.m_algo_hash.end()) {
+            conv_fwd_algo_ = (cudnnConvolutionFwdAlgo_t)it->second;
+        } else {
+            int count;
+            s = cudnnGetConvolutionForwardAlgorithmMaxCount(p.m_ctx->m_cudnn,
+                                                            &count);
+            if(s)
+                return cudnnGetErrorString(s);
 
-        cudnnConvolutionFwdAlgoPerf_t fwdalgos[count];
+            cudnnConvolutionFwdAlgoPerf_t fwdalgos[count];
 
-        s = cudnnFindConvolutionForwardAlgorithm(
-            p.m_ctx->m_cudnn, x.m_desc, filter_desc_, conv_desc_, y.m_desc,
-            count, &count, fwdalgos);
-        if(s)
-            return cudnnGetErrorString(s);
+            s = cudnnFindConvolutionForwardAlgorithm(
+                p.m_ctx->m_cudnn, x.m_desc, filter_desc_, conv_desc_, y.m_desc,
+                count, &count, fwdalgos);
+            if(s)
+                return cudnnGetErrorString(s);
 
-        if(count == 0)
-            return "No forwarding algo found";
+            if(count == 0)
+                return "No forwarding algo found";
 
-        conv_fwd_algo_ = fwdalgos[0].algo;
-
+            conv_fwd_algo_ = fwdalgos[0].algo;
+            p.m_algo_hash[fwd_algo_key] = conv_fwd_algo_;
+        }
         size_t workspace;
         s = cudnnGetConvolutionForwardWorkspaceSize(
             p.m_ctx->m_cudnn, x.m_desc, filter_desc_, conv_desc_, y.m_desc,
@@ -354,24 +376,31 @@ struct CudnnConvolutionDesc {
         if(!bwd)
             return NULL;
 
-        s = cudnnGetConvolutionBackwardDataAlgorithmMaxCount(p.m_ctx->m_cudnn,
-                                                             &count);
-        if(s)
-            return cudnnGetErrorString(s);
+        auto bwd_data_algo_key = std::string("conv.bwd.data;") + algo_key;
+        if(auto it = p.m_algo_hash.find(bwd_data_algo_key);
+           it != p.m_algo_hash.end()) {
+            bwd_data_algo_ = (cudnnConvolutionBwdDataAlgo_t)it->second;
+        } else {
+            int count;
+            s = cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
+                p.m_ctx->m_cudnn, &count);
+            if(s)
+                return cudnnGetErrorString(s);
 
-        cudnnConvolutionBwdDataAlgoPerf_t bwdalgos[count];
+            cudnnConvolutionBwdDataAlgoPerf_t bwdalgos[count];
 
-        s = cudnnFindConvolutionBackwardDataAlgorithm(
-            p.m_ctx->m_cudnn, filter_desc_, y.desc(), conv_desc_, x.desc(),
-            count, &count, bwdalgos);
-        if(s)
-            return cudnnGetErrorString(s);
+            s = cudnnFindConvolutionBackwardDataAlgorithm(
+                p.m_ctx->m_cudnn, filter_desc_, y.desc(), conv_desc_, x.desc(),
+                count, &count, bwdalgos);
+            if(s)
+                return cudnnGetErrorString(s);
 
-        if(count == 0)
-            return "No backward data algo found";
+            if(count == 0)
+                return "No backward data algo found";
 
-        bwd_data_algo_ = bwdalgos[0].algo;
-
+            bwd_data_algo_ = bwdalgos[0].algo;
+            p.m_algo_hash[bwd_data_algo_key] = bwd_data_algo_;
+        }
         s = cudnnGetConvolutionBackwardDataWorkspaceSize(
             p.m_ctx->m_cudnn, filter_desc_, y.desc(), conv_desc_, x.desc(),
             bwd_data_algo_, &workspace);
@@ -380,24 +409,31 @@ struct CudnnConvolutionDesc {
 
         p.m_ctx->m_workspace.request(workspace);
 
-        s = cudnnGetConvolutionBackwardFilterAlgorithmMaxCount(p.m_ctx->m_cudnn,
-                                                               &count);
-        if(s)
-            return cudnnGetErrorString(s);
+        auto bwd_filter_algo_key = std::string("conv.bwd.filter;") + algo_key;
+        if(auto it = p.m_algo_hash.find(bwd_filter_algo_key);
+           it != p.m_algo_hash.end()) {
+            bwd_filter_algo_ = (cudnnConvolutionBwdFilterAlgo_t)it->second;
+        } else {
+            int count;
+            s = cudnnGetConvolutionBackwardFilterAlgorithmMaxCount(
+                p.m_ctx->m_cudnn, &count);
+            if(s)
+                return cudnnGetErrorString(s);
 
-        cudnnConvolutionBwdFilterAlgoPerf_t filteralgos[count];
+            cudnnConvolutionBwdFilterAlgoPerf_t filteralgos[count];
 
-        s = cudnnFindConvolutionBackwardFilterAlgorithm(
-            p.m_ctx->m_cudnn, x.desc(), y.desc(), conv_desc_, filter_desc_,
-            count, &count, filteralgos);
-        if(s)
-            return cudnnGetErrorString(s);
+            s = cudnnFindConvolutionBackwardFilterAlgorithm(
+                p.m_ctx->m_cudnn, x.desc(), y.desc(), conv_desc_, filter_desc_,
+                count, &count, filteralgos);
+            if(s)
+                return cudnnGetErrorString(s);
 
-        if(count == 0)
-            return "No backward filter algo found";
+            if(count == 0)
+                return "No backward filter algo found";
 
-        bwd_filter_algo_ = filteralgos[0].algo;
-
+            bwd_filter_algo_ = filteralgos[0].algo;
+            p.m_algo_hash[bwd_filter_algo_key] = bwd_filter_algo_;
+        }
         s = cudnnGetConvolutionBackwardFilterWorkspaceSize(
             p.m_ctx->m_cudnn, x.desc(), y.desc(), conv_desc_, filter_desc_,
             bwd_filter_algo_, &workspace);

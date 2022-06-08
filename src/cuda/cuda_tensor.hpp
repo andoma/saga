@@ -136,6 +136,8 @@ public:
 
     size_t memoryUsage() const { return m_storage->m_size; }
 
+    std::string hashkey() const;
+
     const cudnnDataType_t m_type;
     int64_t m_offset;
     std::shared_ptr<CudaTensorStorage> m_storage;

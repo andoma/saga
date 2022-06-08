@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <mutex>
+#include <map>
 
 #include <cudnn.h>
 #include <cublas_v2.h>
@@ -186,6 +187,8 @@ public:
     bool m_print_progress = true;
     bool m_print_progress_pending_nl = false;
     time_t m_print_progress_ts = 0;
+
+    std::map<std::string, int> m_algo_hash;
 
     void finalize();
 

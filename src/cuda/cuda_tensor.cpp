@@ -379,6 +379,60 @@ CudaTensor::shortname() const
 }
 
 std::string
+CudaTensor::hashkey() const
+{
+    char buf[128];
+
+    const int max_rank = 8;
+    int dims[max_rank];
+    int strides[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
+
+    chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type, &rank,
+                                        dims, strides));
+    const char *dt = NULL;
+    switch(data_type) {
+    case CUDNN_DATA_FLOAT:
+        dt = "f";
+        break;
+    case CUDNN_DATA_HALF:
+        dt = "h";
+        break;
+    case CUDNN_DATA_UINT8:
+        dt = "u8";
+        break;
+    case CUDNN_DATA_INT32:
+        dt = "i32";
+        break;
+    default:
+        abort();
+    }
+
+    switch(rank) {
+    case 1:
+        snprintf(buf, sizeof(buf), "%d;%d;%s", dims[0], strides[0], dt);
+        break;
+    case 2:
+        snprintf(buf, sizeof(buf), "%d.%d;%d.%d;%s", dims[0], dims[1],
+                 strides[0], strides[1], dt);
+        break;
+    case 3:
+        snprintf(buf, sizeof(buf), "%d.%d.%d;%d.%d.%d;%s", dims[0], dims[1],
+                 dims[2], strides[0], strides[1], strides[2], dt);
+        break;
+    case 4:
+        snprintf(buf, sizeof(buf), "%d.%d.%d.%d;%d.%d.%d.%d;%s", dims[0],
+                 dims[1], dims[2], dims[3], strides[0], strides[1], strides[2],
+                 strides[3], dt);
+        break;
+    default:
+        abort();
+    }
+    return buf;
+}
+
+std::string
 CudaTensor::info() const
 {
     std::stringstream ss;
