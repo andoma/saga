@@ -7,7 +7,7 @@ PREFIX ?= /usr/local
 O ?= build
 
 PROG=${O}/saga
-SONAME=${O}/libsaga.so.0
+SONAME=libsaga.so.0
 
 PKG_CONFIG ?= pkg-config
 
@@ -135,7 +135,7 @@ clean:
 
 install: ${O}/${SONAME}
 	@mkdir -p "${PREFIX}/include/" "${PREFIX}/lib/"
-	cp saga.h "${PREFIX}/include/saga.h"
+	cp saga.hpp "${PREFIX}/include/saga.hpp"
 	cp "${O}/${SONAME}" "${PREFIX}/lib/"
 	ln -srf "${PREFIX}/lib/${SONAME}" "${PREFIX}/lib/libsaga.so"
 	if [ "x`id -u $$USER`" = "x0" ]; then ldconfig ; fi
