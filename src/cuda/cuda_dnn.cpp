@@ -1402,6 +1402,106 @@ catclassifier_setup(CudaProgram &p, const Node &n, bool training)
 REGISTER_CUDA_OP("catclassifier", catclassifier_setup);
 
 //------------------------------------------------------------------------
+struct CudaMSEFwd : public CudaOperation {
+    const std::shared_ptr<CudaTensor> x_, y_;
+
+    CudaMSEFwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y)
+      : CudaOperation("msefwd"), x_(x), y_(y)
+    {
+    }
+
+    const char *exec(CudaProgram &p, long batch)
+    {
+        switch(x_->m_type) {
+        case CUDNN_DATA_HALF:
+            convert_half_float(x_->deviceMem(), y_->deviceMem(), x_->elements_,
+                               1.0f, p.m_ctx->m_stream);
+            break;
+        default:
+            return "Unsupported tensor datatype";
+        }
+        return NULL;
+    }
+
+    std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
+    {
+        return {x_};
+    }
+
+    std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
+    {
+        return {y_};
+    }
+};
+
+struct CudaMSEBwd : public CudaOperation {
+    const std::shared_ptr<CudaTensor> x_, dx_, dy_, loss_;
+
+    CudaMSEBwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> dx,
+               std::shared_ptr<CudaTensor> dy, std::shared_ptr<CudaTensor> loss)
+      : CudaOperation("msebwd"), x_(x), dx_(dx), dy_(dy), loss_(loss)
+    {
+    }
+
+    const char *exec(CudaProgram &p, long batch)
+    {
+        const int n = x_->dims_[0];
+        const int c = x_->dims_[1];
+        const float scale = 1.0f / n;
+
+        switch(x_->m_type) {
+        case CUDNN_DATA_HALF:
+            mse_bwd_half_float(n, (const __half *)x_->deviceMem(),
+                               (__half *)dx_->deviceMem(),
+                               (const float *)dy_->deviceMem(),
+                               loss_ ? (float *)loss_->deviceMem() : NULL, c,
+                               scale * p.m_mp_scaling, p.m_ctx->m_stream);
+
+            break;
+        default:
+            return "Unsupported tensor datatype";
+        }
+        return NULL;
+    }
+
+    std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
+    {
+        return {x_, dy_};
+    }
+
+    std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
+    {
+        return {dx_, loss_};
+    }
+};
+
+static const char *
+mse_setup(CudaProgram &p, const Node &n, bool training)
+{
+    auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+    auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+
+    auto op = std::make_shared<CudaMSEFwd>(x, y);
+
+    if(!training) {
+        p.infer(op);
+        return NULL;
+    }
+    p.fwd(op);
+
+    auto dx = x->m_grad;
+    if(!dx)
+        return NULL;
+    auto dy = y->makeSharedGrad();
+    auto loss = p.lower_tensor_batch(n.outputs_.get("loss"));
+
+    p.bwd(std::make_shared<CudaMSEBwd>(x, dx, dy, loss));
+    return NULL;
+}
+
+REGISTER_CUDA_OP("mse", mse_setup);
+
+//------------------------------------------------------------------------
 
 struct CudnnDropoutFwd : public CudnnOperation {
     const std::shared_ptr<CudaContext> ctx_;

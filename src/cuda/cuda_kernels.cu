@@ -95,6 +95,46 @@ catclassifier_bwd_half_i32(int n, const __half *x, __half *dx, const int32_t *y,
 }
 
 //------------------------------------------------------------------------
+// MSE
+//------------------------------------------------------------------------
+
+template <typename T, typename L>
+__global__ static void
+mse_bwd(int n, const T *x, T *dx, const L *dy, float *loss,
+        unsigned int channels, float scale)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i >= n)
+        return;
+
+    x += channels * i;
+    dy += channels * i;
+    dx += channels * i;
+
+    float sum = 0;
+    for(unsigned int j = 0; j < channels; j++) {
+        float yy = dy[j];
+        float xx = x[j];
+
+        float d = xx - yy;
+        float l = d * d;
+        float z = (yy - xx) * l;
+
+        dx[j] = -z * scale;
+        sum += l;
+    }
+    loss[i] = sum;
+}
+
+void
+mse_bwd_half_float(int n, const __half *x, __half *dx, const float *dy,
+                   float *loss, unsigned int c, float scale,
+                   cudaStream_t stream)
+{
+    mse_bwd<<<(n + 255) / 256, 256, 0, stream>>>(n, x, dx, dy, loss, c, scale);
+}
+
+//------------------------------------------------------------------------
 // Datatype conversion
 //------------------------------------------------------------------------
 
@@ -106,7 +146,7 @@ convert(int n, const S *src, D *dst, float scale)
     if(i >= n)
         return;
 
-    dst[i] = src[i] * scale;
+    dst[i] = (float)src[i] * scale;
 }
 
 void
@@ -139,6 +179,14 @@ convert_float_half(const void *src, void *dst, int elements, float scale,
 {
     convert<<<(elements + 255) / 256, 256, 0, stream>>>(
         elements, (const float *)src, (__half *)dst, scale);
+}
+
+void
+convert_half_float(const void *src, void *dst, int elements, float scale,
+                   cudaStream_t stream)
+{
+    convert<<<(elements + 255) / 256, 256, 0, stream>>>(
+        elements, (const __half *)src, (float *)dst, scale);
 }
 
 //------------------------------------------------------------------------
