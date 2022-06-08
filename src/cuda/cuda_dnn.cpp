@@ -783,6 +783,14 @@ elu_setup(CudaProgram &p, const Node &n, bool training)
 
 REGISTER_CUDA_OP("elu", relu_setup);
 
+static const char *
+sigmoid_setup(CudaProgram &p, const Node &n, bool training)
+{
+    return activation_setup(p, n, training, CUDNN_ACTIVATION_SIGMOID, 0.0f);
+}
+
+REGISTER_CUDA_OP("sigmoid", sigmoid_setup);
+
 //------------------------------------------------------------------------
 
 struct CudnnPoolingFwd : public CudnnOperation {

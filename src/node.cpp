@@ -443,6 +443,7 @@ static const struct {
     {"relu", passthru_y},
     {"reshape", reshape_y},
     {"softmax", passthru_y},
+    {"sigmoid", passthru_y},
     {"spatialtransform", spatialtransform_y, spatialtransform_setup},
     {"stats", stats_y},
     {"sum", sum_y},
