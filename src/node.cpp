@@ -444,6 +444,7 @@ static const struct {
     {"reshape", reshape_y},
     {"softmax", passthru_y},
     {"sigmoid", passthru_y},
+    {"tanh", passthru_y},
     {"spatialtransform", spatialtransform_y, spatialtransform_setup},
     {"stats", stats_y},
     {"sum", sum_y},

@@ -791,6 +791,14 @@ sigmoid_setup(CudaProgram &p, const Node &n, bool training)
 
 REGISTER_CUDA_OP("sigmoid", sigmoid_setup);
 
+static const char *
+tanh_setup(CudaProgram &p, const Node &n, bool training)
+{
+    return activation_setup(p, n, training, CUDNN_ACTIVATION_TANH, 0.0f);
+}
+
+REGISTER_CUDA_OP("tanh", tanh_setup);
+
 //------------------------------------------------------------------------
 
 struct CudnnPoolingFwd : public CudnnOperation {
