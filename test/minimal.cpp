@@ -116,3 +116,80 @@ minimal_main(int argc, char **argv)
 
 SAGA_CLI_CMD("minimal", "minimal [OPTIONS ...]", "Run some minimal tests",
              minimal_main);
+
+extern int
+mse_main(int argc, char **argv)
+{
+    int opt;
+
+    auto dt = Tensor::DataType::FLOAT;
+
+    while((opt = getopt(argc, argv, "h")) != -1) {
+        switch(opt) {
+        case 'h':
+            dt = Tensor::DataType::HALF;
+            break;
+        }
+    }
+
+    argc -= optind;
+    argv += optind;
+
+    Graph g;
+
+    auto x = std::make_shared<Tensor>(dt, Dims({1, 4}), "input");
+    std::shared_ptr<Node> n;
+    n = g.addNode("fc", {{"x", x}}, {{"outputs", 5}, {"bias", true}});
+    n = g.addNode("relu", {{"x", n->y()}}, {});
+    n = g.addNode("fc", {{"x", n->y()}}, {{"outputs", 4}, {"bias", true}});
+    n = g.addNode("tanh", {{"x", n->y()}}, {});
+    n = g.addNode("mse", {{"x", n->y()}}, {});
+
+    auto loss = n->outputs_["loss"];
+    auto y = n->y();
+    g.print();
+
+    auto ctx = createContext();
+    auto p = ctx->createProgram(g, {.inference = true,
+                                    .training = true,
+                                    .batch_size = 1,
+                                    .initial_learning_rate = 1e-3,
+                                    .tensor_layout = TensorLayout::NCHW});
+
+    p->print();
+
+    x = p->resolveTensor(x);
+    auto dy = p->resolveTensorGradient(y);
+    y = p->resolveTensor(y);
+
+    loss = p->resolveTensor(loss);
+
+    printf("x: %s\n", x->info().c_str());
+    printf("y: %s\n", y->info().c_str());
+    printf("dy: %s\n", dy->info().c_str());
+
+    for(int i = 0; i < 4; i++) {
+        x->access()->set({0, i}, i + 1);
+    }
+
+    for(int i = 0; i < 4; i++) {
+        dy->access()->set({0, i}, 0.9 - i * 0.1);
+    }
+
+    x->print("X");
+    dy->print("DY");
+
+    int iter = 0;
+    while(1) {
+        p->train();
+        if((iter % 1000) == 0) {
+            y->print("Y");
+            loss->print("LOSS");
+        }
+        iter++;
+    }
+
+    return 0;
+}
+
+SAGA_CLI_CMD("mse", "mse [OPTIONS ...]", "Run small mse test", mse_main);
