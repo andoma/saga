@@ -510,7 +510,6 @@ reduceLiveranges(
 {
     LiveAnalysis la(ops, exported);
     la.eliminateDeadInstructions();
-    la.reduceMemoryPressure();
     return la.m_ops;
 }
 
