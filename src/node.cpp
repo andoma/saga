@@ -220,7 +220,7 @@ static std::shared_ptr<Tensor>
 concat_y(const Node &n, const std::optional<const std::string> &name)
 {
     int i = 0;
-    int axis = 1;
+    int axis = n.attributes_.get("axis", 1);
     Dims dims;
     Tensor::DataType data_type = Tensor::DataType::U8;
     while(1) {

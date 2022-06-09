@@ -2532,7 +2532,7 @@ REGISTER_CUDA_TRANSFORM(100, CUDA_TRANSFORM_ALL, window_transform);
 static void
 concat_transform_node(CudaProgram &p, const Node &n)
 {
-    const int axis = 1;
+    const int axis = n.attributes_.get("axis", 1);
 
     auto y = p.lower_tensor_batch(n.outputs_.get("y"));
     auto dy = y->makeSharedGrad();
