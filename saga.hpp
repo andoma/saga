@@ -78,6 +78,8 @@ class Dims : public std::vector<int> {
     using std::vector<int>::vector;
 
 public:
+    Dims(const std::vector<int> &v) : std::vector<int>(v) {}
+
     Dims n(int64_t v) const;
     std::vector<int64_t> i64() const;
     size_t elements() const;
