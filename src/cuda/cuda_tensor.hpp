@@ -143,6 +143,7 @@ public:
     std::shared_ptr<CudaTensorStorage> m_storage;
     cudnnTensorDescriptor_t m_desc;
     std::shared_ptr<CudaTensor> m_grad;
+    bool m_partial{false};
 };
 
 }  // namespace saga

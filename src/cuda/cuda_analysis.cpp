@@ -198,7 +198,7 @@ struct LiveAnalysis {
     int m_ln_id_base;
     int m_ln_words;
     int m_ln_size;
-    std::vector<std::shared_ptr<Liveness>> m_lns;
+    std::vector<std::unique_ptr<Liveness>> m_lns;
     std::vector<size_t> m_memory_usage;
     std::vector<std::shared_ptr<CudaTensorStorage>> m_storage;
 
@@ -248,8 +248,11 @@ struct LiveAnalysis {
             bitset(m_exported_gen, id);
         }
 
+        uint32_t *partials_init =
+            (uint32_t *)calloc(m_ln_words, sizeof(uint32_t));
+
         for(const auto &op : ops) {
-            auto ln = std::make_shared<Liveness>(m_ln_words);
+            auto ln = std::make_unique<Liveness>(m_ln_words);
 
             for(const auto &t : op->getInputs()) {
                 const int id = t->storage_id() - m_ln_id_base;
@@ -264,14 +267,17 @@ struct LiveAnalysis {
                 m_memory_usage[id] = t->memoryUsage();
                 m_storage[id] = t->m_storage;
 
-                // This is a bit of a hack.
-                // If writing to an offset in the tensor's storage we assume
-                // it's the non-first part of a concat (or similar operation)
-                if(t->m_offset)
-                    bitset(ln->m_gen, id);
+                if(t->m_partial) {
+                    if(bitchk(partials_init, id)) {
+                        bitset(ln->m_gen, id);
+                    } else {
+                        bitset(partials_init, id);
+                    }
+                }
             }
-            m_lns.push_back(ln);
+            m_lns.push_back(std::move(ln));
         }
+        free(partials_init);
         update();
     }
 
@@ -418,7 +424,7 @@ struct LiveAnalysis {
             return;
 
         auto op = m_ops[from];
-        auto ln = m_lns[from];
+        auto ln = std::move(m_lns[from]);
 
         m_ops.erase(m_ops.begin() + from);
         m_lns.erase(m_lns.begin() + from);
@@ -427,7 +433,7 @@ struct LiveAnalysis {
             to--;
         }
         m_ops.insert(m_ops.begin() + to, op);
-        m_lns.insert(m_lns.begin() + to, ln);
+        m_lns.insert(m_lns.begin() + to, std::move(ln));
     }
 
     // Try to move operations further up in program order if

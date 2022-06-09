@@ -167,6 +167,7 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size,
   : Tensor(data_type, size, name)
   , m_type(cudnnDataType_from_dataType(data_type))
   , m_offset(0)
+  , m_partial(false)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     assert(size.size() >= 0 && size.size() <= 4);
@@ -186,6 +187,7 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
   : Tensor(storage->m_data_type, size, name)
   , m_type(cudnnDataType_from_dataType(storage->m_data_type))
   , m_offset(0)
+  , m_partial(false)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     assert(size.size() >= 0 && size.size() <= 4);
@@ -202,6 +204,7 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensor> alias, const Dims &size,
   , m_type(cudnnDataType_from_dataType(alias->m_storage->m_data_type))
   , m_offset(alias->m_offset)
   , m_storage(alias->m_storage)
+  , m_partial(true)
 {
     const int max_rank = 8;
     int dimsA[max_rank];
@@ -232,6 +235,7 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
   , m_type(cudnnDataType_from_dataType(storage->m_data_type))
   , m_offset(offset)
   , m_storage(storage)
+  , m_partial(true)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(), &size[0],
@@ -243,6 +247,7 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size, const int *strides,
                        const std::optional<const std::string> &name)
   : Tensor(data_type, size, name)
   , m_type(cudnnDataType_from_dataType(data_type))
+  , m_partial(false)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(), &size[0],
@@ -265,6 +270,7 @@ CudaTensor::CudaTensor(const CudaTensor &o,
   : Tensor(o.data_type_, o.dims_, name)
   , m_type(cudnnDataType_from_dataType(data_type_))
   , m_offset(0)
+  , m_partial(false)
 {
     const int max_rank = 8;
     int dimsA[max_rank];
@@ -289,6 +295,7 @@ CudaTensor::CudaTensor(DataType data_type, const CudaTensor &o,
   : Tensor(data_type, o.dims_, name)
   , m_type(cudnnDataType_from_dataType(data_type))
   , m_offset(0)
+  , m_partial(false)
 {
     const int max_rank = 8;
     int dimsA[max_rank];
@@ -489,6 +496,11 @@ CudaTensor::info() const
     if(m_offset) {
         ss << " + " << m_offset;
     }
+
+    if(m_partial) {
+        ss << " <partial>";
+    }
+
     return ss.str();
 }
 
