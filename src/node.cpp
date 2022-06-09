@@ -525,8 +525,15 @@ Node::print() const
             value = std::to_string(*v);
         } else if(auto v = std::get_if<bool>(&a.second)) {
             value = *v ? "true" : "false";
-        } else if(std::get_if<std::vector<int>>(&a.second)) {
-            value = "<vector>";
+        } else if(auto v = std::get_if<std::vector<int>>(&a.second)) {
+            value = "[";
+            const char *pfx = "";
+            for(const auto &ele : *v) {
+                value += pfx;
+                value += std::to_string(ele);
+                pfx = ", ";
+            }
+            value += "]";
         } else {
             value = "?";
         }
