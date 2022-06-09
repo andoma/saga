@@ -2492,6 +2492,44 @@ REGISTER_CUDA_TRANSFORM(110, CUDA_TRANSFORM_ALL, reshape_transform);
 //------------------------------------------------------------------------
 
 static void
+window_transform_node(CudaProgram &p, const Node &n)
+{
+    auto x = p.lower_tensor_batch(n.inputs_.get("x"), CUDNN_TENSOR_NCHW);
+    auto dx = x->makeSharedGrad();
+    auto y = n.outputs_.get("y");
+
+    Dims offset(n.attributes_.get("offset", std::vector<int>{}));
+
+    auto yl = std::make_shared<CudaTensor>(
+        x, y->dims_.n(p.m_batch_size), offset.i64(), y->namePostfix("alias"));
+
+    p.m_tensors[y] = yl;
+
+    yl->m_grad = std::make_shared<CudaTensor>(
+        dx, y->dims_.n(p.m_batch_size), offset.i64(), y->namePostfix("alias"));
+}
+
+static Nodes
+window_transform(CudaProgram &p, const Nodes &nodes)
+{
+    Nodes r;
+
+    for(size_t i = 0; i < nodes.size(); i++) {
+        auto &n = nodes[i];
+        if(n->type_ == "window") {
+            window_transform_node(p, *n);
+        } else {
+            r.push_back(n);
+        }
+    }
+    return r;
+}
+
+REGISTER_CUDA_TRANSFORM(100, CUDA_TRANSFORM_ALL, window_transform);
+
+//------------------------------------------------------------------------
+
+static void
 concat_transform_node(CudaProgram &p, const Node &n)
 {
     const int axis = 1;

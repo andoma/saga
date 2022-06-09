@@ -241,6 +241,21 @@ concat_y(const Node &n, const std::optional<const std::string> &name)
 //------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
+window_y(const Node &n, const std::optional<const std::string> &name)
+{
+    auto o = n.inputs_.get("x");
+    if(o == nullptr)
+        return nullptr;
+
+    auto shape = n.attributes_.get("shape", std::vector<int>{});
+    if(shape.size() != o->dims_.size())
+        return nullptr;
+    return std::make_shared<Tensor>(o->data_type_, shape, name);
+}
+
+//------------------------------------------------------------------------
+
+static std::shared_ptr<Tensor>
 fc_y(const Node &n, const std::optional<const std::string> &name)
 {
     auto w = n.inputs_.get("w");
@@ -470,6 +485,7 @@ static const struct {
     {"sum", sum_y},
     {"convert", convert_y},
     {"mse", mse_y, mse_setup},
+    {"window", window_y},
 };
 
 std::shared_ptr<Tensor>
