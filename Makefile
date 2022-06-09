@@ -77,6 +77,7 @@ SRCS-prog += \
 	test/test_ops.cpp \
 	test/test_jpeg_decoder.cpp \
 	test/test_resnode.cpp \
+	test/test_aliasing.cpp \
 
 SRCS-prog-$(HAVE_PROTOBUF) += test/test_onnx.cpp
 
