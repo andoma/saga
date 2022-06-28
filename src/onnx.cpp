@@ -198,10 +198,14 @@ print_onnx_graph_info(const onnx::GraphProto &gp)
         const auto &ini = gp.initializer(i);
         printf("  Initializer %d: %s\n", i, ini.name().c_str());
         printf("    %s: ", DataType_str(ini.data_type()));
-        for(int j = 0; j < ini.dims_size(); j++) {
-            printf("%s%" PRId64, j ? ", " : "{", ini.dims(j));
+        if(ini.dims_size() == 0) {
+            printf("<scalar> ");
+        } else {
+            for(int j = 0; j < ini.dims_size(); j++) {
+                printf("%s%" PRId64, j ? ", " : "{", ini.dims(j));
+            }
+            printf("} ");
         }
-        printf("} ");
         assert(ini.segment().begin() == 0);
         assert(ini.segment().end() == 0);
         printf(" size:%zd\n", ini.raw_data().size());

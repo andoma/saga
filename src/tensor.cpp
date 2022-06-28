@@ -73,6 +73,9 @@ Dims::elements() const
 std::string
 Dims::to_string() const
 {
+    if(size() == 0)
+        return "[]";
+
     const char *prefix = "[";
     std::stringstream ss;
     for(const auto &d : *this) {
@@ -962,7 +965,8 @@ public:
     HostTensorStorage(Tensor::DataType data_type, const Dims &size,
                       const Dims &strides)
       : TensorStorage(data_type)
-      , buffer_size_(size[0] * strides[0] * Tensor::DataTypeSize(data_type))
+      , buffer_size_((size.size() ? (size[0] * strides[0]) : 1) *
+                     Tensor::DataTypeSize(data_type))
       , mmaped_(NULL)
     {
         m_data = calloc(1, buffer_size_);
