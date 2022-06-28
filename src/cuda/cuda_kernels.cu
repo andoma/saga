@@ -388,4 +388,27 @@ tensor_stats_half(int n, const __half *src, float *output, cudaStream_t stream)
     compute_mean_stddev<<<1, 1, 0, stream>>>(output, n);
 }
 
+//------------------------------------------------------------------------
+// Leaky RELU
+//------------------------------------------------------------------------
+
+template <typename T>
+__global__ static void
+leaky_relu(int n, T *dst, const T *src, float alpha)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i >= n)
+        return;
+    float v = src[i];
+    dst[i] = v > 0 ? v : v * alpha;
+}
+
+void
+leaky_relu_float(int elements, float *y, const float *x, float alpha,
+                 cudaStream_t stream)
+{
+    leaky_relu<<<(elements + 255) / 256, 256, 0, stream>>>(elements, y, x,
+                                                           alpha);
+}
+
 };  // namespace saga

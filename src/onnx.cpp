@@ -451,6 +451,19 @@ make_relu(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 }
 
 static shared_ptr<Node>
+make_leakyrelu(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
+{
+    assert(np.input_size() == 1);
+    assert(np.output_size() == 1);
+    auto n = std::make_shared<Node>("leakyrelu");
+    n->inputs_["x"] = find_tensor(g, np.input(0));
+    float alpha = attribs.get("alpha", 0.01f);
+    n->attributes_["alpha"] = alpha;
+    make_tensor_y(g, *n, np.output(0));
+    return n;
+}
+
+static shared_ptr<Node>
 make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
              const std::string &type, bool global)
 {

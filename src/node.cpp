@@ -476,6 +476,7 @@ static const struct {
     {"maxpool", pooling_y},
     {"mul", passthru_y},
     {"relu", passthru_y},
+    {"leakyrelu", passthru_y},
     {"reshape", reshape_y},
     {"softmax", passthru_y},
     {"sigmoid", passthru_y},

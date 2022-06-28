@@ -837,6 +837,60 @@ REGISTER_CUDA_OP("tanh", tanh_setup);
 
 //------------------------------------------------------------------------
 
+struct CudaLeakyRelu : public CudaOperation {
+    const std::shared_ptr<CudaTensor> x_, y_;
+    const float alpha_;
+
+    CudaLeakyRelu(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y,
+                  float alpha)
+      : CudaOperation("leakyrelu"), x_(x), y_(y), alpha_(alpha)
+    {
+    }
+
+    const char *exec(CudaProgram &p, long batch)
+    {
+        switch(x_->data_type_) {
+        case Tensor::DataType::FLOAT:
+            leaky_relu_float(x_->elements_, (float *)y_->deviceMem(),
+                             (const float *)x_->deviceMem(), alpha_,
+                             p.m_ctx->m_stream);
+            break;
+        default:
+            return "LeakyRelu: Unsupported datatype";
+        }
+        return NULL;
+    }
+
+    std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
+    {
+        return {x_};
+    }
+
+    std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
+    {
+        return {y_};
+    }
+};
+
+static const char *
+leakyrelu_setup(CudaProgram &p, const Node &n, bool training)
+{
+    if(training) {
+        return "LeakRelu not supported for training";
+    }
+
+    auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+    auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+    float alpha = n.attributes_.get("alpha", 0.01f);
+    auto op = std::make_shared<CudaLeakyRelu>(x, y, alpha);
+    p.infer(op);
+    return NULL;
+}
+
+REGISTER_CUDA_OP("leakyrelu", leakyrelu_setup);
+
+//------------------------------------------------------------------------
+
 struct CudnnPoolingFwd : public CudnnOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
 

@@ -55,4 +55,7 @@ void tensor_stats_float(int n, const float *src, float *output,
 void tensor_stats_half(int n, const __half *src, float *output,
                        cudaStream_t stream);
 
+void leaky_relu_float(int n, float *y, const float *x, float alpha,
+                      cudaStream_t stream);
+
 }  // namespace saga
