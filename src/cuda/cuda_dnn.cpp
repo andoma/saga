@@ -1985,6 +1985,24 @@ sum_setup(CudaProgram &p, const Node &n, bool training)
 
 REGISTER_CUDA_OP("sum", sum_setup);
 
+static const char *
+add_setup(CudaProgram &p, const Node &n, bool training)
+{
+    auto x = p.lower_tensor_batch(n.inputs_.get("x"));
+    auto y = p.lower_tensor_batch(n.outputs_.get("y"));
+    auto b = p.lower_tensor(n.inputs_.get("b"));
+
+    auto fwd = std::make_shared<CudnnOpTensor>(x, b, y, CUDNN_OP_TENSOR_ADD);
+
+    if(!training) {
+        p.infer(fwd);
+        return NULL;
+    }
+    return "Add not supported for backprop (yet)";
+}
+
+REGISTER_CUDA_OP("add", add_setup);
+
 //------------------------------------------------------------------------
 
 struct CudnnSoftmaxFwd : public CudnnOperation {
