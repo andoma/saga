@@ -815,7 +815,7 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
             const char *err = find_operation(*n)->setup(*p, *n, false);
             if(err) {
                 fprintf(stderr,
-                        "Unable to create inferenece operation for %s -- %s\n",
+                        "Unable to create inference operation for %s -- %s\n",
                         n->type_.c_str(), err);
                 n->print();
                 exit(1);
