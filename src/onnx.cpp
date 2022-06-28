@@ -452,7 +452,7 @@ make_relu(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
 
 static shared_ptr<Node>
 make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
-             const std::string &type)
+             const std::string &type, bool global)
 {
     assert(np.input_size() == 1);
     assert(np.output_size() == 1);
@@ -465,13 +465,18 @@ make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
         assert(d == 1);
     }
 
-    int size = 0;
-    auto kernel_shape = attribs.get("kernel_shape", std::vector<int>({}));
-    if(kernel_shape.size()) {
-        size = kernel_shape[0];
-        for(auto x : kernel_shape) {
-            assert(x == size);
+    if(global) {
+        n->attributes_["global"] = true;
+    } else {
+        int size = 0;
+        auto kernel_shape = attribs.get("kernel_shape", std::vector<int>({}));
+        if(kernel_shape.size()) {
+            size = kernel_shape[0];
+            for(auto x : kernel_shape) {
+                assert(x == size);
+            }
         }
+        n->attributes_["size"] = size;
     }
 
     int pad = 0;
@@ -485,7 +490,7 @@ make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
 
     assert(attribs.get("storage_order", 0) == 0);
 
-    int stride = 0;
+    int stride = 1;
     auto strides = attribs.get("strides", std::vector<int>({}));
 
     if(strides.size()) {
@@ -495,7 +500,6 @@ make_pooling(Graph &g, const onnx::NodeProto &np, const Attributes &attribs,
         }
     }
 
-    n->attributes_["size"] = size;
     n->attributes_["pad"] = pad;
     n->attributes_["stride"] = stride;
     make_tensor_y(g, *n, np.output(0));
@@ -678,10 +682,14 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
             n = make_batchnorm(g, np, attribs);
         } else if(node_type == "Relu") {
             n = make_relu(g, np, attribs);
+        } else if(node_type == "LeakyRelu") {
+            n = make_leakyrelu(g, np, attribs);
         } else if(node_type == "MaxPool") {
-            n = make_pooling(g, np, attribs, "maxpool");
+            n = make_pooling(g, np, attribs, "maxpool", false);
         } else if(node_type == "AveragePool") {
-            n = make_pooling(g, np, attribs, "avgpool");
+            n = make_pooling(g, np, attribs, "avgpool", false);
+        } else if(node_type == "GlobalAveragePool") {
+            n = make_pooling(g, np, attribs, "avgpool", true);
         } else if(node_type == "Add") {
             n = make_mathop(g, np, attribs, "add");
         } else if(node_type == "Mul") {
