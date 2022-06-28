@@ -50,6 +50,8 @@ Dims
 Dims::n(int64_t v) const
 {
     Dims d = *this;
+    if(v == 1)
+        return d;
     d[0] = v;
     return d;
 }
