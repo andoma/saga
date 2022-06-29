@@ -25,6 +25,15 @@ static int64_t __attribute__((unused)) get_ts(void)
     return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
 }
 
+static void
+addStats(Graph &g, std::shared_ptr<Tensor> src, Stats *out, bool gradient)
+{
+    if(!out)
+        return;
+    auto s = g.addNode("stats", {{"x", src}}, {{"gradient", gradient}});
+    out->push_back(s->y());
+}
+
 // SqueezeNet's fire module: https://arxiv.org/pdf/1602.07360.pdf
 // Optionally with a batch-norm module after squeeze layer
 
@@ -82,22 +91,32 @@ squeezenet(Graph &g, std::shared_ptr<Node> n, bool with_bn, int output_classes)
 }
 
 static std::shared_ptr<Node>
-lecun(Graph &g, std::shared_ptr<Node> n, int output_classes)
+lecun(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
 {
     n = g.addNode("conv", {{"x", n->y()}},
                   {{"size", 5}, {"activations", 32}, {"bias", true}}, "conv1");
 
     n = g.addNode("relu", {{"x", n->y()}}, {});
     n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+
+    addStats(g, n->y(), stats, false);
+    addStats(g, n->y(), stats, true);
+
     n = g.addNode("conv", {{"x", n->y()}},
                   {{"size", 5}, {"activations", 64}, {"bias", true}}, "conv2");
     n = g.addNode("relu", {{"x", n->y()}}, {});
     n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
 
+    addStats(g, n->y(), stats, false);
+    addStats(g, n->y(), stats, true);
+
     n = g.addNode("fc", {{"x", n->y()}},
                   {{"outputs", 1024}, {"bias", true}, {"transW", true}}, "fc1");
 
     n = g.addNode("relu", {{"x", n->y()}}, {});
+
+    addStats(g, n->y(), stats, false);
+    addStats(g, n->y(), stats, true);
 
     n = g.addNode(
         "fc", {{"x", n->y()}},
@@ -259,15 +278,6 @@ test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
     return n;
 }
 
-static void
-statsgrad(Graph &g, std::shared_ptr<Tensor> src, Stats *out)
-{
-    if(!out)
-        return;
-    auto s = g.addNode("stats", {{"x", src}}, {{"gradient", true}});
-    out->push_back(s->y());
-}
-
 static std::shared_ptr<Node>
 resnet(Graph &g, std::shared_ptr<Node> n, int output_classes, int stage2,
        int stage3, int stage4, int stage5, Stats *stats)
@@ -284,28 +294,28 @@ resnet(Graph &g, std::shared_ptr<Node> n, int output_classes, int stage2,
     n = g.addNode("maxpool", {{"x", n->y()}},
                   {{"size", 3}, {"stride", 2}, {"pad", 1}});
 
-    statsgrad(g, n->y(), stats);
+    addStats(g, n->y(), stats, true);
 
     for(int i = 0; i < stage2; i++) {
         n = g.addResNet(n->y(), 64, false,
                         std::string("s2_") + std::to_string(i));
     }
 
-    statsgrad(g, n->y(), stats);
+    addStats(g, n->y(), stats, true);
 
     for(int i = 0; i < stage3; i++) {
         n = g.addResNet(n->y(), 128, i == 0,
                         std::string("s3_") + std::to_string(i));
     }
 
-    statsgrad(g, n->y(), stats);
+    addStats(g, n->y(), stats, true);
 
     for(int i = 0; i < stage4; i++) {
         n = g.addResNet(n->y(), 256, i == 0,
                         std::string("s4_") + std::to_string(i));
     }
 
-    statsgrad(g, n->y(), stats);
+    addStats(g, n->y(), stats, true);
 
     for(int i = 0; i < stage5; i++) {
         n = g.addResNet(n->y(), 512, i == 0,
@@ -334,20 +344,20 @@ resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
     n = g.addNode("maxpool", {{"x", n->y()}},
                   {{"size", 3}, {"stride", 2}, {"pad", 1}});
 
-    statsgrad(g, n->y(), stats);
+    addStats(g, n->y(), stats, true);
 
     n = g.addResNetBottleNeck(n->y(), 64, 256, false, "s2_1");
     n = g.addResNetBottleNeck(n->y(), 64, 256, false, "s2_2");
     n = g.addResNetBottleNeck(n->y(), 64, 256, false, "s2_3");
 
-    statsgrad(g, n->y(), stats);
+    addStats(g, n->y(), stats, true);
 
     n = g.addResNetBottleNeck(n->y(), 128, 512, true, "s3_1");
     n = g.addResNetBottleNeck(n->y(), 128, 512, false, "s3_2");
     n = g.addResNetBottleNeck(n->y(), 128, 512, false, "s3_3");
     n = g.addResNetBottleNeck(n->y(), 128, 512, false, "s3_4");
 
-    statsgrad(g, n->y(), stats);
+    addStats(g, n->y(), stats, true);
 
     n = g.addResNetBottleNeck(n->y(), 256, 1024, true, "s4_1");
     n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_2");
@@ -356,7 +366,7 @@ resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
     n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_5");
     n = g.addResNetBottleNeck(n->y(), 256, 1024, false, "s4_6");
 
-    statsgrad(g, n->y(), stats);
+    addStats(g, n->y(), stats, true);
 
     n = g.addResNetBottleNeck(n->y(), 512, 2048, true, "s5_1");
     n = g.addResNetBottleNeck(n->y(), 512, 2048, false, "s5_2");
@@ -374,7 +384,7 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
              int output_classes, Stats *stats)
 {
     if(name == "lecun") {
-        return lecun(g, n, output_classes);
+        return lecun(g, n, output_classes, stats);
     } else if(name == "test") {
         return test(g, n, false, output_classes);
     } else if(name == "test+bn") {
@@ -597,7 +607,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                                 bta);
 
     if(verbose > 1)
-        p->print();
+        p->print(verbose > 2);
 
     theta = p->resolveTensor(theta);
     postconv = p->resolveTensor(postconv);
