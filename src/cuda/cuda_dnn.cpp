@@ -695,6 +695,35 @@ REGISTER_CUDA_OP("conv", conv_setup);
 
 //------------------------------------------------------------------------
 
+static const char *
+activationalgo_to_str(const cudnnActivationDescriptor_t &desc)
+{
+    cudnnActivationMode_t mode;
+    cudnnNanPropagation_t reluNanOpt;
+    double coef;
+
+    cudnnGetActivationDescriptor(desc, &mode, &reluNanOpt, &coef);
+
+    switch(mode) {
+    case CUDNN_ACTIVATION_SIGMOID:
+        return "sigmoid";
+    case CUDNN_ACTIVATION_RELU:
+        return "relu";
+    case CUDNN_ACTIVATION_TANH:
+        return "tanh";
+    case CUDNN_ACTIVATION_CLIPPED_RELU:
+        return "clipped-relu";
+    case CUDNN_ACTIVATION_ELU:
+        return "elu";
+    case CUDNN_ACTIVATION_IDENTITY:
+        return "identity";
+    case CUDNN_ACTIVATION_SWISH:
+        return "swish";
+    default:
+        return "?";
+    }
+}
+
 struct CudnnActivationFwd : public CudnnOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
     const float y_beta_;
@@ -731,6 +760,8 @@ struct CudnnActivationFwd : public CudnnOperation {
     {
         return {y_};
     }
+
+    std::string info() const override { return activationalgo_to_str(desc_); }
 };
 
 struct CudnnActivationBwd : public CudnnOperation {
@@ -774,6 +805,10 @@ struct CudnnActivationBwd : public CudnnOperation {
     std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
     {
         return {dx_};
+    }
+    std::string info() const override
+    {
+        return activationalgo_to_str(fwd_->desc_);
     }
 };
 
