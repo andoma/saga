@@ -123,7 +123,7 @@ mnist_main(int argc, char **argv)
     bool test = false;
 
     auto input = std::make_shared<Tensor>(
-        Tensor::DataType::U8, Dims({DimParam::DATA_BATCH, 1, rows, cols}));
+        Tensor::DataType::U8, Dims({DimParam::BATCH_SIZE, 1, rows, cols}));
 
     test_classifier(
         argc, argv, input, 255, 10, train_images, test_images,

@@ -45,7 +45,7 @@ namespace saga {
 //------------------------------------------------------------------------
 
 enum class DimParam {
-    DATA_BATCH,
+    BATCH_SIZE,
     UNCHANGED,
     REDUCE,
 };

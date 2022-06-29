@@ -132,7 +132,7 @@ Dims
 Dims::n(int64_t N) const
 {
     return transform([&](auto dp, size_t i) {
-        return dp == DimParam::DATA_BATCH ? (Dim)N : dp;
+        return dp == DimParam::BATCH_SIZE ? (Dim)N : dp;
     });
 }
 
@@ -153,7 +153,7 @@ Dim::to_string() const
         return std::to_string(*v);
     } else if(auto v = std::get_if<DimParam>(&*this)) {
         switch(*v) {
-        case DimParam::DATA_BATCH:
+        case DimParam::BATCH_SIZE:
             return "N";
         case DimParam::UNCHANGED:
             return "=";
