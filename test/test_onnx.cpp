@@ -124,7 +124,7 @@ test_onnx_main(int argc, char **argv)
         exit(1);
     }
 
-    if(test_one("models/resnet50/model.onnx", ctx, verbose)) {
+    if(test_one("models/resnet50-v1-12/resnet50-v1-12.onnx", ctx, verbose)) {
         exit(1);
     }
 
