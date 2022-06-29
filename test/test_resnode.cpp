@@ -146,7 +146,7 @@ fill_tensor(std::shared_ptr<Tensor> t, const TensorData &td)
         dst->set(e, td.data[i]);
 
         for(ssize_t j = e.size() - 1; j >= 0; j--) {
-            e[j]++;
+            ++e[j];
             if(e[j] == td.dims[j]) {
                 e[j] = 0;
             } else {

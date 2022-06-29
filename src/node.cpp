@@ -72,7 +72,8 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
         (inputdim_h + 2 * pad - (((filterdim_h - 1) * dilation) + 1)) / stride;
 
     return std::make_shared<Tensor>(
-        x->data_type_, Dims({1, features, outputdim_h, outputdim_w}), name);
+        x->data_type_, Dims({x->dims_[0], features, outputdim_h, outputdim_w}),
+        name);
 }
 
 static std::vector<std::shared_ptr<Node>>
@@ -171,7 +172,8 @@ pooling_y(const Node &n, const std::optional<const std::string> &name)
     const int outputdim_w = 1 + (inputdim_w + 2 * pad - size) / stride;
 
     return std::make_shared<Tensor>(
-        x->data_type_, Dims({1, channels, outputdim_h, outputdim_w}), name);
+        x->data_type_, Dims({x->dims_[0], channels, outputdim_h, outputdim_w}),
+        name);
 }
 
 //------------------------------------------------------------------------
@@ -182,36 +184,33 @@ reshape_y(const Node &n, const std::optional<const std::string> &name)
     auto x = n.inputs_.get("x");
     if(x == nullptr)
         return nullptr;
-    auto shape = n.inputs_.get("shape");
-    if(shape == nullptr)
-        return nullptr;
-
-    if(shape->dims_.size() != 1) {
-        fprintf(stderr, "Shape tensor is not 1d\n");
+    auto it = n.attributes_.find("shape");
+    if(it == n.attributes_.end()) {
+        fprintf(stderr, "Shape attribute not found\n");
+        abort();
         return nullptr;
     }
 
-    auto ta = shape->access();
+    auto shapep = std::get_if<Dims>(&it->second);
+    if(!shapep) {
+        fprintf(stderr, "Shape attribute not Dimension object\n");
+        return nullptr;
+    }
 
-    Dims dims;
-    for(int i = 0; i < shape->dims_[0]; i++) {
-        const int64_t v = ta->get({i});
-        if(v == 0) {
-            dims.push_back(x->dims_[i]);
-        } else if(v == -1) {
-            int64_t s = 1;
-            for(; i < (int64_t)x->dims_.size(); i++) {
-                s *= x->dims_[i];
-            }
-            dims.push_back(s);
-            break;
-        } else {
-            assert(v > 0);
-            dims.push_back(v);
+    const auto xshape = x->dims_;
+
+    const auto shape = (*shapep).transform([&](auto dp, size_t i) {
+        switch(dp) {
+        case DimParam::UNCHANGED:
+            return xshape[i];
+        case DimParam::REDUCE:
+            return (Dim)(int64_t)xshape.elements(i);
+        default:
+            return (Dim)dp;
         }
-    }
+    });
 
-    return std::make_shared<Tensor>(x->data_type_, dims, name);
+    return std::make_shared<Tensor>(x->data_type_, shape, name);
 }
 
 //------------------------------------------------------------------------
@@ -261,10 +260,11 @@ fc_y(const Node &n, const std::optional<const std::string> &name)
     auto w = n.inputs_.get("w");
     if(w == nullptr)
         return nullptr;
+    auto x = n.inputs_.get("x");
     const bool transW = n.attributes_.get("transW", false);
 
-    return std::make_shared<Tensor>(w->data_type_,
-                                    Dims({1, w->dims_[transW ? 0 : 1]}), name);
+    return std::make_shared<Tensor>(
+        w->data_type_, Dims({x->dims_[0], w->dims_[transW ? 0 : 1]}), name);
 }
 
 static std::vector<std::shared_ptr<Node>>
@@ -276,16 +276,11 @@ fc_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
     if(!x)
         return nodes;
 
-    if(x->dims_.size() != 2) {
+    if(x->dims_.size() > 2) {
         // Auto-insert a reshape node
-        auto shape = makeCPUTensor(Tensor::DataType::INT64, Dims({2}));
-        auto a = shape->access();
-        a->set({0}, 1);
-        a->set({1}, x->elements_);
-
         auto r = std::make_shared<Node>("reshape");
         r->inputs_["x"] = x;
-        r->inputs_["shape"] = shape;
+        r->attributes_["shape"] = Dims({DimParam::UNCHANGED, DimParam::REDUCE});
         x = r->inferTensor_y();
         r->outputs_["y"] = x;
         n->inputs_["x"] = x;
@@ -320,7 +315,11 @@ fc_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 static std::shared_ptr<Tensor>
 catclassifier_y(const Node &n, const std::optional<const std::string> &name)
 {
-    return std::make_shared<Tensor>(Tensor::DataType::I32, Dims({1, 1}), name);
+    auto x = n.inputs_.get("x");
+    if(x == nullptr)
+        return nullptr;
+    return std::make_shared<Tensor>(Tensor::DataType::I32,
+                                    Dims({x->dims_[0], 1}), name);
 }
 
 static std::vector<std::shared_ptr<Node>>
@@ -419,27 +418,11 @@ spatialtransform_y(const Node &n, const std::optional<const std::string> &name)
     if(o == nullptr)
         return nullptr;
 
-    const int height = n.attributes_.get("height", o->dims_[2]);
-    const int width = n.attributes_.get("width", o->dims_[3]);
+    const int height = n.attributes_.get("height", (int)o->dims_[2]);
+    const int width = n.attributes_.get("width", (int)o->dims_[3]);
 
     return std::make_shared<Tensor>(
         o->data_type_, Dims({o->dims_[0], o->dims_[1], height, width}));
-}
-
-static std::vector<std::shared_ptr<Node>>
-spatialtransform_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
-{
-    auto theta = n->inputs_.get("theta");
-    if(!theta) {
-        theta = makeCPUTensor(Tensor::DataType::FLOAT, Dims({1, 2, 3}),
-                              "theta.identity");
-
-        auto ta = theta->access();
-        ta->set({0, 0, 0}, 1);
-        ta->set({0, 1, 1}, 1);
-        n->inputs_["theta"] = theta;
-    }
-    return {n};
 }
 
 //------------------------------------------------------------------------
@@ -481,7 +464,7 @@ static const struct {
     {"softmax", passthru_y},
     {"sigmoid", passthru_y},
     {"tanh", passthru_y},
-    {"spatialtransform", spatialtransform_y, spatialtransform_setup},
+    {"spatialtransform", spatialtransform_y},
     {"stats", stats_y},
     {"sum", sum_y},
     {"convert", convert_y},
@@ -504,6 +487,31 @@ Node::inferTensor_y(const std::optional<const std::string> &name)
     abort();
 }
 
+std::string
+Attribute::to_string() const
+{
+    if(auto v = std::get_if<int>(this)) {
+        return std::to_string(*v);
+    } else if(auto v = std::get_if<float>(this)) {
+        return std::to_string(*v);
+    } else if(auto v = std::get_if<bool>(this)) {
+        return *v ? "true" : "false";
+    } else if(auto v = std::get_if<std::vector<int>>(this)) {
+        std::string r("[");
+        const char *pfx = "";
+        for(const auto &ele : *v) {
+            r += pfx;
+            r += std::to_string(ele);
+            pfx = ", ";
+        }
+        r += "]";
+        return r;
+    } else if(auto v = std::get_if<Dims>(this)) {
+        return v->to_string();
+    }
+    return "?";
+}
+
 void
 Node::print() const
 {
@@ -518,28 +526,8 @@ Node::print() const
     }
 
     for(const auto &a : attributes_) {
-        std::string value;
-
-        if(auto v = std::get_if<int>(&a.second)) {
-            value = std::to_string(*v);
-        } else if(auto v = std::get_if<float>(&a.second)) {
-            value = std::to_string(*v);
-        } else if(auto v = std::get_if<bool>(&a.second)) {
-            value = *v ? "true" : "false";
-        } else if(auto v = std::get_if<std::vector<int>>(&a.second)) {
-            value = "[";
-            const char *pfx = "";
-            for(const auto &ele : *v) {
-                value += pfx;
-                value += std::to_string(ele);
-                pfx = ", ";
-            }
-            value += "]";
-        } else {
-            value = "?";
-        }
-
-        printf("\tAttrib: %s: %s\n", a.first.c_str(), value.c_str());
+        printf("\tAttrib: %s: %s\n", a.first.c_str(),
+               a.second.to_string().c_str());
     }
 }
 

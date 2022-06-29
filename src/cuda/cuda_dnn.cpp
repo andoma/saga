@@ -65,25 +65,25 @@ struct CudnnAdam : public CudaOperation {
       , learning_rate_(p.m_learning_rate)
       , iter_(0)
       , ctx_(p.m_ctx)
+      , m_elements(weights->dims_.elements())
     {
         assert(weights->dims_ == gradient->dims_);
 
         switch(weights->data_type_) {
         case Tensor::DataType::FLOAT:
             // Allocate 2x floats for each weight (m and v)
-            bytes_ = weights_->elements_ * 2 * sizeof(float);
-            chkCuda(cudaMallocManaged(&temp_, bytes_));
-            chkCuda(cudaMemset(temp_, 0, bytes_));
+            chkCuda(cudaMallocManaged(&temp_, m_elements * 2 * sizeof(float)));
+            chkCuda(cudaMemset(temp_, 0, m_elements * 2 * sizeof(float)));
             break;
 
         case Tensor::DataType::HALF:
             // Allocate 3x floats for each weight (m and v and float32 copy)
-            bytes_ = weights_->elements_ * 3 * sizeof(float);
-            chkCuda(cudaMallocManaged(&temp_, bytes_, cudaMemAttachGlobal));
+            chkCuda(cudaMallocManaged(&temp_, m_elements * 3 * sizeof(float),
+                                      cudaMemAttachGlobal));
             {
                 const __half *src = (const __half *)weights->deviceMem();
                 float *dst = temp_;
-                for(int i = 0; i < weights->elements_; i++) {
+                for(size_t i = 0; i < m_elements; i++) {
                     *dst++ = 0;
                     *dst++ = 0;
                     *dst++ = *src++;
@@ -120,13 +120,13 @@ struct CudnnAdam : public CudaOperation {
 
         switch(weights_->data_type_) {
         case Tensor::DataType::FLOAT:
-            adam_float(weights_->elements_, (float *)weights_->deviceMem(),
+            adam_float(m_elements, (float *)weights_->deviceMem(),
                        (const float *)gradient_->deviceMem(), (float *)temp_,
                        b1t, b2t, learning_rate_, p.m_ctx->m_stream);
             break;
         case Tensor::DataType::HALF:
             p.m_mp_enabled = true;
-            adam_mixed(weights_->elements_, 1.0f / p.m_mp_scaling,
+            adam_mixed(m_elements, 1.0f / p.m_mp_scaling,
                        (__half *)weights_->deviceMem(),
                        (const __half *)gradient_->deviceMem(), (float *)temp_,
                        b1t, b2t, learning_rate_, (int *)p.m_check_result,
@@ -137,8 +137,8 @@ struct CudnnAdam : public CudaOperation {
         }
         return NULL;
     }
-    size_t bytes_;
     const std::shared_ptr<CudaContext> ctx_;
+    const size_t m_elements;
 };
 
 //------------------------------------------------------------------------
@@ -840,10 +840,15 @@ REGISTER_CUDA_OP("tanh", tanh_setup);
 struct CudaLeakyRelu : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
     const float alpha_;
+    const size_t m_elements;
 
     CudaLeakyRelu(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y,
                   float alpha)
-      : CudaOperation("leakyrelu"), x_(x), y_(y), alpha_(alpha)
+      : CudaOperation("leakyrelu")
+      , x_(x)
+      , y_(y)
+      , alpha_(alpha)
+      , m_elements(x->dims_.elements())
     {
     }
 
@@ -851,7 +856,7 @@ struct CudaLeakyRelu : public CudaOperation {
     {
         switch(x_->data_type_) {
         case Tensor::DataType::FLOAT:
-            leaky_relu_float(x_->elements_, (float *)y_->deviceMem(),
+            leaky_relu_float(m_elements, (float *)y_->deviceMem(),
                              (const float *)x_->deviceMem(), alpha_,
                              p.m_ctx->m_stream);
             break;
@@ -1215,12 +1220,18 @@ REGISTER_CUDA_OP("fc", fc_setup);
 struct CudaConvert : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
     const float scale_;
+    const size_t m_elements;
+
     void (*algo_)(const void *src, void *dst, int elements, float scale,
                   cudaStream_t stream);
 
     CudaConvert(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y,
                 float scale)
-      : CudaOperation("convert"), x_(x), y_(y), scale_(scale)
+      : CudaOperation("convert")
+      , x_(x)
+      , y_(y)
+      , scale_(scale)
+      , m_elements(x->dims_.elements())
     {
         if(x_->data_type_ == Tensor::DataType::U8 &&
            y_->data_type_ == Tensor::DataType::FLOAT) {
@@ -1241,7 +1252,7 @@ struct CudaConvert : public CudaOperation {
 
     const char *exec(CudaProgram &p, long batch)
     {
-        algo_(x_->deviceMem(), y_->deviceMem(), x_->elements_, scale_,
+        algo_(x_->deviceMem(), y_->deviceMem(), m_elements, scale_,
               p.m_ctx->m_stream);
         return NULL;
     }
@@ -1458,9 +1469,10 @@ REGISTER_CUDA_OP("catclassifier", catclassifier_setup);
 //------------------------------------------------------------------------
 struct CudaMSEFwd : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
+    const size_t m_elements;
 
     CudaMSEFwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y)
-      : CudaOperation("msefwd"), x_(x), y_(y)
+      : CudaOperation("msefwd"), x_(x), y_(y), m_elements(x->dims_.elements())
     {
     }
 
@@ -1468,7 +1480,7 @@ struct CudaMSEFwd : public CudaOperation {
     {
         switch(x_->m_type) {
         case CUDNN_DATA_HALF:
-            convert_half_float(x_->deviceMem(), y_->deviceMem(), x_->elements_,
+            convert_half_float(x_->deviceMem(), y_->deviceMem(), m_elements,
                                1.0f, p.m_ctx->m_stream);
             break;
         default:
@@ -2458,23 +2470,20 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
         return NULL;
     }
 
+    auto th = n.inputs_.get("theta");
+
     std::shared_ptr<CudaTensor> theta;
 
-    if(disable) {
-        auto th = makeCPUTensor(Tensor::DataType::FLOAT, Dims({1, 2, 3}),
-                                "theta.identity");
+    if(disable || !th) {
+        th = makeCPUTensor(Tensor::DataType::FLOAT,
+                           Dims({p.m_batch_size, 2, 3}), "theta.identity");
         auto ta = th->access();
-        ta->set({0, 0, 0}, 1);
-        ta->set({0, 1, 1}, 1);
-
-        theta = p.lower_tensor_batch(th);
-
-    } else {
-        theta = p.lower_tensor_batch(n.inputs_.get("theta"));
-        if(!theta) {
-            return "theta tensor missing";
+        for(int i = 0; i < p.m_batch_size; i++) {
+            ta->set({i, 0, 0}, 1);
+            ta->set({i, 1, 1}, 1);
         }
     }
+    theta = p.lower_tensor_batch(th);
 
     auto op = std::make_shared<CudnnSpatialTransformFwd>(p.m_ctx, x, theta, y);
 
@@ -2645,9 +2654,9 @@ REGISTER_CUDA_TRANSFORM(100, CUDA_TRANSFORM_ALL, concat_transform);
 
 struct CudaStats : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
-
+    const size_t m_elements;
     CudaStats(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y)
-      : CudaOperation("stats"), x_(x), y_(y)
+      : CudaOperation("stats"), x_(x), y_(y), m_elements(x->dims_.elements())
     {
     }
 
@@ -2655,11 +2664,11 @@ struct CudaStats : public CudaOperation {
     {
         switch(x_->data_type_) {
         case Tensor::DataType::FLOAT:
-            tensor_stats_float(x_->elements_, (const float *)x_->deviceMem(),
+            tensor_stats_float(m_elements, (const float *)x_->deviceMem(),
                                (float *)y_->deviceMem(), p.m_ctx->m_stream);
             break;
         case Tensor::DataType::HALF:
-            tensor_stats_half(x_->elements_, (const __half *)x_->deviceMem(),
+            tensor_stats_half(m_elements, (const __half *)x_->deviceMem(),
                               (float *)y_->deviceMem(), p.m_ctx->m_stream);
             break;
         default:

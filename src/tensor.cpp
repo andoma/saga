@@ -46,30 +46,122 @@
 namespace saga {
 
 //------------------------------------------------------------------------
-Dims
-Dims::n(int64_t v) const
+
+Dims::Dims(const std::vector<int> &vec)
 {
-    Dims d = *this;
-    if(v == 1)
-        return d;
-    d[0] = v;
-    return d;
+    for(const auto &v : vec) {
+        this->push_back(v);
+    }
+}
+
+Dim &
+Dim::operator++()
+{
+    if(auto v = std::get_if<int64_t>(&*this)) {
+        (*v)++;
+    } else {
+        fprintf(stderr, "Unable to ++ parameterized dim\n");
+        abort();
+    }
+    return *this;
+}
+
+Dim &
+Dim::operator+=(const Dim &rhs)
+{
+    if(auto v = std::get_if<int64_t>(&*this)) {
+        (*v) += (int)rhs;
+    } else {
+        fprintf(stderr, "Unable to += parameterized dim\n");
+        abort();
+    }
+    return *this;
+}
+
+std::vector<int32_t>
+Dims::i32() const
+{
+    std::vector<int32_t> r;
+
+    for(auto &d : *this) {
+        if(auto v = std::get_if<int64_t>(&d)) {
+            r.push_back(*v);
+        } else {
+            fprintf(stderr,
+                    "Unable to convert parameterized dim to vector<int>\n");
+            abort();
+        }
+    }
+    return r;
 }
 
 std::vector<int64_t>
 Dims::i64() const
 {
-    std::vector<int64_t> r(size());
-    for(size_t i = 0; i < size(); i++) r[i] = (*this)[i];
+    std::vector<int64_t> r;
+
+    for(auto &d : *this) {
+        if(auto v = std::get_if<int64_t>(&d)) {
+            r.push_back(*v);
+        } else {
+            fprintf(stderr,
+                    "Unable to convert parameterized dim to vector<int>\n");
+            abort();
+        }
+    }
     return r;
 }
 
+Dims
+Dims::transform(std::function<Dim(const DimParam &dp, size_t i)> fn) const
+{
+    Dims r;
+    size_t i = 0;
+    for(auto &d : *this) {
+        if(auto v = std::get_if<int64_t>(&d)) {
+            r.push_back(*v);
+        } else if(auto v = std::get_if<DimParam>(&d)) {
+            r.push_back(fn(*v, i));
+        }
+        i++;
+    }
+    return r;
+}
+
+Dims
+Dims::n(int64_t N) const
+{
+    return transform([&](auto dp, size_t i) {
+        return dp == DimParam::DATA_BATCH ? (Dim)N : dp;
+    });
+}
+
 size_t
-Dims::elements() const
+Dims::elements(size_t start_rank) const
 {
     size_t elements = 1;
-    for(auto &d : *this) elements *= d;
+    for(size_t i = start_rank; i < size(); i++) {
+        elements *= (*this)[i];
+    }
     return elements;
+}
+
+std::string
+Dim::to_string() const
+{
+    if(auto v = std::get_if<int64_t>(&*this)) {
+        return std::to_string(*v);
+    } else if(auto v = std::get_if<DimParam>(&*this)) {
+        switch(*v) {
+        case DimParam::DATA_BATCH:
+            return "N";
+        case DimParam::UNCHANGED:
+            return "=";
+        case DimParam::REDUCE:
+            return "R";
+        }
+    }
+    return "?";
 }
 
 std::string
@@ -81,7 +173,7 @@ Dims::to_string() const
     const char *prefix = "[";
     std::stringstream ss;
     for(const auto &d : *this) {
-        ss << prefix << d;
+        ss << prefix << d.to_string();
         prefix = ", ";
     }
     ss << "]";
@@ -281,20 +373,9 @@ TensorStorage::TensorStorage(Tensor::DataType data_type)
 
 //------------------------------------------------------------------------
 
-int64_t
-elements_from_dims(const Dims &dims)
-{
-    int64_t elements = 1;
-    for(auto &d : dims) elements *= d;
-    return elements;
-}
-
 Tensor::Tensor(DataType data_type, const Dims &dims,
                const std::optional<const std::string> &name)
-  : name_(name)
-  , data_type_(data_type)
-  , dims_(dims)
-  , elements_(elements_from_dims(dims)){};
+  : name_(name), data_type_(data_type), dims_(dims){};
 
 std::string
 Tensor::info() const
@@ -324,12 +405,13 @@ Tensor::stats()
     }
     Dims c(dims_.size(), 0);
 
+    const size_t elements = dims_.elements();
     double max = -INFINITY;
     double min = INFINITY;
     double sum = 0;
     double sumsum = 0;
 
-    for(int64_t i = 0; i < elements_; i++) {
+    for(size_t i = 0; i < elements; i++) {
         const double v = ta->get(c);
 
         max = std::max(max, v);
@@ -338,7 +420,7 @@ Tensor::stats()
         sumsum += v * v;
 
         for(ssize_t j = c.size() - 1; j >= 0; j--) {
-            c[j]++;
+            ++c[j];
             if(c[j] == dims_[j]) {
                 c[j] = 0;
             } else {
@@ -347,8 +429,8 @@ Tensor::stats()
         }
     }
 
-    const double mean = sum / elements_;
-    const double var = (sumsum - sum * sum / elements_) / elements_;
+    const double mean = sum / elements;
+    const double var = (sumsum - sum * sum / elements) / elements;
 
     return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrt(var)});
 }
@@ -397,7 +479,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
         if(c[rank - 1] == 0) {
             printf("%s%s: [", lf, prefix);
             for(size_t j = 0; j < c.size(); j++) {
-                printf("%s%3d", j ? "," : "", c[j]);
+                printf("%s%3s", j ? "," : "", c[j].to_string().c_str());
             }
             printf("]");
             lf = "\n";
@@ -405,7 +487,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
         printf(" % 1.6f", ta->get(c));
 
         for(ssize_t j = rank - 1; j >= 0; j--) {
-            c[j]++;
+            ++c[j];
             if(c[j] == dims_[j] || c[j] == elements_per_rank) {
                 if(j == 0) {
                     printf("%s", lf);
@@ -699,7 +781,7 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
     for(int i = 0; i < rank; i++, dst_dim++, src_dim++) {
         int dst_size = dst_dim >= 0 ? dst_sizes[dst_dim] : 1;
         int dst_stride = dst_strides[std::max(dst_dim, 0)];
-        int src_size = src_dim >= 0 ? t.dims_[src_dim] : 1;
+        int src_size = src_dim >= 0 ? (int)t.dims_[src_dim] : 1;
         int src_stride = src_strides[std::max(src_dim, 0)];
 
         if(broadcast_dimension == dst_dim) {
@@ -789,8 +871,8 @@ Tensor::copyFrom(Tensor &t)
 {
     auto dst = access();
     auto src_ta = t.access();
-    if(!copy_tensor(dst->data(), dims_.size(), &dims_[0], &dst->strides()[0],
-                    data_type_, t, src_ta.get())) {
+    if(!copy_tensor(dst->data(), dims_.size(), &dims_.i32()[0],
+                    &dst->strides().i32()[0], data_type_, t, src_ta.get())) {
         fprintf(stderr,
                 "Tensor copy failed\n"
                 "From: %s\n"
@@ -811,18 +893,19 @@ Tensor::sse(Tensor &t)
     if(a == nullptr || b == nullptr)
         return INFINITY;
 
-    assert(t.elements_ == elements_);
-
     Dims c_a(t.dims_.size(), 0);
     Dims c_b(dims_.size(), 0);
 
+    const size_t elements = dims_.elements();
+    assert(elements == t.dims_.elements());
+
     double r = 0;
-    for(int64_t i = 0; i < elements_; i++) {
+    for(size_t i = 0; i < elements; i++) {
         double v = a->get(c_a) - b->get(c_b);
         r += v * v;
 
         for(ssize_t j = c_a.size() - 1; j >= 0; j--) {
-            c_a[j]++;
+            ++c_a[j];
             if(c_a[j] == t.dims_[j]) {
                 c_a[j] = 0;
             } else {
@@ -831,7 +914,7 @@ Tensor::sse(Tensor &t)
         }
 
         for(ssize_t j = c_b.size() - 1; j >= 0; j--) {
-            c_b[j]++;
+            ++c_b[j];
             if(c_b[j] == dims_[j]) {
                 c_b[j] = 0;
             } else {

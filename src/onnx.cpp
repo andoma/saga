@@ -571,7 +571,22 @@ make_reshape(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
     assert(np.output_size() == 1);
     auto n = std::make_shared<Node>("reshape");
     n->inputs_["x"] = find_tensor(g, np.input(0));
-    n->inputs_["shape"] = find_tensor(g, np.input(1));
+
+    auto shape = find_tensor(g, np.input(1));
+    auto ta = shape->access();
+    Dims a;
+    for(int i = 0; i < shape->dims_[0]; i++) {
+        const int64_t v = ta->get({i});
+        if(v == 0) {
+            a.push_back(DimParam::UNCHANGED);
+        } else if(v == -1) {
+            a.push_back(DimParam::REDUCE);
+        } else if(v > 0) {
+            a.push_back(v);
+        }
+    }
+
+    n->attributes_["shape"] = a;
     make_tensor_y(g, *n, np.output(0));
     return n;
 }
@@ -589,11 +604,9 @@ make_flatten(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
     if(axis < 0)
         axis = rank + axis;
 
-    auto shape = makeCPUTensor(Tensor::DataType::INT64, Dims({rank}));
-
-    auto a = shape->access();
-    a->set({axis}, -1);
-    n->inputs_["shape"] = shape;
+    Dims shape(axis + 1, DimParam::UNCHANGED);
+    shape[axis] = DimParam::REDUCE;
+    n->attributes_["shape"] = shape;
 
     make_tensor_y(g, *n, np.output(0));
     return n;

@@ -171,9 +171,10 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size,
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     assert(size.size() >= 0 && size.size() <= 4);
-    chkCUDNN(cudnnSetTensor4dDescriptor(
-        m_desc, format, m_type, size[0], size.size() > 1 ? size[1] : 1,
-        size.size() > 2 ? size[2] : 1, size.size() > 3 ? size[3] : 1));
+    chkCUDNN(cudnnSetTensor4dDescriptor(m_desc, format, m_type, size[0],
+                                        size.size() > 1 ? (int)size[1] : 1,
+                                        size.size() > 2 ? (int)size[2] : 1,
+                                        size.size() > 3 ? (int)size[3] : 1));
 
     size_t bytes;
     chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
@@ -191,9 +192,10 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     assert(size.size() >= 0 && size.size() <= 4);
-    chkCUDNN(cudnnSetTensor4dDescriptor(
-        m_desc, format, m_type, size[0], size.size() > 1 ? size[1] : 1,
-        size.size() > 2 ? size[2] : 1, size.size() > 3 ? size[3] : 1));
+    chkCUDNN(cudnnSetTensor4dDescriptor(m_desc, format, m_type, size[0],
+                                        size.size() > 1 ? (int)size[1] : 1,
+                                        size.size() > 2 ? (int)size[2] : 1,
+                                        size.size() > 3 ? (int)size[3] : 1));
     m_storage = storage;
 }
 
@@ -238,8 +240,8 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
   , m_partial(true)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(), &size[0],
-                                        strides));
+    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(),
+                                        &size.i32()[0], strides));
 }
 
 CudaTensor::CudaTensor(DataType data_type, const Dims &size, const int *strides,
@@ -250,8 +252,8 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size, const int *strides,
   , m_partial(false)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(), &size[0],
-                                        strides));
+    chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(),
+                                        &size.i32()[0], strides));
     size_t bytes;
     chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
 
@@ -540,8 +542,8 @@ CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
 
     cudaStreamSynchronize(m_storage->m_ctx->m_stream);
 
-    if(!copy_tensor(m_storage->deviceMem(m_offset), dims_.size(), &dims_[0],
-                    &strides[0], data_type_, t, ta.get(),
+    if(!copy_tensor(m_storage->deviceMem(m_offset), dims_.size(),
+                    &dims_.i32()[0], &strides[0], data_type_, t, ta.get(),
                     dst_broadcast_dimension)) {
         fprintf(stderr,
                 "Cuda Tensor copy failed\n"
@@ -564,14 +566,15 @@ CudaTensor::stats()
     ctx->m_workspace.alloc();
 
     float *output = (float *)ctx->m_workspace.ptr();
+    const size_t elements = dims_.elements();
 
     switch(m_type) {
     case CUDNN_DATA_FLOAT:
-        tensor_stats_float(elements_, (const float *)deviceMem(), output,
+        tensor_stats_float(elements, (const float *)deviceMem(), output,
                            ctx->m_stream);
         break;
     case CUDNN_DATA_HALF:
-        tensor_stats_half(elements_, (const __half *)deviceMem(), output,
+        tensor_stats_half(elements, (const __half *)deviceMem(), output,
                           ctx->m_stream);
         break;
     default:
@@ -596,9 +599,10 @@ size_from_params(const Dims &size, cudnnTensorFormat_t format,
     chkCUDNN(cudnnCreateTensorDescriptor(&desc));
     assert(size.size() >= 0 && size.size() <= 4);
 
-    chkCUDNN(cudnnSetTensor4dDescriptor(
-        desc, format, data_type, size[0], size.size() > 1 ? size[1] : 1,
-        size.size() > 2 ? size[2] : 1, size.size() > 3 ? size[3] : 1));
+    chkCUDNN(cudnnSetTensor4dDescriptor(desc, format, data_type, size[0],
+                                        size.size() > 1 ? (int)size[1] : 1,
+                                        size.size() > 2 ? (int)size[2] : 1,
+                                        size.size() > 3 ? (int)size[3] : 1));
 
     size_t bytes;
     chkCUDNN(cudnnGetTensorSizeInBytes(desc, &bytes));

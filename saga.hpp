@@ -44,7 +44,56 @@ namespace saga {
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-typedef std::variant<float, int, std::vector<int>, bool> Attribute;
+enum class DimParam {
+    DATA_BATCH,
+    UNCHANGED,
+    REDUCE,
+};
+
+struct Dim : public std::variant<int64_t, DimParam> {
+    using std::variant<int64_t, DimParam>::variant;
+
+    std::string to_string() const;
+
+    operator int() const
+    {
+        if(auto v = std::get_if<int64_t>(&*this)) {
+            return *v;
+        } else {
+            fprintf(stderr, "Unable to convert parameterized dim to int\n");
+            abort();
+        }
+    }
+    Dim &operator++();
+    Dim &operator+=(const Dim &);
+};
+
+class Dims : public std::vector<Dim> {
+    using std::vector<Dim>::vector;
+
+public:
+    Dims(const std::vector<Dim> &v) : std::vector<Dim>(v) {}
+    Dims(const std::vector<int> &v);
+
+    Dims n(int64_t v) const;
+    std::vector<int64_t> i64() const;
+    std::vector<int32_t> i32() const;
+    size_t elements(size_t from_rank = 0) const;
+    std::string to_string() const;
+    bool similar(const Dims &) const;
+
+    Dims transform(std::function<Dim(const DimParam &dp, size_t i)> fn) const;
+};
+
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
+
+struct Attribute
+  : public std::variant<float, int, std::vector<int>, bool, Dims> {
+    using std::variant<float, int, std::vector<int>, bool, Dims>::variant;
+
+    std::string to_string() const;
+};
 
 class Attributes : public std::unordered_map<std::string, Attribute> {
 public:
@@ -73,19 +122,6 @@ enum class TensorLayout {
 };
 
 class Tensors;
-
-class Dims : public std::vector<int> {
-    using std::vector<int>::vector;
-
-public:
-    Dims(const std::vector<int> &v) : std::vector<int>(v) {}
-
-    Dims n(int64_t v) const;
-    std::vector<int64_t> i64() const;
-    size_t elements() const;
-    std::string to_string() const;
-    bool similar(const Dims &) const;
-};
 
 class TensorAccess {
 protected:
@@ -182,7 +218,6 @@ public:
     const std::optional<const std::string> name_;
     const DataType data_type_;
     const Dims dims_;
-    const int64_t elements_;
 };
 
 std::shared_ptr<Tensor> makeCPUTensor(
