@@ -393,8 +393,6 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
         return squeezenet(g, n, false, output_classes);
     } else if(name == "squeezenet+bn") {
         return squeezenet(g, n, true, output_classes);
-    } else if(name == "test+bn") {
-        return squeezenet(g, n, true, output_classes);
     } else if(name == "vgg19") {
         return vgg19(g, n, false, output_classes);
     } else if(name == "vgg19+bn") {
