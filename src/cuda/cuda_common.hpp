@@ -199,18 +199,21 @@ public:
     std::shared_ptr<CudaTensor> resolveTensorGradient_locked(
         std::shared_ptr<Tensor> src);
 
-    cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
+    cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type, int rank);
+
+    cudnnTensorFormat_t tensorFormat(const Tensor &t)
+    {
+        return tensorFormat(t.data_type_, t.dims_.size());
+    }
 
     std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
-                                             size_t rank = 0);
+                                             size_t minimum_rank = 0);
 
-    std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src,
-                                                   cudnnTensorFormat_t format);
+    std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
+                                             cudnnTensorFormat_t format);
 
-    std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src);
-
-    std::shared_ptr<CudaTensor> lower_tensor_batch(std::shared_ptr<Tensor> src,
-                                                   const CudaTensor &blueprint);
+    std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
+                                             const CudaTensor &blueprint);
 
     void infer(const std::shared_ptr<CudaOperation> &op);
 

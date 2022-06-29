@@ -162,8 +162,11 @@ CudaProgram::resolveTensorGradient(std::shared_ptr<Tensor> src)
 }
 
 cudnnTensorFormat_t
-CudaProgram::tensorFormat(Tensor::DataType data_type)
+CudaProgram::tensorFormat(Tensor::DataType data_type, int rank)
 {
+    if(rank < 4)
+        return CUDNN_TENSOR_NCHW;
+
     switch(m_tensor_layout) {
     case TensorLayout::Auto:
 
@@ -187,7 +190,7 @@ CudaProgram::tensorFormat(Tensor::DataType data_type)
 }
 
 std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t rank)
+CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t minimum_rank)
 {
     if(src == nullptr)
         return nullptr;
@@ -199,14 +202,15 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t rank)
 
     Dims dims = src->dims_;
 
-    if(rank) {
-        while(dims.size() < rank) dims.insert(dims.begin(), 1);
+    if(minimum_rank) {
+        while(dims.size() < minimum_rank) dims.insert(dims.begin(), 1);
     }
 
+    dims = dims.n(m_batch_size);
+
     auto t = std::make_shared<CudaTensor>(
-        src->data_type_, dims,
-        rank == 2 ? CUDNN_TENSOR_NCHW : tensorFormat(src->data_type_), m_ctx,
-        src->name_);
+        src->data_type_, dims, tensorFormat(src->data_type_, dims.size()),
+        m_ctx, src->name_);
 
     t->copyFromLocked(*src, 0);
     m_tensors[src] = t;
@@ -214,8 +218,8 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t rank)
 }
 
 std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
-                                const CudaTensor &blueprint)
+CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
+                          const CudaTensor &blueprint)
 {
     if(src == nullptr)
         return nullptr;
@@ -232,8 +236,8 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
 }
 
 std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
-                                cudnnTensorFormat_t tensor_format)
+CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
+                          cudnnTensorFormat_t tensor_format)
 {
     if(src == nullptr)
         return nullptr;
@@ -250,14 +254,6 @@ CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src,
     t->copyFromLocked(*src, 0);
     m_tensors[src] = t;
     return t;
-}
-
-std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor_batch(std::shared_ptr<Tensor> src)
-{
-    if(src == nullptr)
-        return nullptr;
-    return lower_tensor_batch(src, tensorFormat(src->data_type_));
 }
 
 void
@@ -734,7 +730,7 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
         auto src = a.tensor;
         auto dims = src->dims_.n(m_batch_size);
 
-        auto fmt = tensorFormat(src->data_type_);
+        auto fmt = tensorFormat(*src);
         auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(
             src->data_type_, dims, fmt, m_ctx);
         auto t = std::make_shared<CudaTensor>(s, dims, fmt);
@@ -752,13 +748,13 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
         auto src = a.tensor;
         auto dims = src->dims_.n(m_batch_size);
 
-        auto fmt = tensorFormat(src->data_type_);
+        auto fmt = tensorFormat(*src);
         auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(
             src->data_type_, dims, fmt, m_ctx);
         auto g = std::make_shared<CudaTensor>(s, dims, fmt);
         m_flips.push_back(s);
 
-        auto t = lower_tensor_batch(src);
+        auto t = lower_tensor(src);
         t->m_grad = g;
         addPrePostOp(g, s, a);
     }
