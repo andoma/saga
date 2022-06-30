@@ -8,18 +8,14 @@ class NullContext : public Context {
 public:
     std::shared_ptr<Program> createProgram(
         const Graph &graph, const ProgramConfig &pc,
-        const BatchTensorAccessors &access = {}) override;
+        const BatchedTensors &bts = {}) override
+    {
+        fprintf(stderr, "Warning: NullContext can't create program\n");
+        return nullptr;
+    }
 
     void print() override{};
 };
-
-std::shared_ptr<Program>
-NullContext::createProgram(const Graph &g, const ProgramConfig &pc,
-                           const BatchTensorAccessors &access)
-{
-    fprintf(stderr, "Warning: NullContext can't create program\n");
-    return nullptr;
-}
 
 static std::map<ContextType, std::shared_ptr<Context> (*)(void)> allfactories;
 

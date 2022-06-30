@@ -84,7 +84,7 @@ public:
 
     std::shared_ptr<Program> createProgram(
         const Graph &g, const ProgramConfig &pc,
-        const BatchTensorAccessors &accessors);
+        const BatchedTensors &bts = {}) override;
 
     void print() override;
 
@@ -105,10 +105,10 @@ public:
 };
 
 struct CudaBatchAccessOp {
-    std::shared_ptr<CudaTensor> m_tensor;
+    std::shared_ptr<Tensor> m_high;
+    std::shared_ptr<CudaTensor> m_low;
     std::shared_ptr<CudaTensorStorageDoubleBuffered> m_storage;
-    BatchTensorAccessFn m_fn;
-    bool m_prefetch = false;
+    BTM m_mode;
 };
 
 typedef std::vector<CudaBatchAccessOp> CudaBatchAccessOps;
@@ -138,8 +138,10 @@ public:
     std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
     std::shared_ptr<Tensor> resolveTensorGradient(
         std::shared_ptr<Tensor> src) override;
-    ExecResult infer(long batches) override;
-    ExecResult train(long batches) override;
+    ExecResult infer(long batches, const TensorBatchCallback &pre,
+                     const TensorBatchCallback &post) override;
+    ExecResult train(long batches, const TensorBatchCallback &pre,
+                     const TensorBatchCallback &post) override;
     void print(bool detailed) const override;
     void debug(bool) override;
 
@@ -169,10 +171,8 @@ public:
     CudaOps m_bwd_operations;
     CudaOps m_upd_operations;
 
-    CudaBatchAccessOps m_infer_pre;
-    CudaBatchAccessOps m_infer_post;
-    CudaBatchAccessOps m_train_pre;
-    CudaBatchAccessOps m_train_post;
+    CudaBatchAccessOps m_pre_batched_tensors;
+    CudaBatchAccessOps m_post_batched_tensors;
 
     std::vector<std::shared_ptr<CudaTensorStorageDoubleBuffered>> m_flips;
 
@@ -193,6 +193,10 @@ public:
     std::map<std::string, int> m_algo_hash;
 
     void finalize();
+
+    void run_batched_tensor_callbacks(const TensorBatchCallback &cb,
+                                      bool training, long batch,
+                                      const CudaBatchAccessOps &list);
 
     std::shared_ptr<CudaTensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
 
@@ -221,13 +225,12 @@ public:
     void bwd(const std::shared_ptr<CudaOperation> &op);
     void upd(const std::shared_ptr<CudaOperation> &op);
 
-    void setupAccessors(const BatchTensorAccessors &accessors);
+    void setupBatchedTensors(const BatchedTensors &bts);
 
-    void addPrePostOp(std::shared_ptr<CudaTensor> t,
-                      std::shared_ptr<CudaTensorStorageDoubleBuffered> s,
-                      const BatchTensorAccess &a);
-
-    void issueBatchAccessOps(const CudaBatchAccessOps ops, long batch);
+    void addPrePostOp(std::shared_ptr<Tensor> &high,
+                      std::shared_ptr<CudaTensor> &low,
+                      std::shared_ptr<CudaTensorStorageDoubleBuffered> &s,
+                      BTM mode);
 
     void flipDoubleBufferedTensors();
 

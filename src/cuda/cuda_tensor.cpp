@@ -744,20 +744,27 @@ public:
 };
 
 void
-CudaProgram::issueBatchAccessOps(const CudaBatchAccessOps ops, long batch)
+CudaProgram::run_batched_tensor_callbacks(const TensorBatchCallback &cb,
+                                          bool training, long batch,
+                                          const CudaBatchAccessOps &list)
 {
+    if(!cb)
+        return;
+
 #ifdef __aarch64__
     cudaStreamSynchronize(ctx_->m_stream);
 #endif
-    for(const auto &op : ops) {
-        CudaTensorBatchAccess ta(op.m_storage.get(), op.m_tensor->m_desc,
-                                 op.m_tensor->m_offset);
-        op.m_fn(ta, batch);
-#if 0
-    if(op.m_prefetch)
-      op.m_storage->prefetchGPU();
-#endif
+
+    std::unordered_map<BatchedTensor, TensorAccess *> amap;
+
+    std::vector<std::unique_ptr<CudaTensorBatchAccess>> v;
+    for(auto &op : list) {
+        auto ta = std::make_unique<CudaTensorBatchAccess>(
+            op.m_storage.get(), op.m_low->m_desc, op.m_low->m_offset);
+        amap[std::make_pair(op.m_high, op.m_mode)] = ta.get();
+        v.push_back(std::move(ta));
     }
+    cb(batch, training, amap);
 }
 
 void

@@ -370,31 +370,33 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-typedef std::function<void(TensorAccess &ta, long batch)> BatchTensorAccessFn;
+enum class BTM { PRE = 0x0, POST = 0x1, VALUE = 0x0, GRADIENT = 0x2 };
 
-enum class Phase { PRE, POST };
+inline constexpr BTM
+operator|(BTM a, BTM b)
+{
+    return static_cast<BTM>(static_cast<int>(a) | static_cast<int>(b));
+}
 
-enum class Which { VALUE, GRADIENT };
+inline constexpr BTM
+operator&(BTM a, BTM b)
+{
+    return static_cast<BTM>(static_cast<int>(a) & static_cast<int>(b));
+}
 
-enum class Mode { INFER, TRAIN, ALL };
+inline constexpr bool
+operator!(BTM a)
+{
+    return static_cast<bool>(!static_cast<int>(a));
+}
 
-struct BatchTensorAccess {
-    BatchTensorAccess(Phase phase, Which which, Mode mode,
-                      std::shared_ptr<Tensor> tensor, BatchTensorAccessFn fn)
-      : phase(phase), which(which), mode(mode), tensor(tensor), fn(fn)
-    {
-    }
+typedef std::pair<std::shared_ptr<Tensor>, BTM> BatchedTensor;
 
-    Phase phase = Phase::PRE;
-    Which which = Which::VALUE;
-    Mode mode = Mode::ALL;
+typedef std::unordered_set<BatchedTensor> BatchedTensors;
 
-    std::shared_ptr<Tensor> tensor;
-
-    BatchTensorAccessFn fn;
-};
-
-typedef std::vector<BatchTensorAccess> BatchTensorAccessors;
+typedef std::function<void(long batch, bool training,
+                           std::unordered_map<BatchedTensor, TensorAccess *>)>
+    TensorBatchCallback;
 
 typedef std::function<bool(void)> StopCheck;
 
@@ -421,8 +423,12 @@ public:
         std::shared_ptr<Tensor> t) = 0;
     virtual std::shared_ptr<Tensor> resolveTensorGradient(
         std::shared_ptr<Tensor> t) = 0;
-    virtual ExecResult infer(long batches = 1) = 0;
-    virtual ExecResult train(long batches = 1) = 0;
+    virtual ExecResult infer(long batches = 1,
+                             const TensorBatchCallback &pre = nullptr,
+                             const TensorBatchCallback &post = nullptr) = 0;
+    virtual ExecResult train(long batches = 1,
+                             const TensorBatchCallback &pre = nullptr,
+                             const TensorBatchCallback &post = nullptr) = 0;
     virtual void print(bool detailed = false) const = 0;
     virtual void debug(bool on) = 0;
     virtual bool dumpGraph(const char *path) { return false; }
@@ -436,7 +442,7 @@ public:
     virtual ~Context() {}
     virtual std::shared_ptr<Program> createProgram(
         const Graph &graph, const ProgramConfig &pc,
-        const BatchTensorAccessors &accessors = {}) = 0;
+        const BatchedTensors &bts) = 0;
 
     virtual void print() = 0;
 };
@@ -447,4 +453,17 @@ std::vector<std::shared_ptr<Context>> createContexts();
 
 int64_t Now();
 
-}  // namespace saga
+};  // namespace saga
+
+namespace std {
+
+template <>
+struct hash<saga::BatchedTensor> {
+    std::size_t operator()(const saga::BatchedTensor &k) const
+    {
+        return std::hash<std::shared_ptr<saga::Tensor>>()(k.first) ^
+               std::hash<saga::BTM>()(k.second);
+    }
+};
+
+}  // namespace std

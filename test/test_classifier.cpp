@@ -541,56 +541,16 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
     double loss_sum = 0;
     int correct = 0;
-    BatchTensorAccessors bta;
 
-    // Compute loss after minibatch completed
+    const auto LABELS =
+        std::make_pair(n->outputs_["y"], BTM::PRE | BTM::GRADIENT);
+    const auto LOSS =
+        std::make_pair(n->outputs_["loss"], BTM::POST | BTM::VALUE);
+    const auto INPUT = std::make_pair(x, BTM::PRE | BTM::VALUE);
+    const auto OUTPUT =
+        std::make_pair(n->outputs_["y"], BTM::POST | BTM::VALUE);
 
-    bta.push_back({Phase::POST, Which::VALUE, Mode::TRAIN, n->outputs_["loss"],
-                   [&](TensorAccess &ta, long batch) {
-                       for(int i = 0; i < batch_size; i++) {
-                           loss_sum += ta.get({i});
-                       }
-                   }});
-
-    // Load classes to train before batch starts
-
-    bta.push_back({Phase::PRE, Which::GRADIENT, Mode::TRAIN, n->outputs_["y"],
-                   [&](TensorAccess &ta, long batch) {
-                       const size_t offset = batch * batch_size;
-                       for(int i = 0; i < batch_size; i++) {
-                           ta.set({i}, get_label(offset + i));
-                       }
-                   }});
-
-    // Load input tensors
-
-    bta.push_back({Phase::PRE, Which::VALUE, Mode::ALL, x, load_inputs});
-
-    // Check results after test
-
-    bta.push_back({Phase::POST, Which::VALUE, Mode::INFER, n->outputs_["y"],
-                   [&](TensorAccess &ta, long batch) {
-                       size_t base = batch * batch_size;
-                       for(int i = 0; i < batch_size; i++) {
-                           if(ta.get({i}) == get_label(base + i))
-                               correct++;
-                       }
-                   }});
-
-    if(stats) {
-        for(size_t i = 0; i < stats->size(); i++) {
-            std::shared_ptr<Tensor> s = (*stats)[i];
-            bta.push_back(
-                {Phase::POST, Which::VALUE, Mode::TRAIN, s,
-                 [=](TensorAccess &ta, long batch) {
-                     if(batch == 0) {
-                         printf("%s%zu: min:% e max:% e mean:% e stddev:% e\n",
-                                i == 0 ? "\n" : "", i, ta.get({0}), ta.get({1}),
-                                ta.get({2}), ta.get({3}));
-                     }
-                 }});
-        }
-    }
+    BatchedTensors bt{LOSS, LABELS, INPUT, OUTPUT};
 
     auto ctx = createContext();
 
@@ -602,7 +562,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                                  .tensor_layout = tensor_layout,
                                  .stop_check = [&]() { return !g_run; },
                                  .show_progress = true},
-                                bta);
+                                bt);
 
     if(verbose > 1)
         p->print(verbose > 2);
@@ -616,6 +576,36 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         exit(0);
     }
 
+    auto pre_ops = [&](long batch, bool training,
+                       std::unordered_map<BatchedTensor, TensorAccess *> tas) {
+        load_inputs(*tas[INPUT], batch);
+
+        if(training) {
+            auto &labels = *tas[LABELS];
+            const size_t offset = batch * batch_size;
+            for(int i = 0; i < batch_size; i++) {
+                labels.set({i}, get_label(offset + i));
+            }
+        }
+    };
+
+    auto post_ops = [&](long batch, bool training,
+                        std::unordered_map<BatchedTensor, TensorAccess *> tas) {
+        if(training) {
+            auto &loss = *tas[LOSS];
+            for(int i = 0; i < batch_size; i++) {
+                loss_sum += loss.get({i});
+            }
+        } else {
+            auto &output = *tas[OUTPUT];
+            const size_t base = batch * batch_size;
+            for(int i = 0; i < batch_size; i++) {
+                if(output.get({i}) == get_label(base + i))
+                    correct++;
+            }
+        }
+    };
+
     while(g_run) {
         const int64_t t0 = get_ts();
 
@@ -627,7 +617,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             // Train
             epoch_begin(batch_size, false);
             loss_sum = 0;
-            if(p->train(train_inputs / batch_size) != ExecResult::OK)
+            if(p->train(train_inputs / batch_size, pre_ops, post_ops) !=
+               ExecResult::OK)
                 break;
         }
 
@@ -635,7 +626,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         epoch_begin(batch_size, true);
         const int64_t t1 = get_ts();
         correct = 0;
-        if(p->infer(test_inputs / batch_size) != ExecResult::OK)
+        if(p->infer(test_inputs / batch_size, pre_ops, post_ops) !=
+           ExecResult::OK)
             break;
 
         const int64_t t2 = get_ts();

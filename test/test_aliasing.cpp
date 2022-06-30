@@ -53,11 +53,13 @@ aliasing_main(int argc, char **argv)
     auto y = output->y();
 
     auto ctx = createContext();
-    auto p = ctx->createProgram(g, {.inference = true,
-                                    .training = true,
-                                    .batch_size = 1,
-                                    .initial_learning_rate = 1e-3,
-                                    .tensor_layout = TensorLayout::NCHW});
+    auto p = ctx->createProgram(g,
+                                {.inference = true,
+                                 .training = true,
+                                 .batch_size = 1,
+                                 .initial_learning_rate = 1e-3,
+                                 .tensor_layout = TensorLayout::NCHW},
+                                {});
 
     p->print(true);
 

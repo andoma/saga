@@ -333,7 +333,8 @@ CudaProgram::progressDone(void)
 }
 
 ExecResult
-CudaProgram::infer(long batches)
+CudaProgram::infer(long batches, const TensorBatchCallback &pre,
+                   const TensorBatchCallback &post)
 {
     if(batches == 0)
         return ExecResult::OK;
@@ -345,7 +346,7 @@ CudaProgram::infer(long batches)
 
     setupTensorStorage(m_infer_memory_layout);
 
-    issueBatchAccessOps(m_infer_pre, 0);
+    run_batched_tensor_callbacks(pre, false, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
     if(!runOps(m_load_operations, 0)) {
@@ -359,10 +360,14 @@ CudaProgram::infer(long batches)
             progressDone();
             return ExecResult::ERROR;
         }
-        if(i < batches - 1)
-            issueBatchAccessOps(m_infer_pre, i + 1);
-        if(i > 0)
-            issueBatchAccessOps(m_infer_post, i - 1);
+        if(i < batches - 1) {
+            run_batched_tensor_callbacks(pre, false, i + 1,
+                                         m_pre_batched_tensors);
+        }
+        if(i > 0) {
+            run_batched_tensor_callbacks(post, false, i - 1,
+                                         m_post_batched_tensors);
+        }
 
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
@@ -380,13 +385,15 @@ CudaProgram::infer(long batches)
         progress("Test", i, batches, NAN, start);
         cudaStreamSynchronize(m_ctx->m_stream);
     }
-    issueBatchAccessOps(m_infer_post, batches - 1);
+    run_batched_tensor_callbacks(post, false, batches - 1,
+                                 m_post_batched_tensors);
     progressDone();
     return ExecResult::OK;
 }
 
 ExecResult
-CudaProgram::train(long batches)
+CudaProgram::train(long batches, const TensorBatchCallback &pre,
+                   const TensorBatchCallback &post)
 {
     if(batches == 0)
         return ExecResult::OK;
@@ -398,7 +405,8 @@ CudaProgram::train(long batches)
 
     setupTensorStorage(m_train_memory_layout);
 
-    issueBatchAccessOps(m_train_pre, 0);
+    run_batched_tensor_callbacks(pre, true, 0, m_pre_batched_tensors);
+
     flipDoubleBufferedTensors();
     if(!runOps(m_load_operations, 0)) {
         return ExecResult::ERROR;
@@ -416,11 +424,14 @@ CudaProgram::train(long batches)
             return ExecResult::ERROR;
         }
 
-        if(i < batches - 1)
-            issueBatchAccessOps(m_train_pre, i + 1);
-        if(i > 0)
-            issueBatchAccessOps(m_train_post, i - 1);
-
+        if(i < batches - 1) {
+            run_batched_tensor_callbacks(pre, true, i + 1,
+                                         m_pre_batched_tensors);
+        }
+        if(i > 0) {
+            run_batched_tensor_callbacks(post, true, i - 1,
+                                         m_post_batched_tensors);
+        }
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
             if(!runOps(m_load_operations, i + 1)) {
@@ -448,7 +459,8 @@ CudaProgram::train(long batches)
         }
     }
 
-    issueBatchAccessOps(m_train_post, batches - 1);
+    run_batched_tensor_callbacks(post, true, batches - 1,
+                                 m_post_batched_tensors);
     progressDone();
     return ExecResult::OK;
 }
@@ -687,39 +699,32 @@ compute_dx_beta(CudaProgram &p, const Nodes &nodes)
 REGISTER_CUDA_TRANSFORM(1000, CUDA_TRANSFORM_TRAINING, compute_dx_beta);
 
 void
-CudaProgram::addPrePostOp(std::shared_ptr<CudaTensor> t,
-                          std::shared_ptr<CudaTensorStorageDoubleBuffered> s,
-                          const BatchTensorAccess &a)
+CudaProgram::addPrePostOp(std::shared_ptr<Tensor> &high,
+                          std::shared_ptr<CudaTensor> &low,
+                          std::shared_ptr<CudaTensorStorageDoubleBuffered> &s,
+                          BTM mode)
 {
-    auto op = CudaBatchAccessOp{.m_tensor = t, .m_storage = s, .m_fn = a.fn};
+    auto op = CudaBatchAccessOp{high, low, s, mode};
 
-    if(a.phase == Phase::PRE) {
-        op.m_prefetch = true;
-        if(a.mode == Mode::INFER || a.mode == Mode::ALL)
-            m_infer_pre.push_back(op);
-
-        if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
-            m_train_pre.push_back(op);
+    if(!(mode & BTM::POST)) {
+        m_pre_batched_tensors.push_back(op);
 
     } else {
         m_exported_storage.push_back(s);
-
-        if(a.mode == Mode::INFER || a.mode == Mode::ALL)
-            m_infer_post.push_back(op);
-
-        if(a.mode == Mode::TRAIN || a.mode == Mode::ALL)
-            m_train_post.push_back(op);
+        m_post_batched_tensors.push_back(op);
     }
 }
 
 void
-CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
+CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
 {
-    for(const auto &a : accessors) {
-        if(a.which != Which::VALUE)
+    // Do values first and gradients in a second pass to make sure lowering is
+    // correct
+    for(const auto &bt : bts) {
+        if(!!(bt.second & BTM::GRADIENT))
             continue;
 
-        auto src = a.tensor;
+        auto src = bt.first;
         auto dims = src->dims_.n(m_batch_size);
 
         auto fmt = tensorFormat(*src);
@@ -730,14 +735,14 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
         m_flips.push_back(s);
         t->copyFromLocked(*src);
         m_tensors[src] = t;
-        addPrePostOp(t, s, a);
+        addPrePostOp(src, t, s, bt.second);
     }
 
-    for(const auto &a : accessors) {
-        if(a.which != Which::GRADIENT)
+    for(const auto &bt : bts) {
+        if(!(bt.second & BTM::GRADIENT))
             continue;
 
-        auto src = a.tensor;
+        auto src = bt.first;
         auto dims = src->dims_.n(m_batch_size);
 
         auto fmt = tensorFormat(*src);
@@ -748,13 +753,13 @@ CudaProgram::setupAccessors(const BatchTensorAccessors &accessors)
 
         auto t = lower_tensor(src);
         t->m_grad = g;
-        addPrePostOp(g, s, a);
+        addPrePostOp(src, g, s, bt.second);
     }
 }
 
 std::shared_ptr<Program>
 CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
-                           const BatchTensorAccessors &accessors)
+                           const BatchedTensors &bts)
 {
     std::scoped_lock lock(m_mutex);
 
@@ -762,7 +767,7 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
         shared_from_this(), pc.tensor_layout, pc.batch_size,
         pc.initial_learning_rate, pc.stop_check, pc.show_progress);
 
-    p->setupAccessors(accessors);
+    p->setupBatchedTensors(bts);
 
     auto nodes = applyTransforms(CUDA_TRANSFORM_ALL, *p, g.nodes_);
 
