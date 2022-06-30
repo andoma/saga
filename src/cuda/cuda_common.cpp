@@ -506,24 +506,16 @@ CudaProgram::print(bool detailed) const
     printf("\nInference: (%zd ops)\n", m_infer_operations.size());
     int index = 0;
     for(const auto &op : m_infer_operations) {
-        if(detailed) {
-            op->print(true);
-        } else {
-            printf("%3d: ", index);
-            op->print();
-        }
+        printf("#%3d: ", index);
+        op->print(detailed);
         index++;
     }
 
     printf("\nTraining: (%zd ops):\n", m_train_operations.size());
     index = 0;
     for(const auto &op : m_train_operations) {
-        if(detailed) {
-            op->print(true);
-        } else {
-            printf("%3d: ", index);
-            op->print();
-        }
+        printf("#%3d: ", index);
+        op->print(detailed);
         index++;
     }
 }
@@ -777,15 +769,18 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
     if(pc.training) {
         auto train_nodes = applyTransforms(CUDA_TRANSFORM_TRAINING, *p, nodes);
 
+        int cnt = 0;
         for(const auto &n : train_nodes) {
             const char *err = find_operation(*n)->setup(*p, *n, true);
             if(err) {
-                fprintf(stderr,
-                        "Unable to create training operation for %s -- %s\n",
-                        n->type_.c_str(), err);
+                fprintf(
+                    stderr,
+                    "Unable to create training operation for %s (#%d)-- %s\n",
+                    n->type_.c_str(), cnt, err);
                 n->print();
                 exit(1);
             }
+            cnt++;
         }
 
         assert(p->m_infer_operations.empty());
