@@ -54,11 +54,6 @@ CudaContext::init()
     char pciid[32];
     cudaDeviceGetPCIBusId(pciid, sizeof(pciid), m_deviceId);
 
-    printf("Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s id:%d at %s\n",
-           prop.name, prop.major, prop.minor,
-           prop.concurrentKernels ? "yes" : "no",
-           prop.canMapHostMemory ? "yes" : "no", m_deviceId, pciid);
-
     m_tensor_cores = prop.major >= 7;
 
     chkCUDNN(cudnnCreate(&m_cudnn));
@@ -859,12 +854,34 @@ CudaProgram::finalize()
 }
 
 void
-CudaContext::print()
+CudaContext::print() const
 {
     size_t memfree = 0, memtotal = 0;
     cudaMemGetInfo(&memfree, &memtotal);
     printf("   Free memory: %zd kbyte\n", memfree / 1024);
     printf("  Total memory: %zd kbyte\n", memtotal / 1024);
+}
+
+std::string
+CudaContext::info() const
+{
+    char str[1024];
+
+    struct cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, m_deviceId);
+
+    char pciid[32];
+    cudaDeviceGetPCIBusId(pciid, sizeof(pciid), m_deviceId);
+
+    snprintf(str, sizeof(str),
+             "Device:%s (%d.%d) Concurrent:%s CanMapHostMem:%s TensorCores:%s "
+             "id:%d at %s\n",
+             prop.name, prop.major, prop.minor,
+             prop.concurrentKernels ? "yes" : "no",
+             prop.canMapHostMemory ? "yes" : "no",
+             m_tensor_cores ? "yes" : "no", m_deviceId, pciid);
+
+    return str;
 }
 
 bool

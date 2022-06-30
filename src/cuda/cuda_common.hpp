@@ -86,7 +86,9 @@ public:
         const Graph &g, const ProgramConfig &pc,
         const BatchedTensors &bts = {}) override;
 
-    void print() override;
+    void print() const override;
+
+    std::string info() const override;
 
     CudaTmpMem m_workspace;
 

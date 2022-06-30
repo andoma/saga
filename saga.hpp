@@ -444,7 +444,9 @@ public:
         const Graph &graph, const ProgramConfig &pc,
         const BatchedTensors &bts) = 0;
 
-    virtual void print() = 0;
+    virtual std::string info() const = 0;
+
+    virtual void print() const = 0;
 };
 
 std::shared_ptr<Context> createContext();

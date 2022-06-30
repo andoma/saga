@@ -14,7 +14,9 @@ public:
         return nullptr;
     }
 
-    void print() override{};
+    void print() const override{};
+
+    std::string info() const override { return "null-context"; }
 };
 
 static std::map<ContextType, std::shared_ptr<Context> (*)(void)> allfactories;
