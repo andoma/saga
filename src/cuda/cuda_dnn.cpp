@@ -631,7 +631,8 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
 
     if(p.m_ctx->m_tensor_cores && x->data_type_ == Tensor::DataType::HALF &&
        !x->cpacked()) {
-        assert(!x->m_grad);
+        if(x->m_grad)
+            return "Unable to convert to NHWC because gradient already exist";
 
         auto xx = std::make_shared<CudaTensor>(x->data_type_, x->dims_,
                                                CUDNN_TENSOR_NHWC, p.m_ctx,
