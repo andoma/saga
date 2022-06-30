@@ -401,13 +401,13 @@ typedef std::function<void(long batch, bool training,
 typedef std::function<bool(void)> StopCheck;
 
 struct ProgramConfig {
-    bool inference;
-    bool training;
-    int batch_size;
-    float initial_learning_rate;
-    TensorLayout tensor_layout;
-    StopCheck stop_check;
-    bool show_progress;
+    bool inference{true};
+    bool training{false};
+    int batch_size{1};
+    float initial_learning_rate{0};
+    TensorLayout tensor_layout{TensorLayout::Auto};
+    StopCheck stop_check = nullptr;
+    bool show_progress{false};
 };
 
 enum class ExecResult {
