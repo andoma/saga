@@ -42,7 +42,7 @@ LDFLAGS-$(HAVE_DNNL)  += -L${DNNL_PATH}/lib -ldnnl
 # Cuda
 
 
-NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_53
+NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_72
 
 SRCS-lib-$(HAVE_CUDA) += \
 	src/cuda/cuda_common.cpp \
