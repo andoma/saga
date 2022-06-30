@@ -444,7 +444,13 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         cudaStreamSynchronize(m_ctx->m_stream);
 
         if(m_mp_enabled) {
-            if(*(int *)m_check_result) {
+            const int check_result = *(int *)m_check_result;
+            if(check_result) {
+                if(check_result & 2) {
+                    progressDone();
+                    printf("NAN detected\n");
+                    return ExecResult::STOPPED;
+                }
                 m_mp_scaling *= 0.5;
                 *(int *)m_check_result = 0;
             } else {

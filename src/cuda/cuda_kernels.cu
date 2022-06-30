@@ -230,9 +230,14 @@ adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
 
     const uint16_t u16 = ((const uint16_t *)dweights)[i];
     if((u16 & 0x7800) == 0x7800) {
-        *range = 1;
+        atomicOr(range, 1);
         if((u16 & 0x7c00) == 0x7c00) {
-            // NaN or inf
+            if(u16 & 0x3ff) {
+                // NaN
+                atomicOr(range, 2);
+            } else {
+                // +-Inf
+            }
             return;
         }
     }
