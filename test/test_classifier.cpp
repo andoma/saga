@@ -561,7 +561,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                                  .initial_learning_rate = learning_rate,
                                  .tensor_layout = tensor_layout,
                                  .stop_check = [&]() { return !g_run; },
-                                 .show_progress = true},
+                                 .ui = saga::make_statbar()},
                                 bt);
 
     if(verbose > 1)

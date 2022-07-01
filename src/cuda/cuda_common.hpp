@@ -121,14 +121,14 @@ class CudaProgram : public Program {
 public:
     CudaProgram(std::shared_ptr<CudaContext> ctx, TensorLayout tensor_layout,
                 int batch_size, float learning_rate, StopCheck stop_check,
-                bool print_progress)
+                std::shared_ptr<UI> ui)
       : m_ctx(ctx)
       , m_tensor_layout(tensor_layout)
       , m_batch_size(batch_size)
       , m_learning_rate(learning_rate)
       , m_mp_scaling(batch_size)
       , m_stop_check(stop_check)
-      , m_print_progress(print_progress)
+      , m_ui(ui)
     {
         chkCuda(cudaMallocManaged(&m_check_result, sizeof(int),
                                   cudaMemAttachGlobal));
@@ -188,11 +188,14 @@ public:
     bool m_mp_enabled = false;
 
     StopCheck m_stop_check;
-    bool m_print_progress = true;
-    bool m_print_progress_pending_nl = false;
-    time_t m_print_progress_ts = 0;
+
+    std::shared_ptr<UI> m_ui;
 
     std::map<std::string, int> m_algo_hash;
+
+    int m_epoch{0};
+    int64_t m_total_inferred{0};
+    int64_t m_total_trained{0};
 
     void finalize();
 
@@ -239,11 +242,6 @@ public:
     void setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml);
 
     bool runOps(const CudaOps &ops, long batch);
-
-    void progress(const char *what, long i, long batches, float mp_scaling,
-                  int64_t start_time);
-
-    void progressDone();
 
     bool dumpGraphFromOps(const char *path, const CudaOps &ops);
 

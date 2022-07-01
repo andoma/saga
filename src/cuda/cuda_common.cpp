@@ -279,52 +279,12 @@ CudaProgram::runOps(const CudaOps &ops, long batch)
     return true;
 }
 
-void
-CudaProgram::progress(const char *what, long i, long batches, float mp_scaling,
-                      int64_t start_time)
+static void
+updateMemUsage(UI &ui)
 {
-    if(!m_print_progress)
-        return;
-    time_t now = time(NULL);
-    if(now == m_print_progress_ts)
-        return;
-    m_print_progress_ts = now;
-
-    printf("\033[K");
-
     size_t memfree = 0, memtotal = 0;
     cudaMemGetInfo(&memfree, &memtotal);
-
-    printf("%-5s | Batch: %4ld/%-4ld | MemUse: %5zu/%-5zu MB", what, i, batches,
-           (memtotal - memfree) / (1024 * 1024), memtotal / (1024 * 1024));
-
-#ifdef HAVE_NVIDIA_ML
-    nvmlUtilization_t util = {};
-    if(!nvmlDeviceGetUtilizationRates(m_ctx->m_nvmldev, &util)) {
-        printf(" | GpuUse: %3d%% MemUse: %3d%%", util.gpu, util.memory);
-    }
-#endif
-    if(isfinite(mp_scaling)) {
-        printf(" | MPS: %1.1e", mp_scaling);
-    }
-
-    if(i > 0) {
-        float time_per_batch = (Now() - start_time) / i;
-        printf(" | Bat/s: %3.2f", 1e6 / time_per_batch);
-    }
-
-    printf("\r");
-    fflush(stdout);
-    m_print_progress_pending_nl = true;
-}
-
-void
-CudaProgram::progressDone(void)
-{
-    if(!m_print_progress_pending_nl)
-        return;
-    printf("\n");
-    m_print_progress_pending_nl = false;
+    ui.updateMemUsage(memtotal - memfree, memtotal);
 }
 
 ExecResult
@@ -348,11 +308,13 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
         return ExecResult::ERROR;
     }
 
+    if(m_ui) {
+        m_ui->updateBatchInfo(UI::INFER, m_batch_size, batches, m_epoch);
+    }
+
     cudaStreamSynchronize(m_ctx->m_stream);
-    int64_t start = Now();
     for(long i = 0; i < batches; i++) {
         if(!runOps(m_infer_operations, i)) {
-            progressDone();
             return ExecResult::ERROR;
         }
         if(i < batches - 1) {
@@ -367,22 +329,25 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
             if(!runOps(m_load_operations, i + 1)) {
-                progressDone();
                 return ExecResult::ERROR;
             }
         }
 
         if(m_stop_check && m_stop_check()) {
-            progressDone();
             return ExecResult::STOPPED;
         }
 
-        progress("Test", i, batches, NAN, start);
+        m_total_inferred += m_batch_size;
+
+        if(m_ui) {
+            m_ui->updateProgress(i, m_total_inferred);
+            updateMemUsage(*m_ui);
+        }
+
         cudaStreamSynchronize(m_ctx->m_stream);
     }
     run_batched_tensor_callbacks(post, false, batches - 1,
                                  m_post_batched_tensors);
-    progressDone();
     return ExecResult::OK;
 }
 
@@ -407,15 +372,14 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         return ExecResult::ERROR;
     }
 
+    if(m_ui) {
+        m_ui->updateBatchInfo(UI::TRAIN, m_batch_size, batches, m_epoch);
+    }
+    m_epoch++;
     cudaStreamSynchronize(m_ctx->m_stream);
-
-    float current_mp_scaling = NAN;
-
-    int64_t start = Now();
 
     for(long i = 0; i < batches; i++) {
         if(!runOps(m_train_operations, i)) {
-            progressDone();
             return ExecResult::ERROR;
         }
 
@@ -430,39 +394,43 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
             if(!runOps(m_load_operations, i + 1)) {
-                progressDone();
                 return ExecResult::ERROR;
             }
         }
 
         if(m_stop_check && m_stop_check()) {
-            progressDone();
             return ExecResult::STOPPED;
         }
 
-        progress("Train", i, batches, current_mp_scaling, start);
+        if(m_ui) {
+            m_ui->updateProgress(i, m_total_trained);
+            updateMemUsage(*m_ui);
+        }
+
+        m_total_trained += m_batch_size;
+
         cudaStreamSynchronize(m_ctx->m_stream);
 
         if(m_mp_enabled) {
             const int check_result = *(int *)m_check_result;
             if(check_result) {
                 if(check_result & 2) {
-                    progressDone();
-                    printf("NAN detected\n");
-                    return ExecResult::STOPPED;
+                    printf("\nNAN detected\n");
+                    return ExecResult::ERROR;
                 }
                 m_mp_scaling *= 0.5;
                 *(int *)m_check_result = 0;
             } else {
                 m_mp_scaling *= 1.01;
             }
-            current_mp_scaling = m_mp_scaling;
+            if(m_ui) {
+                m_ui->updateMpScaling(m_mp_scaling);
+            }
         }
     }
 
     run_batched_tensor_callbacks(post, true, batches - 1,
                                  m_post_batched_tensors);
-    progressDone();
     return ExecResult::OK;
 }
 
@@ -766,7 +734,7 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
 
     auto p = std::make_shared<CudaProgram>(
         shared_from_this(), pc.tensor_layout, pc.batch_size,
-        pc.initial_learning_rate, pc.stop_check, pc.show_progress);
+        pc.initial_learning_rate, pc.stop_check, pc.ui);
 
     p->setupBatchedTensors(bts);
 

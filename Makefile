@@ -23,6 +23,7 @@ SRCS-lib += \
 	src/graph.cpp \
 	src/node.cpp \
 	src/context.cpp \
+	src/ui/statbar.cpp \
 
 
 ###########################################
