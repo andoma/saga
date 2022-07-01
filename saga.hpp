@@ -370,6 +370,20 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
+struct UI {
+    virtual void updateBatchInfo(const char *what, int batch_size,
+                                 int total_batches) = 0;
+    virtual void updateProgress(int current_batch) = 0;
+    virtual void updateLoss(double loss) = 0;
+    virtual void updateMemUsage(size_t use, size_t total) = 0;
+    virtual void updateMpScaling(double scaling) = 0;
+};
+
+std::shared_ptr<UI> make_statbar();
+
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
+
 enum class BTM { PRE = 0x0, POST = 0x1, VALUE = 0x0, GRADIENT = 0x2 };
 
 inline constexpr BTM
@@ -407,7 +421,7 @@ struct ProgramConfig {
     float initial_learning_rate{0};
     TensorLayout tensor_layout{TensorLayout::Auto};
     StopCheck stop_check = nullptr;
-    bool show_progress{false};
+    std::shared_ptr<UI> ui;
 };
 
 enum class ExecResult {
