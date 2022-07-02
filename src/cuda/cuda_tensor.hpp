@@ -138,7 +138,7 @@ public:
 
     std::string hashkey() const;
 
-    void detect_anomaly(uint32_t *ptr, uint32_t mask);
+    void detect_anomaly(uint32_t *ptr);
 
     const cudnnDataType_t m_type;
     int64_t m_offset;
@@ -146,6 +146,7 @@ public:
     cudnnTensorDescriptor_t m_desc;
     std::shared_ptr<CudaTensor> m_grad;
     bool m_partial{false};
+    bool m_inf_is_valid{false};
 };
 
 }  // namespace saga

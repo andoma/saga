@@ -509,6 +509,10 @@ CudaTensor::info() const
         ss << " <partial>";
     }
 
+    if(m_inf_is_valid) {
+        ss << " <may-have-inf>";
+    }
+
     return ss.str();
 }
 
@@ -604,7 +608,7 @@ struct CollapseDim {
 };
 
 void
-CudaTensor::detect_anomaly(uint32_t *ptr, uint32_t mask)
+CudaTensor::detect_anomaly(uint32_t *ptr)
 {
     auto s = m_storage;
     if(s == nullptr)
@@ -642,11 +646,11 @@ CudaTensor::detect_anomaly(uint32_t *ptr, uint32_t mask)
         switch(data_type) {
         case CUDNN_DATA_FLOAT:
             find_non_finite_float_1d(dv[0].size, (const float *)deviceMem(),
-                                     ptr, mask, s->m_ctx->m_stream);
+                                     ptr, true, s->m_ctx->m_stream);
             break;
         case CUDNN_DATA_HALF:
             find_non_finite_half_1d(dv[0].size, (const __half *)deviceMem(),
-                                    ptr, mask, s->m_ctx->m_stream);
+                                    ptr, !m_inf_is_valid, s->m_ctx->m_stream);
             break;
         default:
             abort();
@@ -655,13 +659,13 @@ CudaTensor::detect_anomaly(uint32_t *ptr, uint32_t mask)
         switch(data_type) {
         case CUDNN_DATA_FLOAT:
             find_non_finite_float_2d(dv[1].size, dv[0].size, dv[0].stride,
-                                     (const float *)deviceMem(), ptr, mask,
+                                     (const float *)deviceMem(), ptr, true,
                                      s->m_ctx->m_stream);
             break;
         case CUDNN_DATA_HALF:
             find_non_finite_half_2d(dv[1].size, dv[0].size, dv[0].stride,
-                                    (const __half *)deviceMem(), ptr, mask,
-                                    s->m_ctx->m_stream);
+                                    (const __half *)deviceMem(), ptr,
+                                    !m_inf_is_valid, s->m_ctx->m_stream);
             break;
         default:
             abort();

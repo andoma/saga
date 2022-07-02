@@ -425,23 +425,22 @@ leaky_relu_float(int elements, float *y, const float *x, float alpha,
 
 template <typename T>
 __global__ static void
-find_non_finite_1d(int n_x, const T *src, uint32_t *dst, uint32_t mask)
+find_non_finite_1d(int n_x, const T *src, uint32_t *dst, bool catch_inf)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     if(x >= n_x)
         return;
     const float v = src[x];
     if(!isfinite(v)) {
-        if(atomicOr(dst, mask) == 0) {
-            printf("\n *** %p: src[%d] (%p) = %f\n", src, x, &src[x], v);
-        }
+        if(isnan(v) || catch_inf)
+            *dst = 1;
     }
 }
 
 template <typename T>
 __global__ static void
-find_non_finite_2d(int n_x, int n_y, const T *src, uint32_t *dst, uint32_t mask,
-                   int stride)
+find_non_finite_2d(int n_x, int n_y, const T *src, uint32_t *dst, int stride,
+                   bool catch_inf)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -451,22 +450,22 @@ find_non_finite_2d(int n_x, int n_y, const T *src, uint32_t *dst, uint32_t mask,
     int o = x + stride * y;
     const float v = src[o];
     if(!isfinite(v)) {
-        atomicOr(dst, mask);
-        printf("\n *** %p: src[%d,%d=%d] (%p) = %f\n", src, x, y, o, &src[x],
-               v);
+        if(isnan(v) || catch_inf)
+            *dst = 1;
     }
 }
 
 void
-find_non_finite_float_1d(int x, const float *src, uint32_t *dst, uint32_t mask,
+find_non_finite_float_1d(int x, const float *src, uint32_t *dst, bool catch_inf,
                          cudaStream_t stream)
 {
-    find_non_finite_1d<<<(x + 255) / 256, 256, 0, stream>>>(x, src, dst, mask);
+    find_non_finite_1d<<<(x + 255) / 256, 256, 0, stream>>>(x, src, dst,
+                                                            catch_inf);
 }
 
 void
 find_non_finite_float_2d(int width, int height, int stride, const float *src,
-                         uint32_t *dst, uint32_t mask, cudaStream_t stream)
+                         uint32_t *dst, bool catch_inf, cudaStream_t stream)
 {
     dim3 dimBlock(16, 16, 1);
     dim3 dimGrid;
@@ -474,20 +473,21 @@ find_non_finite_float_2d(int width, int height, int stride, const float *src,
     dimGrid.x = (width + dimBlock.x - 1) / dimBlock.x;
     dimGrid.y = (height + dimBlock.y - 1) / dimBlock.y;
 
-    find_non_finite_2d<<<dimGrid, dimBlock, 0, stream>>>(width, height, src,
-                                                         dst, mask, stride);
+    find_non_finite_2d<<<dimGrid, dimBlock, 0, stream>>>(
+        width, height, src, dst, stride, catch_inf);
 }
 
 void
-find_non_finite_half_1d(int x, const __half *src, uint32_t *dst, uint32_t mask,
+find_non_finite_half_1d(int x, const __half *src, uint32_t *dst, bool catch_inf,
                         cudaStream_t stream)
 {
-    find_non_finite_1d<<<(x + 255) / 256, 256, 0, stream>>>(x, src, dst, mask);
+    find_non_finite_1d<<<(x + 255) / 256, 256, 0, stream>>>(x, src, dst,
+                                                            catch_inf);
 }
 
 void
 find_non_finite_half_2d(int width, int height, int stride, const __half *src,
-                        uint32_t *dst, uint32_t mask, cudaStream_t stream)
+                        uint32_t *dst, bool catch_inf, cudaStream_t stream)
 {
     dim3 dimBlock(16, 16, 1);
     dim3 dimGrid;
@@ -495,8 +495,8 @@ find_non_finite_half_2d(int width, int height, int stride, const __half *src,
     dimGrid.x = (width + dimBlock.x - 1) / dimBlock.x;
     dimGrid.y = (height + dimBlock.y - 1) / dimBlock.y;
 
-    find_non_finite_2d<<<dimGrid, dimBlock, 0, stream>>>(width, height, src,
-                                                         dst, mask, stride);
+    find_non_finite_2d<<<dimGrid, dimBlock, 0, stream>>>(
+        width, height, src, dst, stride, catch_inf);
 }
 
 };  // namespace saga

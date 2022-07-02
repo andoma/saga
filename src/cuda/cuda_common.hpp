@@ -248,7 +248,7 @@ public:
                         const std::vector<std::shared_ptr<CudaTensor>> &tensors,
                         const char *what);
 
-    bool runOps(const CudaOps &ops, long batch, bool anomaly_detect);
+    bool runOps(const CudaOps &ops, long batch, bool anomaly_detect = false);
 
     bool check_anomaly();
 

@@ -271,7 +271,7 @@ CudaProgram::detect_anomaly(
     const std::vector<std::shared_ptr<CudaTensor>> &tensors, const char *what)
 {
     for(const auto &t : op.getInputs()) {
-        t->detect_anomaly(m_aux_result + 1, 1);
+        t->detect_anomaly(m_aux_result + 1);
         cudaStreamSynchronize(m_ctx->m_stream);
         if(m_aux_result[1]) {
             fprintf(stderr, "Anomaly in tensor T%d (%s)\n", t->storage_id(),
@@ -336,7 +336,7 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
     run_batched_tensor_callbacks(pre, false, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
-    if(!runOps(m_load_operations, 0, false)) {
+    if(!runOps(m_load_operations, 0)) {
         return ExecResult::ERROR;
     }
 
@@ -346,7 +346,7 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
 
     cudaStreamSynchronize(m_ctx->m_stream);
     for(long i = 0; i < batches; i++) {
-        if(!runOps(m_infer_operations, i, false)) {
+        if(!runOps(m_infer_operations, i)) {
             return ExecResult::ERROR;
         }
         if(i < batches - 1) {
@@ -360,7 +360,7 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
 
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
-            if(!runOps(m_load_operations, i + 1, false)) {
+            if(!runOps(m_load_operations, i + 1)) {
                 return ExecResult::ERROR;
             }
         }
@@ -400,7 +400,7 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
     run_batched_tensor_callbacks(pre, true, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
-    if(!runOps(m_load_operations, 0, false)) {
+    if(!runOps(m_load_operations, 0)) {
         return ExecResult::ERROR;
     }
 
@@ -425,7 +425,7 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         }
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
-            if(!runOps(m_load_operations, i + 1, false)) {
+            if(!runOps(m_load_operations, i + 1)) {
                 return ExecResult::ERROR;
             }
         }
@@ -525,6 +525,7 @@ CudaProgram::dump(FILE *output, bool detailed) const
     }
 
     fprintf(output, "\nTraining: (%zd ops):\n", m_train_operations.size());
+
     index = 0;
     for(const auto &op : m_train_operations) {
         fprintf(output, "#%3d: ", index);
@@ -790,6 +791,16 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
         }
 
         assert(p->m_infer_operations.empty());
+
+        if(pc.anomaly_detect) {
+            // Any tensors written by the bwd operations may contain inf
+            // (Strictly only for FP16)
+            for(const auto &op : p->m_bwd_operations) {
+                for(auto &t : op->getOutputs()) {
+                    t->m_inf_is_valid = true;
+                }
+            }
+        }
 
         p->m_train_operations.insert(p->m_train_operations.end(),
                                      p->m_fwd_operations.begin(),
