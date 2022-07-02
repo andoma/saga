@@ -265,15 +265,47 @@ CudaProgram::setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml)
     }
 }
 
+void
+CudaProgram::detect_anomaly(
+    const CudaOperation &op,
+    const std::vector<std::shared_ptr<CudaTensor>> &tensors, const char *what)
+{
+    for(const auto &t : op.getInputs()) {
+        t->detect_anomaly(m_aux_result + 1, 1);
+        cudaStreamSynchronize(m_ctx->m_stream);
+        if(m_aux_result[1]) {
+            fprintf(stderr, "Anomaly in tensor T%d (%s)\n", t->storage_id(),
+                    what);
+
+            op.dump(stderr, 1);
+
+            for(const auto &t : op.getInputs()) {
+                t->print_anomaly("I");
+            }
+            for(const auto &t : op.getOutputs()) {
+                t->print_anomaly("O");
+            }
+            abort();
+        }
+    }
+}
+
 bool
-CudaProgram::runOps(const CudaOps &ops, long batch)
+CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
 {
     for(const auto &op : ops) {
+        if(anomaly_detect) {
+            detect_anomaly(*op, op->getInputs(), "input");
+        }
+
         const char *err = op->exec(*this, batch);
         if(err) {
             fprintf(stderr, "\nOp %s failed: %s\n", op->name().c_str(), err);
             op->dump(stderr);
             return false;
+        }
+        if(anomaly_detect) {
+            detect_anomaly(*op, op->getOutputs(), "output");
         }
     }
     return true;
@@ -304,7 +336,7 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
     run_batched_tensor_callbacks(pre, false, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
-    if(!runOps(m_load_operations, 0)) {
+    if(!runOps(m_load_operations, 0, false)) {
         return ExecResult::ERROR;
     }
 
@@ -314,7 +346,7 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
 
     cudaStreamSynchronize(m_ctx->m_stream);
     for(long i = 0; i < batches; i++) {
-        if(!runOps(m_infer_operations, i)) {
+        if(!runOps(m_infer_operations, i, false)) {
             return ExecResult::ERROR;
         }
         if(i < batches - 1) {
@@ -328,7 +360,7 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
 
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
-            if(!runOps(m_load_operations, i + 1)) {
+            if(!runOps(m_load_operations, i + 1, false)) {
                 return ExecResult::ERROR;
             }
         }
@@ -368,7 +400,7 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
     run_batched_tensor_callbacks(pre, true, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
-    if(!runOps(m_load_operations, 0)) {
+    if(!runOps(m_load_operations, 0, false)) {
         return ExecResult::ERROR;
     }
 
@@ -379,7 +411,7 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
     cudaStreamSynchronize(m_ctx->m_stream);
 
     for(long i = 0; i < batches; i++) {
-        if(!runOps(m_train_operations, i)) {
+        if(!runOps(m_train_operations, i, m_anomaly_detect)) {
             return ExecResult::ERROR;
         }
 
@@ -393,7 +425,7 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         }
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
-            if(!runOps(m_load_operations, i + 1)) {
+            if(!runOps(m_load_operations, i + 1, false)) {
                 return ExecResult::ERROR;
             }
         }
@@ -412,14 +444,14 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         cudaStreamSynchronize(m_ctx->m_stream);
 
         if(m_mp_enabled) {
-            const int check_result = *(int *)m_check_result;
+            const int check_result = m_aux_result[0];
             if(check_result) {
                 if(check_result & 2) {
                     printf("\nNAN detected\n");
                     return ExecResult::ERROR;
                 }
                 m_mp_scaling *= 0.5;
-                *(int *)m_check_result = 0;
+                m_aux_result[0] = 0;
             } else {
                 m_mp_scaling *= 1.01;
             }
@@ -734,7 +766,7 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
 
     auto p = std::make_shared<CudaProgram>(
         shared_from_this(), pc.tensor_layout, pc.batch_size,
-        pc.initial_learning_rate, pc.stop_check, pc.ui);
+        pc.initial_learning_rate, pc.stop_check, pc.ui, pc.anomaly_detect);
 
     p->setupBatchedTensors(bts);
 

@@ -501,6 +501,58 @@ Tensor::print(const char *prefix, int elements_per_rank)
     }
 }
 
+void
+Tensor::print_anomaly(const char *prefix)
+{
+    printf("%s: %s\n", prefix, info().c_str());
+
+    auto ta = access();
+    if(ta == nullptr) {
+        printf("%s: Abstract (no data)\n", prefix);
+        return;
+    }
+
+    if(dims_.size() == 1) {
+        // We format 1d tensor vertically instead of a long horizontal line
+        print1dTensor(prefix, *this, *ta);
+        return;
+    }
+
+    const size_t rank = dims_.size();
+    Dims c(rank, 0);
+
+    const char *lf = "";
+
+    while(1) {
+        auto x = ta->get(c);
+
+        if(!isfinite(x)) {
+            printf("%s: %f {", c.to_string().c_str(), x);
+            const uint8_t *u8 = (const uint8_t *)ta->getAddr(c);
+            if(u8) {
+                for(int i = 0; i < 4; i++) {
+                    printf("%02x.", u8[i]);
+                }
+            }
+            printf("}\n");
+            break;
+        }
+
+        for(ssize_t j = rank - 1; j >= 0; j--) {
+            ++c[j];
+            if(c[j] == dims_[j]) {
+                if(j == 0) {
+                    printf("%s", lf);
+                    return;
+                }
+                c[j] = 0;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 std::shared_ptr<Tensor>
 Tensor::toRGB(std::optional<std::pair<float, float>> range)
 {

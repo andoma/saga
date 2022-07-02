@@ -58,4 +58,18 @@ void tensor_stats_half(int n, const __half *src, float *output,
 void leaky_relu_float(int n, float *y, const float *x, float alpha,
                       cudaStream_t stream);
 
+void find_non_finite_float_1d(int x, const float *src, uint32_t *dst,
+                              uint32_t mask, cudaStream_t stream);
+
+void find_non_finite_float_2d(int width, int height, int stride,
+                              const float *src, uint32_t *dst, uint32_t mask,
+                              cudaStream_t stream);
+
+void find_non_finite_half_1d(int x, const __half *src, uint32_t *dst,
+                             uint32_t mask, cudaStream_t stream);
+
+void find_non_finite_half_2d(int width, int height, int stride,
+                             const __half *src, uint32_t *dst, uint32_t mask,
+                             cudaStream_t stream);
+
 }  // namespace saga

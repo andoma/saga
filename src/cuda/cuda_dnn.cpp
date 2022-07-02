@@ -129,7 +129,7 @@ struct CudnnAdam : public CudaOperation {
             adam_mixed(m_elements, 1.0f / p.m_mp_scaling,
                        (__half *)weights_->deviceMem(),
                        (const __half *)gradient_->deviceMem(), (float *)temp_,
-                       b1t, b2t, learning_rate_, (int *)p.m_check_result,
+                       b1t, b2t, learning_rate_, (int *)p.m_aux_result,
                        p.m_ctx->m_stream);
             break;
         default:

@@ -121,7 +121,7 @@ class CudaProgram : public Program {
 public:
     CudaProgram(std::shared_ptr<CudaContext> ctx, TensorLayout tensor_layout,
                 int batch_size, float learning_rate, StopCheck stop_check,
-                std::shared_ptr<UI> ui)
+                std::shared_ptr<UI> ui, bool anomaly_detect)
       : m_ctx(ctx)
       , m_tensor_layout(tensor_layout)
       , m_batch_size(batch_size)
@@ -129,13 +129,14 @@ public:
       , m_mp_scaling(batch_size)
       , m_stop_check(stop_check)
       , m_ui(ui)
+      , m_anomaly_detect(anomaly_detect)
     {
-        chkCuda(cudaMallocManaged(&m_check_result, sizeof(int),
+        chkCuda(cudaMallocManaged((void **)&m_aux_result, 4096,
                                   cudaMemAttachGlobal));
-        chkCuda(cudaMemset(m_check_result, 0, sizeof(int)));
+        chkCuda(cudaMemset(m_aux_result, 0, 4096));
     }
 
-    ~CudaProgram() { chkCuda(cudaFree(m_check_result)); }
+    ~CudaProgram() { chkCuda(cudaFree(m_aux_result)); }
 
     std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
     std::shared_ptr<Tensor> resolveTensorGradient(
@@ -183,13 +184,15 @@ public:
 
     CudaTmpMem m_tensor_mem;
 
-    void *m_check_result;
+    uint32_t *m_aux_result;
     float m_mp_scaling;
     bool m_mp_enabled = false;
 
     StopCheck m_stop_check;
 
     std::shared_ptr<UI> m_ui;
+
+    const bool m_anomaly_detect{false};
 
     std::map<std::string, int> m_algo_hash;
 
@@ -241,7 +244,13 @@ public:
 
     void setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml);
 
-    bool runOps(const CudaOps &ops, long batch);
+    void detect_anomaly(const CudaOperation &op,
+                        const std::vector<std::shared_ptr<CudaTensor>> &tensors,
+                        const char *what);
+
+    bool runOps(const CudaOps &ops, long batch, bool anomaly_detect);
+
+    bool check_anomaly();
 
     bool dumpGraphFromOps(const char *path, const CudaOps &ops);
 

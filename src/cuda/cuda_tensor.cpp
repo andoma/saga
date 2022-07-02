@@ -122,6 +122,12 @@ public:
         return m_storage->get(offsetForElement(element));
     };
 
+    void *getAddr(const Dims &element) override
+    {
+        size_t off = offsetForElement(element) * m_storage->m_element_size;
+        return (void *)((char *)m_storage->data() + off);
+    };
+
     virtual void set(const Dims &element, double value)
     {
         m_storage->set(offsetForElement(element), value);
@@ -589,6 +595,84 @@ CudaTensor::stats()
     const float var = output[3];
 
     return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrtf(var)});
+}
+
+struct CollapseDim {
+    int size;
+    int stride;
+    int index;
+};
+
+void
+CudaTensor::detect_anomaly(uint32_t *ptr, uint32_t mask)
+{
+    auto s = m_storage;
+    if(s == nullptr)
+        return;
+
+    const int max_rank = 8;
+    cudnnDataType_t data_type;
+    int rank;
+    int dimsA[max_rank];
+    int stridesA[max_rank];
+
+    chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type, &rank,
+                                        dimsA, stridesA));
+    std::vector<CollapseDim> dv;
+    for(int i = 0; i < rank; i++) {
+        dv.push_back({dimsA[i], stridesA[i], i});
+    }
+
+    std::sort(dv.begin(), dv.end(),
+              [](const CollapseDim &a, const CollapseDim &b) {
+                  if(a.stride == b.stride)
+                      return a.size > b.size;
+                  return a.stride > b.stride;
+              });
+
+    for(int i = rank - 1; i > 0; i--) {
+        if(dv[i].size * dv[i].stride == dv[i - 1].stride) {
+            dv[i - 1].size *= dv[i].size;
+            dv[i - 1].stride = dv[i].stride;
+            dv.erase(dv.begin() + i);
+        }
+    }
+
+    if(dv.size() == 1) {
+        switch(data_type) {
+        case CUDNN_DATA_FLOAT:
+            find_non_finite_float_1d(dv[0].size, (const float *)deviceMem(),
+                                     ptr, mask, s->m_ctx->m_stream);
+            break;
+        case CUDNN_DATA_HALF:
+            find_non_finite_half_1d(dv[0].size, (const __half *)deviceMem(),
+                                    ptr, mask, s->m_ctx->m_stream);
+            break;
+        default:
+            abort();
+        }
+    } else if(dv.size() == 2) {
+        switch(data_type) {
+        case CUDNN_DATA_FLOAT:
+            find_non_finite_float_2d(dv[1].size, dv[0].size, dv[0].stride,
+                                     (const float *)deviceMem(), ptr, mask,
+                                     s->m_ctx->m_stream);
+            break;
+        case CUDNN_DATA_HALF:
+            find_non_finite_half_2d(dv[1].size, dv[0].size, dv[0].stride,
+                                    (const __half *)deviceMem(), ptr, mask,
+                                    s->m_ctx->m_stream);
+            break;
+        default:
+            abort();
+        }
+    } else {
+        fprintf(stderr,
+                "CudaTensor::detect_anomaly(): Dimensionality of %zd not "
+                "supported\n",
+                dv.size());
+        abort();
+    }
 }
 
 size_t

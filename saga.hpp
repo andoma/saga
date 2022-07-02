@@ -206,6 +206,7 @@ public:
     std::shared_ptr<Tensor> toRGB(
         std::optional<std::pair<float, float>> range = std::nullopt);
     void print(const char *prefix, int elements_per_rank = 0);
+    void print_anomaly(const char *prefix);
     void printRGB(const char *prefix,
                   std::optional<std::pair<float, float>> range = std::nullopt);
     virtual Stats stats();
@@ -423,6 +424,11 @@ struct ProgramConfig {
     TensorLayout tensor_layout{TensorLayout::Auto};
     StopCheck stop_check = nullptr;
     std::shared_ptr<UI> ui;
+
+    // Scan tensors for NAN values
+    // Caution: Makes everything slower.
+    // Only use for debug
+    bool anomaly_detect{false};
 };
 
 enum class ExecResult {
