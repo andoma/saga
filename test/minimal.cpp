@@ -80,7 +80,7 @@ minimal_main(int argc, char **argv)
                                  .tensor_layout = TensorLayout::NCHW},
                                 {});
 
-    p->print();
+    p->dump(stdout);
 
     x = p->resolveTensor(x);
     auto dy = p->resolveTensorGradient(y);
@@ -160,7 +160,7 @@ mse_main(int argc, char **argv)
                                  .tensor_layout = TensorLayout::NCHW},
                                 {});
 
-    p->print();
+    p->dump(stdout);
 
     x = p->resolveTensor(x);
     auto dy = p->resolveTensorGradient(y);

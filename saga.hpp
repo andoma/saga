@@ -444,7 +444,7 @@ public:
     virtual ExecResult train(long batches = 1,
                              const TensorBatchCallback &pre = nullptr,
                              const TensorBatchCallback &post = nullptr) = 0;
-    virtual void print(bool detailed = false) const = 0;
+    virtual void dump(FILE *output, bool detailed = false) const = 0;
     virtual void debug(bool on) = 0;
     virtual bool dumpGraph(const char *path) { return false; }
 };

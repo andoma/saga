@@ -522,7 +522,7 @@ test_op(std::shared_ptr<Context> ctx, const char *op, const Tensors &inputs,
     p->infer();
 
     if(g_verbose)
-        p->print();
+        p->dump(stdout);
 
     if(!ref_output) {
         printf("Test of %s - No reference\n", op);

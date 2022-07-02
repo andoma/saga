@@ -358,7 +358,7 @@ struct LiveAnalysis {
                                             stderr,
                                             "Unable to kill dead output T%d\n",
                                             id + m_ln_id_base);
-                                        m_ops[i]->print(true);
+                                        m_ops[i]->dump(stderr);
                                         exit(1);
                                     }
                                 }

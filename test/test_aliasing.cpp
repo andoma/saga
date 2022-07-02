@@ -61,7 +61,7 @@ aliasing_main(int argc, char **argv)
                                  .tensor_layout = TensorLayout::NCHW},
                                 {});
 
-    p->print(true);
+    p->dump(stdout, true);
 
     auto dx = p->resolveTensorGradient(x);
     x = p->resolveTensor(x);
@@ -88,7 +88,7 @@ aliasing_main(int argc, char **argv)
     dy->print("dy");
     dx->print("dx");
 
-    p->print(true);
+    p->dump(stdout, true);
 
     return 0;
 }

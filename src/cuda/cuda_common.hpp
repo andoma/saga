@@ -144,7 +144,7 @@ public:
                      const TensorBatchCallback &post) override;
     ExecResult train(long batches, const TensorBatchCallback &pre,
                      const TensorBatchCallback &post) override;
-    void print(bool detailed) const override;
+    void dump(FILE *output, bool detailed) const override;
     void debug(bool) override;
 
     const std::shared_ptr<CudaContext> m_ctx;
@@ -265,7 +265,7 @@ public:
 
     virtual std::shared_ptr<CudaOperation> getSyncOp() { return nullptr; };
 
-    void print(bool full = false) const;
+    void dump(FILE *output, bool full = false) const;
 
     std::string name() const { return m_kind; }
 

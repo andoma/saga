@@ -272,7 +272,7 @@ CudaProgram::runOps(const CudaOps &ops, long batch)
         const char *err = op->exec(*this, batch);
         if(err) {
             fprintf(stderr, "\nOp %s failed: %s\n", op->name().c_str(), err);
-            op->print(true);
+            op->dump(stderr);
             return false;
         }
     }
@@ -460,43 +460,43 @@ CudaOperation::str() const
 }
 
 void
-CudaOperation::print(bool full) const
+CudaOperation::dump(FILE *output, bool full) const
 {
     auto inputs = getInputs();
     auto outputs = getOutputs();
 
     if(full) {
-        printf("OP: %s %s\n", name().c_str(), info().c_str());
+        fprintf(output, "OP: %s %s\n", name().c_str(), info().c_str());
         for(auto const &t : inputs) {
             if(t)
-                printf("\tI: %s\n", t->info().c_str());
+                fprintf(output, "\tI: %s\n", t->info().c_str());
         }
         for(auto const &t : outputs) {
             if(t)
-                printf("\tO: %s\n", t->info().c_str());
+                fprintf(output, "\tO: %s\n", t->info().c_str());
         }
     } else {
-        printf("%s\n", str().c_str());
+        fprintf(output, "%s\n", str().c_str());
     }
 }
 
 void
-CudaProgram::print(bool detailed) const
+CudaProgram::dump(FILE *output, bool detailed) const
 {
     std::scoped_lock lock(m_ctx->m_mutex);
-    printf("\nInference: (%zd ops)\n", m_infer_operations.size());
+    fprintf(output, "\nInference: (%zd ops)\n", m_infer_operations.size());
     int index = 0;
     for(const auto &op : m_infer_operations) {
-        printf("#%3d: ", index);
-        op->print(detailed);
+        fprintf(output, "#%3d: ", index);
+        op->dump(output, detailed);
         index++;
     }
 
-    printf("\nTraining: (%zd ops):\n", m_train_operations.size());
+    fprintf(output, "\nTraining: (%zd ops):\n", m_train_operations.size());
     index = 0;
     for(const auto &op : m_train_operations) {
-        printf("#%3d: ", index);
-        op->print(detailed);
+        fprintf(output, "#%3d: ", index);
+        op->dump(output, detailed);
         index++;
     }
 }

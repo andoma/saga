@@ -128,7 +128,7 @@ jpeg_decoder_main(int argc, char **argv)
         {});
 
     if(g_verbose > 1)
-        p->print();
+        p->dump(stdout);
 
     auto output = p->resolveTensor(n->y());
 

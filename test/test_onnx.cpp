@@ -26,7 +26,7 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
                                 {});
 
     if(verbose)
-        p->print();
+        p->dump(stdout);
 
     auto input = p->resolveTensor(*g.inputs_.begin());
     auto output = p->resolveTensor(*g.outputs_.begin());

@@ -565,7 +565,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                                 bt);
 
     if(verbose > 1)
-        p->print(verbose > 2);
+        p->dump(stdout, verbose > 2);
 
     theta = p->resolveTensor(theta);
     postconv = p->resolveTensor(postconv);
