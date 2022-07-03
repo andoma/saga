@@ -386,29 +386,31 @@ std::shared_ptr<UI> make_statbar();
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-enum class BTM { PRE = 0x0, POST = 0x1, VALUE = 0x0, GRADIENT = 0x2 };
+enum class TVG { VALUE, GRADIENT };
 
-inline constexpr BTM
-operator|(BTM a, BTM b)
+enum class Phase { PRE = 0x1, POST = 0x2 };
+
+inline constexpr Phase
+operator|(Phase a, Phase b)
 {
-    return static_cast<BTM>(static_cast<int>(a) | static_cast<int>(b));
+    return static_cast<Phase>(static_cast<int>(a) | static_cast<int>(b));
 }
 
-inline constexpr BTM
-operator&(BTM a, BTM b)
+inline constexpr Phase
+operator&(Phase a, Phase b)
 {
-    return static_cast<BTM>(static_cast<int>(a) & static_cast<int>(b));
+    return static_cast<Phase>(static_cast<int>(a) & static_cast<int>(b));
 }
 
 inline constexpr bool
-operator!(BTM a)
+operator!(Phase a)
 {
     return static_cast<bool>(!static_cast<int>(a));
 }
 
-typedef std::pair<std::shared_ptr<Tensor>, BTM> BatchedTensor;
+typedef std::pair<std::shared_ptr<Tensor>, TVG> BatchedTensor;
 
-typedef std::unordered_set<BatchedTensor> BatchedTensors;
+typedef std::unordered_map<BatchedTensor, Phase> BatchedTensors;
 
 typedef std::function<void(long batch, bool training,
                            std::unordered_map<BatchedTensor, TensorAccess *>)>
@@ -485,7 +487,7 @@ struct hash<saga::BatchedTensor> {
     std::size_t operator()(const saga::BatchedTensor &k) const
     {
         return std::hash<std::shared_ptr<saga::Tensor>>()(k.first) ^
-               std::hash<saga::BTM>()(k.second);
+               std::hash<saga::TVG>()(k.second);
     }
 };
 

@@ -704,14 +704,15 @@ void
 CudaProgram::addPrePostOp(std::shared_ptr<Tensor> &high,
                           std::shared_ptr<CudaTensor> &low,
                           std::shared_ptr<CudaTensorStorageDoubleBuffered> &s,
-                          BTM mode)
+                          Phase phase, TVG mode)
 {
     auto op = CudaBatchAccessOp{high, low, s, mode};
 
-    if(!(mode & BTM::POST)) {
+    if(!!(phase & Phase::PRE)) {
         m_pre_batched_tensors.push_back(op);
+    }
 
-    } else {
+    if(!!(phase & Phase::POST)) {
         m_exported_storage.push_back(s);
         m_post_batched_tensors.push_back(op);
     }
@@ -723,10 +724,10 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
     // Do values first and gradients in a second pass to make sure lowering is
     // correct
     for(const auto &bt : bts) {
-        if(!!(bt.second & BTM::GRADIENT))
+        if(bt.first.second != TVG::VALUE)
             continue;
 
-        auto src = bt.first;
+        auto src = bt.first.first;
         auto dims = src->dims_.n(m_batch_size);
 
         auto fmt = tensorFormat(*src);
@@ -737,14 +738,14 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
         m_flips.push_back(s);
         t->copyFromLocked(*src);
         m_tensors[src] = t;
-        addPrePostOp(src, t, s, bt.second);
+        addPrePostOp(src, t, s, bt.second, bt.first.second);
     }
 
     for(const auto &bt : bts) {
-        if(!(bt.second & BTM::GRADIENT))
+        if(bt.first.second != TVG::GRADIENT)
             continue;
 
-        auto src = bt.first;
+        auto src = bt.first.first;
         auto dims = src->dims_.n(m_batch_size);
 
         auto fmt = tensorFormat(*src);
@@ -755,7 +756,7 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
 
         auto t = lower_tensor(src);
         t->m_grad = g;
-        addPrePostOp(src, g, s, bt.second);
+        addPrePostOp(src, g, s, bt.second, bt.first.second);
     }
 }
 

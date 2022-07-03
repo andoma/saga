@@ -542,15 +542,15 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     double loss_sum = 0;
     int correct = 0;
 
-    const auto LABELS =
-        std::make_pair(n->outputs_["y"], BTM::PRE | BTM::GRADIENT);
-    const auto LOSS =
-        std::make_pair(n->outputs_["loss"], BTM::POST | BTM::VALUE);
-    const auto INPUT = std::make_pair(x, BTM::PRE | BTM::VALUE);
-    const auto OUTPUT =
-        std::make_pair(n->outputs_["y"], BTM::POST | BTM::VALUE);
+    const auto LABELS = std::make_pair(n->outputs_["y"], TVG::GRADIENT);
+    const auto LOSS = std::make_pair(n->outputs_["loss"], TVG::VALUE);
+    const auto INPUT = std::make_pair(x, TVG::VALUE);
+    const auto OUTPUT = std::make_pair(n->outputs_["y"], TVG::VALUE);
 
-    BatchedTensors bt{LOSS, LABELS, INPUT, OUTPUT};
+    BatchedTensors bt{{LOSS, Phase::POST},
+                      {LABELS, Phase::PRE},
+                      {INPUT, Phase::PRE},
+                      {OUTPUT, Phase::POST}};
 
     auto ctx = createContext();
 

@@ -850,7 +850,7 @@ CudaProgram::run_batched_tensor_callbacks(const TensorBatchCallback &cb,
     for(auto &op : list) {
         auto ta = std::make_unique<CudaTensorBatchAccess>(
             op.m_storage.get(), op.m_low->m_desc, op.m_low->m_offset);
-        amap[std::make_pair(op.m_high, op.m_mode)] = ta.get();
+        amap[std::make_pair(op.m_high, op.m_tvg)] = ta.get();
         v.push_back(std::move(ta));
     }
     cb(batch, training, amap);
