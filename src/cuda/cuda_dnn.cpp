@@ -739,6 +739,9 @@ struct CudnnActivationFwd : public CudnnOperation {
         chkCUDNN(cudnnCreateActivationDescriptor(&desc_));
         chkCUDNN(cudnnSetActivationDescriptor(desc_, mode, CUDNN_PROPAGATE_NAN,
                                               alpha));
+        if(mode == CUDNN_ACTIVATION_SWISH) {
+            chkCUDNN(cudnnSetActivationDescriptorSwishBeta(desc_, 1.0));
+        }
     }
 
     ~CudnnActivationFwd() { chkCUDNN(cudnnDestroyActivationDescriptor(desc_)); }
@@ -870,6 +873,14 @@ tanh_setup(CudaProgram &p, const Node &n, bool training)
 }
 
 REGISTER_CUDA_OP("tanh", tanh_setup);
+
+static const char *
+swish_setup(CudaProgram &p, const Node &n, bool training)
+{
+    return activation_setup(p, n, training, CUDNN_ACTIVATION_SWISH, 0.0f);
+}
+
+REGISTER_CUDA_OP("swish", swish_setup);
 
 //------------------------------------------------------------------------
 
