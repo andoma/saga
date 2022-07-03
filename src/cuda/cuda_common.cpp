@@ -797,7 +797,7 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
             // (Strictly only for FP16)
             for(const auto &op : p->m_bwd_operations) {
                 for(auto &t : op->getOutputs()) {
-                    t->m_inf_is_valid = true;
+                    t->m_storage->m_inf_is_valid = true;
                 }
             }
         }

@@ -509,7 +509,7 @@ CudaTensor::info() const
         ss << " <partial>";
     }
 
-    if(m_inf_is_valid) {
+    if(m_storage->m_inf_is_valid) {
         ss << " <may-have-inf>";
     }
 
@@ -650,7 +650,8 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
             break;
         case CUDNN_DATA_HALF:
             find_non_finite_half_1d(dv[0].size, (const __half *)deviceMem(),
-                                    ptr, !m_inf_is_valid, s->m_ctx->m_stream);
+                                    ptr, !s->m_inf_is_valid,
+                                    s->m_ctx->m_stream);
             break;
         default:
             abort();
@@ -665,7 +666,7 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
         case CUDNN_DATA_HALF:
             find_non_finite_half_2d(dv[1].size, dv[0].size, dv[0].stride,
                                     (const __half *)deviceMem(), ptr,
-                                    !m_inf_is_valid, s->m_ctx->m_stream);
+                                    !s->m_inf_is_valid, s->m_ctx->m_stream);
             break;
         default:
             abort();

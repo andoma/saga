@@ -50,6 +50,8 @@ public:
     const int m_id;
 
     void *m_mem = nullptr;
+
+    bool m_inf_is_valid{false};
 };
 
 class CudaTensorStorageDoubleBuffered : public CudaTensorStorage {
@@ -146,7 +148,6 @@ public:
     cudnnTensorDescriptor_t m_desc;
     std::shared_ptr<CudaTensor> m_grad;
     bool m_partial{false};
-    bool m_inf_is_valid{false};
 };
 
 }  // namespace saga
