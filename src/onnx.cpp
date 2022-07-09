@@ -231,7 +231,11 @@ public:
     MappedPBFile(void *data, size_t size)
       : CodedInputStream((const uint8_t *)data, size), data_(data), size_(size)
     {
+#if GOOGLE_PROTOBUF_VERSION >= 3002000
+        SetTotalBytesLimit(size);
+#else
         SetTotalBytesLimit(size, size);
+#endif
     }
 
     ~MappedPBFile() { munmap(data_, size_); }
