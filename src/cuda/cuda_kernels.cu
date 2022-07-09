@@ -202,18 +202,27 @@ convert_half_float(const void *src, void *dst, int elements, float scale,
 
 __global__ static void
 adam_kernel(int n, float *weights, const float *dweights, float *t, float b1t,
-            float b2t, float lr)
+            float b2t, float lr, CudaAux *aux)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if(i >= n)
         return;
+
+    const float dw = dweights[i];
+    if(!isfinite(dw)) {
+        if(isnan(dw)) {
+            aux->nan = 1;
+        } else {
+            aux->inf = 1;
+        }
+        return;
+    }
 
     t += i * 2;  // mt and vt are stored next to each other in RAM
 
     const float b1 = ADAM_B1;
     const float b2 = ADAM_B2;
     const float e = ADAM_EPSILON;
-    const float dw = dweights[i];
 
     const float m = t[0] = b1 * t[0] + (1.0f - b1) * dw;
     const float v = t[1] = b2 * t[1] + (1.0f - b2) * dw * dw;
@@ -225,7 +234,7 @@ adam_kernel(int n, float *weights, const float *dweights, float *t, float b1t,
 
 __global__ static void
 adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
-               float *t, float b1t, float b2t, float lr, int *range)
+               float *t, float b1t, float b2t, float lr, CudaAux *aux)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if(i >= n)
@@ -233,13 +242,12 @@ adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
 
     const uint16_t u16 = ((const uint16_t *)dweights)[i];
     if((u16 & 0x7800) == 0x7800) {
-        atomicOr(range, 1);
+        aux->range = 1;
         if((u16 & 0x7c00) == 0x7c00) {
             if(u16 & 0x3ff) {
-                // NaN
-                atomicOr(range, 2);
+                aux->nan = 1;
             } else {
-                // +-Inf
+                aux->inf = 1;
             }
             return;
         }
@@ -265,19 +273,19 @@ adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
 
 void
 adam_float(int n, float *weights, const float *dweights, float *t, float b1t,
-           float b2t, float lr, cudaStream_t stream)
+           float b2t, float lr, CudaAux *aux, cudaStream_t stream)
 {
     adam_kernel<<<(n + 255) / 256, 256, 0, stream>>>(n, weights, dweights, t,
-                                                     b1t, b2t, lr);
+                                                     b1t, b2t, lr, aux);
 }
 
 void
 adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
-           float *t, float b1t, float b2t, float lr, int *range,
+           float *t, float b1t, float b2t, float lr, CudaAux *aux,
            cudaStream_t stream)
 {
     adam_kernel_mp<<<(n + 255) / 256, 256, 0, stream>>>(
-        n, alpha, weights, dweights, t, b1t, b2t, lr, range);
+        n, alpha, weights, dweights, t, b1t, b2t, lr, aux);
 }
 
 __inline__ __device__ float4

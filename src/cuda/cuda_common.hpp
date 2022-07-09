@@ -12,6 +12,8 @@
 #include <nvml.h>
 #endif
 
+#include "cuda_aux.hpp"
+
 #define chkCUDNN(expression)                                              \
     {                                                                     \
         const cudnnStatus_t cudnn_status__ = (expression);                \
@@ -130,12 +132,11 @@ public:
       , m_ui(ui)
       , m_anomaly_detect(anomaly_detect)
     {
-        chkCuda(cudaMallocManaged((void **)&m_aux_result, 4096,
-                                  cudaMemAttachGlobal));
-        chkCuda(cudaMemset(m_aux_result, 0, 4096));
+        chkCuda(cudaMallocManaged((void **)&m_aux, 4096, cudaMemAttachGlobal));
+        chkCuda(cudaMemset(m_aux, 0, 4096));
     }
 
-    ~CudaProgram() { chkCuda(cudaFree(m_aux_result)); }
+    ~CudaProgram() { chkCuda(cudaFree(m_aux)); }
 
     std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
     std::shared_ptr<Tensor> resolveTensorGradient(
@@ -183,7 +184,7 @@ public:
 
     CudaTmpMem m_tensor_mem;
 
-    uint32_t *m_aux_result;
+    CudaAux *m_aux;
     float m_mp_scaling;
     bool m_mp_enabled = false;
 

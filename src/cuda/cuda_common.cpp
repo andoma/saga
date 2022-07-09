@@ -470,17 +470,17 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         cudaStreamSynchronize(m_ctx->m_stream);
 
         if(m_mp_enabled) {
-            const int check_result = m_aux_result[0];
-            if(check_result) {
-                if(check_result & 2) {
-                    printf("\nNAN detected\n");
-                    return ExecResult::ERROR;
-                }
+            if(m_aux->inf || m_aux->nan) {
                 m_mp_scaling *= 0.5;
-                m_aux_result[0] = 0;
+            } else if(m_aux->range > 1) {
+                m_mp_scaling *= 0.9;
             } else {
-                m_mp_scaling *= 1.01;
+                m_mp_scaling *= 1.02;
             }
+
+            m_aux->range = 0;
+            m_aux->inf = 0;
+            m_aux->nan = 0;
             if(m_ui) {
                 m_ui->updateMpScaling(m_mp_scaling);
             }

@@ -122,15 +122,14 @@ struct CudnnAdam : public CudaOperation {
         case Tensor::DataType::FLOAT:
             adam_float(m_elements, (float *)weights_->deviceMem(),
                        (const float *)gradient_->deviceMem(), (float *)temp_,
-                       b1t, b2t, learning_rate_, p.m_ctx->m_stream);
+                       b1t, b2t, learning_rate_, p.m_aux, p.m_ctx->m_stream);
             break;
         case Tensor::DataType::HALF:
             p.m_mp_enabled = true;
             adam_mixed(m_elements, 1.0f / p.m_mp_scaling,
                        (__half *)weights_->deviceMem(),
                        (const __half *)gradient_->deviceMem(), (float *)temp_,
-                       b1t, b2t, learning_rate_, (int *)p.m_aux_result,
-                       p.m_ctx->m_stream);
+                       b1t, b2t, learning_rate_, p.m_aux, p.m_ctx->m_stream);
             break;
         default:
             return "Unsupported tensor datatype";
