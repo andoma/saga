@@ -378,6 +378,8 @@ public:
 //------------------------------------------------------------------------
 
 struct UI {
+    virtual ~UI() {}
+
     enum Phase { INFER, TRAIN };
     virtual void updateBatchInfo(Phase phase, int batch_size, int total_batches,
                                  int epoch) = 0;
