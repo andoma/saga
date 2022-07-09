@@ -13,6 +13,7 @@ std::vector<std::shared_ptr<CudaOperation>> reduceLiveranges(
 
 std::unique_ptr<CudaMemoryLayout> memoryLayout(
     const std::vector<std::shared_ptr<CudaOperation>> &ops,
-    const std::vector<std::shared_ptr<CudaTensorStorage>> &exported);
+    const std::vector<std::shared_ptr<CudaTensorStorage>> &exported,
+    bool anomaly_detect);
 
 }  // namespace saga

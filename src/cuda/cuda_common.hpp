@@ -281,6 +281,9 @@ public:
 
     std::string str() const;
 
+    std::vector<std::shared_ptr<CudaTensorStorage>> m_pre_invalidate;
+    std::vector<std::shared_ptr<CudaTensorStorage>> m_post_invalidate;
+
 protected:
     CudaOperation(std::string kind) : m_kind(kind) {}
 

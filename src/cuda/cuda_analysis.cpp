@@ -468,7 +468,7 @@ struct LiveAnalysis {
         }
     }
 
-    std::unique_ptr<CudaMemoryLayout> memoryLayout()
+    std::unique_ptr<CudaMemoryLayout> memoryLayout(bool anomaly_detect)
     {
         Bestfit bf;
         const size_t align = 16;
@@ -481,6 +481,10 @@ struct LiveAnalysis {
                 if(bitchk(m_lns[i]->m_out, j) && !bitchk(m_lns[i]->m_in, j)) {
                     const size_t size = (m_memory_usage[j] + align - 1) / align;
 
+                    if(anomaly_detect) {
+                        m_ops[i]->m_pre_invalidate.push_back(m_storage[j]);
+                    }
+
                     assert(inuse.find(j) == inuse.end());
                     inuse.insert(j);
                     positions[j] = align * bf.alloc(size);
@@ -490,6 +494,10 @@ struct LiveAnalysis {
             for(int j = 0; j < m_ln_size; j++) {
                 if(bitchk(m_lns[i]->m_in, j) && !bitchk(m_lns[i]->m_out, j)) {
                     const size_t size = (m_memory_usage[j] + align - 1) / align;
+
+                    if(anomaly_detect) {
+                        m_ops[i]->m_post_invalidate.push_back(m_storage[j]);
+                    }
 
                     assert(inuse.find(j) != inuse.end());
                     inuse.erase(j);
@@ -521,10 +529,11 @@ reduceLiveranges(
 
 std::unique_ptr<CudaMemoryLayout>
 memoryLayout(const std::vector<std::shared_ptr<CudaOperation>> &ops,
-             const std::vector<std::shared_ptr<CudaTensorStorage>> &exported)
+             const std::vector<std::shared_ptr<CudaTensorStorage>> &exported,
+             bool anomaly_detect)
 {
     LiveAnalysis la(ops, exported);
-    return la.memoryLayout();
+    return la.memoryLayout(anomaly_detect);
 }
 
 }  // namespace saga

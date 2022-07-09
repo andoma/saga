@@ -270,12 +270,12 @@ CudaProgram::detect_anomaly(
     const CudaOperation &op,
     const std::vector<std::shared_ptr<CudaTensor>> &tensors, const char *what)
 {
-    for(const auto &t : op.getInputs()) {
-        t->detect_anomaly(m_aux_result + 1);
+    for(const auto &t : tensors) {
+        t->detect_anomaly(&m_aux->anomaly);
         cudaStreamSynchronize(m_ctx->m_stream);
-        if(m_aux_result[1]) {
-            fprintf(stderr, "Anomaly in tensor T%d (%s)\n", t->storage_id(),
-                    what);
+        if(m_aux->anomaly) {
+            fprintf(stderr, "\n\n *** Anomaly in tensor T%d (%s)\n",
+                    t->storage_id(), what);
 
             op.dump(stderr, 1);
 
@@ -284,6 +284,25 @@ CudaProgram::detect_anomaly(
             }
             for(const auto &t : op.getOutputs()) {
                 t->print_anomaly("O");
+            }
+
+            printf("Pre invalidate: ");
+            for(auto &t : op.m_pre_invalidate) {
+                printf("T%d ", t->m_id);
+            }
+            printf("\n");
+
+            printf("Post invalidate: ");
+            for(auto &t : op.m_post_invalidate) {
+                printf("T%d ", t->m_id);
+            }
+            printf("\n");
+
+            FILE *fp = fopen("anomaly.txt", "w");
+            if(fp != NULL) {
+                printf("Dumping program to anomaly.txt\n");
+                dump(fp, true);
+                fclose(fp);
             }
             abort();
         }
@@ -295,6 +314,9 @@ CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
 {
     for(const auto &op : ops) {
         if(anomaly_detect) {
+            for(auto &t : op->m_pre_invalidate) {
+                t->invalidate();
+            }
             detect_anomaly(*op, op->getInputs(), "input");
         }
 
@@ -304,8 +326,12 @@ CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
             op->dump(stderr);
             return false;
         }
+
         if(anomaly_detect) {
             detect_anomaly(*op, op->getOutputs(), "output");
+            for(auto &t : op->m_post_invalidate) {
+                t->invalidate();
+            }
         }
     }
     return true;
@@ -499,6 +525,10 @@ CudaOperation::dump(FILE *output, bool full) const
 
     if(full) {
         fprintf(output, "OP: %s %s\n", name().c_str(), info().c_str());
+        for(auto const &t : m_pre_invalidate) {
+            if(t)
+                fprintf(output, "\tE: T%d\n", t->m_id);
+        }
         for(auto const &t : inputs) {
             if(t)
                 fprintf(output, "\tI: %s\n", t->info().c_str());
@@ -506,6 +536,10 @@ CudaOperation::dump(FILE *output, bool full) const
         for(auto const &t : outputs) {
             if(t)
                 fprintf(output, "\tO: %s\n", t->info().c_str());
+        }
+        for(auto const &t : m_post_invalidate) {
+            if(t)
+                fprintf(output, "\tE: T%d\n", t->m_id);
         }
     } else {
         fprintf(output, "%s\n", str().c_str());
@@ -784,10 +818,10 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
         for(const auto &n : train_nodes) {
             const char *err = find_operation(*n)->setup(*p, *n, true);
             if(err) {
-                fprintf(
-                    stderr,
-                    "Unable to create training operation for %s (#%d)-- %s\n",
-                    n->type_.c_str(), cnt, err);
+                fprintf(stderr,
+                        "Unable to create training operation for %s "
+                        "(#%d)-- %s\n",
+                        n->type_.c_str(), cnt, err);
                 n->print();
                 exit(1);
             }
@@ -797,11 +831,12 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
         assert(p->m_infer_operations.empty());
 
         if(pc.anomaly_detect) {
-            // Any tensors written by the bwd operations may contain inf
-            // (Strictly only for FP16)
+            // Any tensors written by the bwd operations may contain
+            // nonfinite numbers (Strictly only for FP16)
+            // (These will be filtered out by the optimizers)
             for(const auto &op : p->m_bwd_operations) {
                 for(auto &t : op->getOutputs()) {
-                    t->m_storage->m_inf_is_valid = true;
+                    t->m_storage->m_nonfinite_is_valid = true;
                 }
             }
         }
@@ -854,14 +889,14 @@ CudaProgram::finalize()
         m_train_operations =
             reduceLiveranges(m_train_operations, m_exported_storage);
 
-        m_train_memory_layout =
-            memoryLayout(m_train_operations, m_exported_storage);
+        m_train_memory_layout = memoryLayout(
+            m_train_operations, m_exported_storage, m_anomaly_detect);
         m_tensor_mem.request(m_train_memory_layout->size_);
     }
 
     if(m_infer_operations.size()) {
-        m_infer_memory_layout =
-            memoryLayout(m_infer_operations, m_exported_storage);
+        m_infer_memory_layout = memoryLayout(
+            m_infer_operations, m_exported_storage, m_anomaly_detect);
         m_tensor_mem.request(m_infer_memory_layout->size_);
     }
 

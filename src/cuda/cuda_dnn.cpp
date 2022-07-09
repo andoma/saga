@@ -2181,7 +2181,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         float alpha = 1.0f;
         float beta = 0.0f;
 
-        return cudnnBatchNormalizationForwardTrainingEx(
+        auto s = cudnnBatchNormalizationForwardTrainingEx(
             ctx_->m_cudnn, mode_, ops_, &alpha, &beta, x_->desc(),
             x_->deviceMem(), z_ ? z_->desc() : NULL,
             z_ ? z_->deviceMem() : NULL, y_->desc(), y_->deviceMem(),
@@ -2189,6 +2189,16 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
             m_->deviceMem(), v_->deviceMem(), epsilon_, sm_->deviceMem(),
             sv_->deviceMem(), desc_, ctx_->m_workspace.ptr(),
             ctx_->m_workspace.size(), reserve_, reserve_size_);
+
+        if(!p.m_anomaly_detect)
+            return s;
+
+        s = cudnnQueryRuntimeError(ctx_->m_cudnn, &s, CUDNN_ERRQUERY_BLOCKING,
+                                   NULL);
+        if(s)
+            return s;
+
+        return s;
     }
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
@@ -2238,7 +2248,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
     {
         float alpha = 1.0f, beta = 0.0f;
 
-        return cudnnBatchNormalizationBackwardEx(
+        auto s = cudnnBatchNormalizationBackwardEx(
             p.m_ctx->m_cudnn, fwd_->mode_, ops_, &alpha, &dx_beta_, &alpha,
             &beta, fwd_->x_->desc(), fwd_->x_->deviceMem(), fwd_->y_->desc(),
             fwd_->y_->deviceMem(), dy_->desc(), dy_->deviceMem(),
@@ -2248,6 +2258,16 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
             db_->deviceMem(), fwd_->epsilon_, fwd_->sm_->deviceMem(),
             fwd_->sv_->deviceMem(), fwd_->desc_, p.m_ctx->m_workspace.ptr(),
             p.m_ctx->m_workspace.size(), fwd_->reserve_, fwd_->reserve_size_);
+
+        if(!p.m_anomaly_detect)
+            return s;
+
+        s = cudnnQueryRuntimeError(p.m_ctx->m_cudnn, &s,
+                                   CUDNN_ERRQUERY_BLOCKING, NULL);
+        if(s)
+            return s;
+
+        return s;
     }
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override

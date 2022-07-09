@@ -51,7 +51,9 @@ public:
 
     void *m_mem = nullptr;
 
-    bool m_inf_is_valid{false};
+    bool m_nonfinite_is_valid{false};
+
+    void invalidate();
 };
 
 class CudaTensorStorageDoubleBuffered : public CudaTensorStorage {
@@ -141,6 +143,8 @@ public:
     std::string hashkey() const;
 
     void detect_anomaly(uint32_t *ptr);
+
+    void invalidate(void);
 
     const cudnnDataType_t m_type;
     int64_t m_offset;
