@@ -385,6 +385,7 @@ struct UI {
     virtual void updateLoss(double loss) = 0;
     virtual void updateMemUsage(size_t use, size_t total) = 0;
     virtual void updateMpScaling(double scaling) = 0;
+    virtual void updateExtra(const std::string &extra) = 0;
 };
 
 std::shared_ptr<UI> make_statbar();

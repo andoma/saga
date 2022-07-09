@@ -47,6 +47,12 @@ struct StatBar : public UI {
         maybe_refresh();
     }
 
+    void updateExtra(const std::string &extra) override
+    {
+        m_extra = extra;
+        maybe_refresh();
+    }
+
     void maybe_refresh(void)
     {
         int64_t now = Now();
@@ -76,7 +82,11 @@ struct StatBar : public UI {
         }
 
         if(std::isfinite(m_mp_scaling)) {
-            printf(" | MPS: %8.4f", m_mp_scaling);
+            printf(" | MPS: %1.1e", m_mp_scaling);
+        }
+
+        if(m_extra.size()) {
+            printf(" | %s", m_extra.c_str());
         }
 
         printf("\r");
@@ -93,6 +103,7 @@ struct StatBar : public UI {
     size_t m_mem_use{0};
     size_t m_mem_total{0};
     double m_mp_scaling{NAN};
+    std::string m_extra;
 
     int64_t m_last_update{0};
     int64_t m_start{0};
