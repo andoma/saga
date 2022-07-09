@@ -60,7 +60,7 @@ minimal_main(int argc, char **argv)
 
     Graph g;
 
-    auto x = std::make_shared<Tensor>(dt, Dims({1, 2}), "input");
+    auto x = makeTensor(dt, Dims({1, 2}), "input");
     std::shared_ptr<Node> n;
     n = g.addNode("fc", {{"x", x}}, {{"outputs", 2}, {"bias", true}});
     n = g.addNode("relu", {{"x", n->y()}}, {});
@@ -139,7 +139,7 @@ mse_main(int argc, char **argv)
 
     Graph g;
 
-    auto x = std::make_shared<Tensor>(dt, Dims({1, 4}), "input");
+    auto x = makeTensor(dt, Dims({1, 4}), "input");
     std::shared_ptr<Node> n;
     n = g.addNode("fc", {{"x", x}}, {{"outputs", 5}, {"bias", true}});
     n = g.addNode("relu", {{"x", n->y()}}, {});

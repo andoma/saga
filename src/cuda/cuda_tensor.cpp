@@ -844,13 +844,13 @@ CudaProgram::run_batched_tensor_callbacks(const TensorBatchCallback &cb,
     cudaStreamSynchronize(ctx_->m_stream);
 #endif
 
-    std::unordered_map<BatchedTensor, TensorAccess *> amap;
+    std::unordered_map<std::shared_ptr<Tensor>, TensorAccess *> amap;
 
     std::vector<std::unique_ptr<CudaTensorBatchAccess>> v;
     for(auto &op : list) {
         auto ta = std::make_unique<CudaTensorBatchAccess>(
             op.m_storage.get(), op.m_low->m_desc, op.m_low->m_offset);
-        amap[std::make_pair(op.m_high, op.m_tvg)] = ta.get();
+        amap[op.m_high] = ta.get();
         v.push_back(std::move(ta));
     }
     cb(batch, training, amap);

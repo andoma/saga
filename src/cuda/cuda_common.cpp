@@ -704,9 +704,9 @@ void
 CudaProgram::addPrePostOp(std::shared_ptr<Tensor> &high,
                           std::shared_ptr<CudaTensor> &low,
                           std::shared_ptr<CudaTensorStorageDoubleBuffered> &s,
-                          Phase phase, TVG mode)
+                          Phase phase)
 {
-    auto op = CudaBatchAccessOp{high, low, s, mode};
+    auto op = CudaBatchAccessOp{high, low, s};
 
     if(!!(phase & Phase::PRE)) {
         m_pre_batched_tensors.push_back(op);
@@ -721,13 +721,14 @@ CudaProgram::addPrePostOp(std::shared_ptr<Tensor> &high,
 void
 CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
 {
-    // Do values first and gradients in a second pass to make sure lowering is
-    // correct
-    for(const auto &bt : bts) {
-        if(bt.first.second != TVG::VALUE)
-            continue;
+    // Do values first and gradients in a second pass to make sure lowering
+    // is correct
 
-        auto src = bt.first.first;
+    for(const auto &bt : bts) {
+        auto src = bt.first;
+        if(src->value())
+            continue;  // This was a gradient
+
         auto dims = src->dims_.n(m_batch_size);
 
         auto fmt = tensorFormat(*src);
@@ -738,14 +739,16 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
         m_flips.push_back(s);
         t->copyFromLocked(*src);
         m_tensors[src] = t;
-        addPrePostOp(src, t, s, bt.second, bt.first.second);
+        addPrePostOp(src, t, s, bt.second);
     }
 
+    // Do gradients
     for(const auto &bt : bts) {
-        if(bt.first.second != TVG::GRADIENT)
+        auto src = bt.first;
+        auto value = src->value();
+        if(!value)
             continue;
 
-        auto src = bt.first.first;
         auto dims = src->dims_.n(m_batch_size);
 
         auto fmt = tensorFormat(*src);
@@ -754,9 +757,9 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
         auto g = std::make_shared<CudaTensor>(s, dims, fmt);
         m_flips.push_back(s);
 
-        auto t = lower_tensor(src);
+        auto t = lower_tensor(value);
         t->m_grad = g;
-        addPrePostOp(src, g, s, bt.second, bt.first.second);
+        addPrePostOp(src, g, s, bt.second);
     }
 }
 

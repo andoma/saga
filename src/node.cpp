@@ -71,9 +71,9 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
         1 +
         (inputdim_h + 2 * pad - (((filterdim_h - 1) * dilation) + 1)) / stride;
 
-    return std::make_shared<Tensor>(
-        x->data_type_, Dims({x->dims_[0], features, outputdim_h, outputdim_w}),
-        name);
+    return makeTensor(x->data_type_,
+                      Dims({x->dims_[0], features, outputdim_h, outputdim_w}),
+                      name);
 }
 
 static std::vector<std::shared_ptr<Node>>
@@ -171,9 +171,9 @@ pooling_y(const Node &n, const std::optional<const std::string> &name)
     const int outputdim_h = 1 + (inputdim_h + 2 * pad - size) / stride;
     const int outputdim_w = 1 + (inputdim_w + 2 * pad - size) / stride;
 
-    return std::make_shared<Tensor>(
-        x->data_type_, Dims({x->dims_[0], channels, outputdim_h, outputdim_w}),
-        name);
+    return makeTensor(x->data_type_,
+                      Dims({x->dims_[0], channels, outputdim_h, outputdim_w}),
+                      name);
 }
 
 //------------------------------------------------------------------------
@@ -210,7 +210,7 @@ reshape_y(const Node &n, const std::optional<const std::string> &name)
         }
     });
 
-    return std::make_shared<Tensor>(x->data_type_, shape, name);
+    return makeTensor(x->data_type_, shape, name);
 }
 
 //------------------------------------------------------------------------
@@ -234,7 +234,7 @@ concat_y(const Node &n, const std::optional<const std::string> &name)
         }
         i++;
     }
-    return std::make_shared<Tensor>(data_type, dims, name);
+    return makeTensor(data_type, dims, name);
 }
 
 //------------------------------------------------------------------------
@@ -249,7 +249,7 @@ window_y(const Node &n, const std::optional<const std::string> &name)
     auto shape = n.attributes_.get("shape", std::vector<int>{});
     if(shape.size() != o->dims_.size())
         return nullptr;
-    return std::make_shared<Tensor>(o->data_type_, shape, name);
+    return makeTensor(o->data_type_, shape, name);
 }
 
 //------------------------------------------------------------------------
@@ -263,8 +263,8 @@ fc_y(const Node &n, const std::optional<const std::string> &name)
     auto x = n.inputs_.get("x");
     const bool transW = n.attributes_.get("transW", false);
 
-    return std::make_shared<Tensor>(
-        w->data_type_, Dims({x->dims_[0], w->dims_[transW ? 0 : 1]}), name);
+    return makeTensor(w->data_type_,
+                      Dims({x->dims_[0], w->dims_[transW ? 0 : 1]}), name);
 }
 
 static std::vector<std::shared_ptr<Node>>
@@ -318,15 +318,14 @@ catclassifier_y(const Node &n, const std::optional<const std::string> &name)
     auto x = n.inputs_.get("x");
     if(x == nullptr)
         return nullptr;
-    return std::make_shared<Tensor>(Tensor::DataType::I32,
-                                    Dims({x->dims_[0], 1}), name);
+    return makeTensor(Tensor::DataType::I32, Dims({x->dims_[0], 1}), name);
 }
 
 static std::vector<std::shared_ptr<Node>>
 catclassifier_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 {
     n->outputs_["loss"] =
-        std::make_shared<Tensor>(Tensor::DataType::FLOAT, Dims({1, 1}), "loss");
+        makeTensor(Tensor::DataType::FLOAT, Dims({1, 1}), "loss");
     return {n};
 }
 
@@ -338,14 +337,14 @@ mse_y(const Node &n, const std::optional<const std::string> &name)
     auto o = n.inputs_.get("x");
     if(o == nullptr)
         return nullptr;
-    return std::make_shared<Tensor>(Tensor::DataType::FLOAT, o->dims_, name);
+    return makeTensor(Tensor::DataType::FLOAT, o->dims_, name);
 }
 
 static std::vector<std::shared_ptr<Node>>
 mse_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 {
     n->outputs_["loss"] =
-        std::make_shared<Tensor>(Tensor::DataType::FLOAT, Dims({1, 1}), "mse");
+        makeTensor(Tensor::DataType::FLOAT, Dims({1, 1}), "mse");
     return {n};
 }
 
@@ -357,7 +356,7 @@ passthru_y(const Node &n, const std::optional<const std::string> &name)
     auto o = n.inputs_.get("x");
     if(o == nullptr)
         return nullptr;
-    return std::make_shared<Tensor>(o->data_type_, o->dims_, name);
+    return makeTensor(o->data_type_, o->dims_, name);
 }
 
 //------------------------------------------------------------------------
@@ -373,7 +372,7 @@ sum_y(const Node &n, const std::optional<const std::string> &name)
     if(x0->dims_ != x1->dims_ || x0->data_type_ != x1->data_type_)
         return nullptr;
 
-    return std::make_shared<Tensor>(x0->data_type_, x0->dims_, name);
+    return makeTensor(x0->data_type_, x0->dims_, name);
 }
 
 //------------------------------------------------------------------------
@@ -389,7 +388,7 @@ convert_y(const Node &n, const std::optional<const std::string> &name)
     if(datatype == -1)
         return nullptr;
 
-    return std::make_shared<Tensor>((Tensor::DataType)datatype, x->dims_, name);
+    return makeTensor((Tensor::DataType)datatype, x->dims_, name);
 }
 
 //------------------------------------------------------------------------
@@ -405,8 +404,8 @@ jpegdecoder_y(const Node &n, const std::optional<const std::string> &name)
         return nullptr;
     const int channels = n.attributes_.get("channels", 3);
 
-    return std::make_shared<Tensor>(Tensor::DataType::U8,
-                                    Dims({1, channels, width, height}), name);
+    return makeTensor(Tensor::DataType::U8, Dims({1, channels, width, height}),
+                      name);
 }
 
 //------------------------------------------------------------------------
@@ -421,8 +420,8 @@ spatialtransform_y(const Node &n, const std::optional<const std::string> &name)
     const int height = n.attributes_.get("height", (int)o->dims_[2]);
     const int width = n.attributes_.get("width", (int)o->dims_[3]);
 
-    return std::make_shared<Tensor>(
-        o->data_type_, Dims({o->dims_[0], o->dims_[1], height, width}));
+    return makeTensor(o->data_type_,
+                      Dims({o->dims_[0], o->dims_[1], height, width}));
 }
 
 //------------------------------------------------------------------------
@@ -430,7 +429,7 @@ spatialtransform_y(const Node &n, const std::optional<const std::string> &name)
 static std::shared_ptr<Tensor>
 stats_y(const Node &n, const std::optional<const std::string> &name)
 {
-    return std::make_shared<Tensor>(Tensor::DataType::FLOAT, Dims{4}, "stats");
+    return makeTensor(Tensor::DataType::FLOAT, Dims{4}, "stats");
 }
 
 //------------------------------------------------------------------------

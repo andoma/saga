@@ -168,9 +168,6 @@ public:
 
     static const char *DataTypeStr(DataType dt);
 
-    Tensor(DataType data_type, const Dims &size,
-           const std::optional<const std::string> &name = std::nullopt);
-
     virtual ~Tensor(){};
 
     virtual std::string info() const;
@@ -178,10 +175,11 @@ public:
     // Make this const?
     virtual std::unique_ptr<TensorAccess> access() { return nullptr; }
 
-    virtual std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size)
-    {
-        return nullptr;
-    }
+    virtual std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size);
+
+    virtual std::shared_ptr<Tensor> grad(bool create = true);
+
+    virtual std::shared_ptr<Tensor> value() const;
 
     virtual void copyFrom(Tensor &t);
 
@@ -219,9 +217,17 @@ public:
     const std::optional<const std::string> name_;
     const DataType data_type_;
     const Dims dims_;
+
+protected:
+    Tensor(DataType data_type, const Dims &size,
+           const std::optional<const std::string> &name = std::nullopt);
 };
 
 std::shared_ptr<Tensor> makeCPUTensor(
+    Tensor::DataType data_type, const Dims &size,
+    const std::optional<const std::string> &name = std::nullopt);
+
+std::shared_ptr<Tensor> makeTensor(
     Tensor::DataType data_type, const Dims &size,
     const std::optional<const std::string> &name = std::nullopt);
 
@@ -386,8 +392,6 @@ std::shared_ptr<UI> make_statbar();
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-enum class TVG { VALUE, GRADIENT };
-
 enum class Phase { PRE = 0x1, POST = 0x2 };
 
 inline constexpr Phase
@@ -408,12 +412,11 @@ operator!(Phase a)
     return static_cast<bool>(!static_cast<int>(a));
 }
 
-typedef std::pair<std::shared_ptr<Tensor>, TVG> BatchedTensor;
+typedef std::unordered_map<std::shared_ptr<Tensor>, Phase> BatchedTensors;
 
-typedef std::unordered_map<BatchedTensor, Phase> BatchedTensors;
-
-typedef std::function<void(long batch, bool training,
-                           std::unordered_map<BatchedTensor, TensorAccess *>)>
+typedef std::function<void(
+    long batch, bool training,
+    std::unordered_map<std::shared_ptr<Tensor>, TensorAccess *>)>
     TensorBatchCallback;
 
 typedef std::function<bool(void)> StopCheck;
@@ -479,16 +482,3 @@ std::vector<std::shared_ptr<Context>> createContexts();
 int64_t Now();
 
 };  // namespace saga
-
-namespace std {
-
-template <>
-struct hash<saga::BatchedTensor> {
-    std::size_t operator()(const saga::BatchedTensor &k) const
-    {
-        return std::hash<std::shared_ptr<saga::Tensor>>()(k.first) ^
-               std::hash<saga::TVG>()(k.second);
-    }
-};
-
-}  // namespace std

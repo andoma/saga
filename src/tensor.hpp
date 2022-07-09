@@ -4,6 +4,32 @@
 
 namespace saga {
 
+class DifferentiableTensor
+  : public Tensor,
+    public std::enable_shared_from_this<DifferentiableTensor> {
+public:
+    DifferentiableTensor(
+        DataType data_type, const Dims &size,
+        const std::optional<const std::string> &name = std::nullopt)
+      : Tensor(data_type, size, name)
+    {
+    }
+
+    virtual std::shared_ptr<Tensor> grad(bool create) override
+    {
+        return m_gradient;
+    }
+
+    virtual std::shared_ptr<Tensor> value() const override
+    {
+        return m_value.lock();
+    }
+
+    std::shared_ptr<DifferentiableTensor> m_gradient;
+
+    std::weak_ptr<DifferentiableTensor> m_value;
+};
+
 class TensorStorage {
 public:
     typedef double(getfn_t)(const void *base, size_t offset);

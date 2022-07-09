@@ -542,10 +542,10 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     double loss_sum = 0;
     int correct = 0;
 
-    const auto LABELS = std::make_pair(n->outputs_["y"], TVG::GRADIENT);
-    const auto LOSS = std::make_pair(n->outputs_["loss"], TVG::VALUE);
-    const auto INPUT = std::make_pair(x, TVG::VALUE);
-    const auto OUTPUT = std::make_pair(n->outputs_["y"], TVG::VALUE);
+    const auto LABELS = n->outputs_["y"]->grad();
+    const auto LOSS = n->outputs_["loss"];
+    const auto INPUT = x;
+    const auto OUTPUT = n->outputs_["y"];
 
     BatchedTensors bt{{LOSS, Phase::POST},
                       {LABELS, Phase::PRE},
@@ -576,8 +576,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         exit(0);
     }
 
-    auto pre_ops = [&](long batch, bool training,
-                       std::unordered_map<BatchedTensor, TensorAccess *> tas) {
+    auto pre_ops = [&](long batch, bool training, auto tas) {
         load_inputs(*tas[INPUT], batch);
 
         if(training) {
@@ -589,8 +588,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
-    auto post_ops = [&](long batch, bool training,
-                        std::unordered_map<BatchedTensor, TensorAccess *> tas) {
+    auto post_ops = [&](long batch, bool training, auto tas) {
         if(training) {
             auto &loss = *tas[LOSS];
             for(int i = 0; i < batch_size; i++) {

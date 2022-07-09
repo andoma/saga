@@ -388,6 +388,24 @@ Tensor::info() const
     return ss.str();
 }
 
+std::shared_ptr<Tensor>
+Tensor::slice(const Dims &offset, const Dims &size)
+{
+    return nullptr;
+}
+
+std::shared_ptr<Tensor>
+Tensor::grad(bool create)
+{
+    return nullptr;
+}
+
+std::shared_ptr<Tensor>
+Tensor::value() const
+{
+    return nullptr;
+}
+
 static void
 print1dTensor(const char *prefix, Tensor &t, TensorAccess &ta)
 {
@@ -983,6 +1001,37 @@ Tensor::namePostfix(const std::string &postfix) const
     return name_ ? std::make_optional(*name_ + "." + postfix) : std::nullopt;
 }
 
+//------------------------------------------------------------------------
+
+class EmptyTensor : public DifferentiableTensor {
+public:
+    EmptyTensor(DataType data_type, const Dims &size,
+                const std::optional<const std::string> &name = std::nullopt)
+      : DifferentiableTensor(data_type, size, name)
+    {
+    }
+
+    virtual std::shared_ptr<Tensor> grad(bool create) override
+    {
+        if(m_gradient || !create)
+            return m_gradient;
+
+        m_gradient = std::make_shared<DifferentiableTensor>(
+            data_type_, dims_, namePostfix("grad"));
+        m_gradient->m_value = shared_from_this();
+        return m_gradient;
+    }
+};
+
+std::shared_ptr<Tensor>
+makeTensor(Tensor::DataType data_type, const Dims &size,
+           const std::optional<const std::string> &name)
+{
+    return std::make_shared<EmptyTensor>(data_type, size, name);
+}
+
+//------------------------------------------------------------------------
+
 class GenTensorAccess : public TensorAccess {
 public:
     GenTensorAccess(size_t rank, double mean, double stddev)
@@ -1202,11 +1251,11 @@ computeCPUStrides(const Dims &dims)
     return strides;
 }
 
-class CPUTensor : public Tensor {
+class CPUTensor : public DifferentiableTensor {
 public:
     CPUTensor(DataType data_type, const Dims &size,
               const std::optional<std::string> &name)
-      : Tensor(data_type, size, name)
+      : DifferentiableTensor(data_type, size, name)
       , strides_(computeCPUStrides(size))
       , storage_(std::make_shared<HostTensorStorage>(data_type, size, strides_))
       , offset_(0)
@@ -1215,7 +1264,7 @@ public:
 
     CPUTensor(DataType data_type, const Dims &size, const Dims &strides,
               const std::optional<std::string> &name)
-      : Tensor(data_type, size, name)
+      : DifferentiableTensor(data_type, size, name)
       , strides_(strides)
       , storage_(std::make_shared<HostTensorStorage>(data_type, size, strides_))
       , offset_(0)
@@ -1225,7 +1274,7 @@ public:
     CPUTensor(const Dims &size, const Dims &strides,
               std::shared_ptr<TensorStorage> storage, int64_t offset,
               const std::optional<std::string> &name)
-      : Tensor(storage->m_data_type, size, name)
+      : DifferentiableTensor(storage->m_data_type, size, name)
       , strides_(strides)
       , storage_(storage)
       , offset_(offset)

@@ -318,8 +318,8 @@ make_tensor(const onnx::ValueInfoProto &vip)
         }
         dims.push_back(d);
     }
-    return make_shared<Tensor>(DataType_map(tp.tensor_type().elem_type()), dims,
-                               vip.name());
+    return makeTensor(DataType_map(tp.tensor_type().elem_type()), dims,
+                      vip.name());
 }
 
 static shared_ptr<Tensor>

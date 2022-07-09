@@ -110,7 +110,6 @@ struct CudaBatchAccessOp {
     std::shared_ptr<Tensor> m_high;
     std::shared_ptr<CudaTensor> m_low;
     std::shared_ptr<CudaTensorStorageDoubleBuffered> m_storage;
-    TVG m_tvg;
 };
 
 typedef std::vector<CudaBatchAccessOp> CudaBatchAccessOps;
@@ -238,7 +237,7 @@ public:
     void addPrePostOp(std::shared_ptr<Tensor> &high,
                       std::shared_ptr<CudaTensor> &low,
                       std::shared_ptr<CudaTensorStorageDoubleBuffered> &s,
-                      Phase phase, TVG tvg);
+                      Phase phase);
 
     void flipDoubleBufferedTensors();
 

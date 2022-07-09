@@ -122,8 +122,8 @@ mnist_main(int argc, char **argv)
     int batch_size = 0;
     bool test = false;
 
-    auto input = std::make_shared<Tensor>(
-        Tensor::DataType::U8, Dims({DimParam::BATCH_SIZE, 1, rows, cols}));
+    auto input = makeTensor(Tensor::DataType::U8,
+                            Dims({DimParam::BATCH_SIZE, 1, rows, cols}));
 
     test_classifier(
         argc, argv, input, 255, 10, train_images, test_images,

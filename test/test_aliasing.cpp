@@ -33,7 +33,7 @@ aliasing_main(int argc, char **argv)
 
     Graph g;
 
-    auto x = std::make_shared<Tensor>(dt, Dims({1, 1, 4, 4}), "input");
+    auto x = makeTensor(dt, Dims({1, 1, 4, 4}), "input");
 
     auto w0 = g.addNode("window", {{"x", x}},
                         {{"shape", std::vector<int>{1, 1, 2, 4}},

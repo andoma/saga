@@ -105,8 +105,8 @@ cifar_main(int argc, char **argv)
     int batch_size = 0;
     bool test = false;
 
-    auto input = std::make_shared<Tensor>(Tensor::DataType::U8,
-                                          Dims({1, 3, 32, 32}), "input");
+    auto input =
+        makeTensor(Tensor::DataType::U8, Dims({1, 3, 32, 32}), "input");
 
     std::random_device rd;
     std::mt19937 rnd(rd());
