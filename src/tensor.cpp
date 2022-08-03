@@ -129,7 +129,7 @@ Dims::transform(std::function<Dim(const DimParam &dp, size_t i)> fn) const
 }
 
 Dims
-Dims::n(int64_t N) const
+Dims::batch(int64_t N) const
 {
     return transform([&](auto dp, size_t i) {
         return dp == DimParam::BATCH_SIZE ? (Dim)N : dp;

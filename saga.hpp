@@ -75,7 +75,7 @@ public:
     Dims(const std::vector<Dim> &v) : std::vector<Dim>(v) {}
     Dims(const std::vector<int> &v);
 
-    Dims n(int64_t v) const;
+    Dims batch(int64_t v) const;
     std::vector<int64_t> i64() const;
     std::vector<int32_t> i32() const;
     size_t elements(size_t from_rank = 0) const;

@@ -201,7 +201,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t minimum_rank)
         while(dims.size() < minimum_rank) dims.insert(dims.begin(), 1);
     }
 
-    dims = dims.n(m_batch_size);
+    dims = dims.batch(m_batch_size);
 
     auto t = std::make_shared<CudaTensor>(
         src->data_type_, dims, tensorFormat(src->data_type_, dims.size()),
@@ -243,7 +243,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
     }
 
     auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                          src->dims_.n(m_batch_size),
+                                          src->dims_.batch(m_batch_size),
                                           tensor_format, m_ctx, src->name_);
 
     t->copyFromLocked(*src, 0);
@@ -763,7 +763,7 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
         if(src->value())
             continue;  // This was a gradient
 
-        auto dims = src->dims_.n(m_batch_size);
+        auto dims = src->dims_.batch(m_batch_size);
 
         auto fmt = tensorFormat(*src);
         auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(
@@ -783,7 +783,7 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
         if(!value)
             continue;
 
-        auto dims = src->dims_.n(m_batch_size);
+        auto dims = src->dims_.batch(m_batch_size);
 
         auto fmt = tensorFormat(*src);
         auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(

@@ -2608,12 +2608,12 @@ reshape_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
     auto y = n->outputs_.get("y");
 
     auto yl = std::make_shared<CudaTensor>(
-        x->m_storage, y->dims_.n(p.m_batch_size), CUDNN_TENSOR_NCHW,
+        x->m_storage, y->dims_.batch(p.m_batch_size), CUDNN_TENSOR_NCHW,
         x->namePostfix("reshape"));
 
     p.m_tensors[y] = yl;
     yl->m_grad = std::make_shared<CudaTensor>(
-        dx->m_storage, y->dims_.n(p.m_batch_size), CUDNN_TENSOR_NCHW,
+        dx->m_storage, y->dims_.batch(p.m_batch_size), CUDNN_TENSOR_NCHW,
         x->namePostfix("reshape"));
     return {};
 }
@@ -2647,13 +2647,15 @@ window_transform_node(CudaProgram &p, const Node &n)
 
     Dims offset(n.attributes_.get("offset", std::vector<int>{}));
 
-    auto yl = std::make_shared<CudaTensor>(
-        x, y->dims_.n(p.m_batch_size), offset.i64(), y->namePostfix("alias"));
+    auto yl =
+        std::make_shared<CudaTensor>(x, y->dims_.batch(p.m_batch_size),
+                                     offset.i64(), y->namePostfix("alias"));
 
     p.m_tensors[y] = yl;
 
-    yl->m_grad = std::make_shared<CudaTensor>(
-        dx, y->dims_.n(p.m_batch_size), offset.i64(), y->namePostfix("alias"));
+    yl->m_grad =
+        std::make_shared<CudaTensor>(dx, y->dims_.batch(p.m_batch_size),
+                                     offset.i64(), y->namePostfix("alias"));
 }
 
 static Nodes
@@ -2686,13 +2688,13 @@ concat_transform_node(CudaProgram &p, const Node &n)
     auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
 
     for(const auto &xh : n.inputs_.getv("x")) {
-        auto x = std::make_shared<CudaTensor>(y, xh->dims_.n(p.m_batch_size),
-                                              element_offset,
-                                              xh->namePostfix("alias"));
+        auto x = std::make_shared<CudaTensor>(
+            y, xh->dims_.batch(p.m_batch_size), element_offset,
+            xh->namePostfix("alias"));
         x->copyFromLocked(*xh);
         p.m_tensors[xh] = x;
         x->m_grad = std::make_shared<CudaTensor>(
-            dy, xh->dims_.n(p.m_batch_size), element_offset,
+            dy, xh->dims_.batch(p.m_batch_size), element_offset,
             xh->namePostfix("alias"));
         element_offset[axis] += xh->dims_[axis];
     }
