@@ -319,7 +319,7 @@ CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
         const char *err = op->exec(*this, batch);
         if(err) {
             fprintf(stderr, "\nOp %s failed: %s\n", op->name().c_str(), err);
-            op->dump(stderr);
+            op->dump(stderr, true);
             return false;
         }
 
