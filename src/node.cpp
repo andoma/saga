@@ -48,11 +48,12 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
     const int stride = n.attributes_.get("stride", 1);
     const int pad = n.attributes_.get("pad", 0);
     const int dilation = n.attributes_.get("dilation", 1);
+    const int transpose = n.attributes_.get("transpose", false);
 
     auto w = n.inputs_.get("w");
     if(w == nullptr)
         return nullptr;
-    const int features = w->dims_[0];
+    const int features = w->dims_[transpose ? 1 : 0];
     const int filterdim_h = w->dims_[2];
     const int filterdim_w = w->dims_[3];
 
@@ -63,16 +64,28 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
     const int inputdim_h = x->dims_[2];
     const int inputdim_w = x->dims_[3];
 
-    const int outputdim_w =
-        1 +
-        (inputdim_w + 2 * pad - (((filterdim_w - 1) * dilation) + 1)) / stride;
+    int odw;
+    int odh;
 
-    const int outputdim_h =
-        1 +
-        (inputdim_h + 2 * pad - (((filterdim_h - 1) * dilation) + 1)) / stride;
+    if(transpose) {
+        const int opad = n.attributes_.get("outputpad", 0);
 
-    return makeTensor(x->data_type_,
-                      Dims({x->dims_[0], features, outputdim_h, outputdim_w}),
+        odw = stride * (inputdim_w - 1) + opad +
+              ((filterdim_w - 1) * dilation + 1) - 2 * pad;
+
+        odh = stride * (inputdim_h - 1) + opad +
+              ((filterdim_h - 1) * dilation + 1) - 2 * pad;
+    } else {
+        odw =
+            1 + (inputdim_w + 2 * pad - (((filterdim_w - 1) * dilation) + 1)) /
+                    stride;
+
+        odh =
+            1 + (inputdim_h + 2 * pad - (((filterdim_h - 1) * dilation) + 1)) /
+                    stride;
+    }
+
+    return makeTensor(x->data_type_, Dims({x->dims_[0], features, odh, odw}),
                       name);
 }
 
@@ -89,17 +102,23 @@ conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
     if(!w) {
         const int activations = n->attributes_.get("activations", 1);
         const int size = n->attributes_.get("size", 1);
+        const int transpose = n->attributes_.get("transpose", false);
+
+        const int in_features = transpose ? activations : (int)x->dims_[1];
+        const int out_features = transpose ? (int)x->dims_[1] : activations;
 
         n->inputs_["w"] = w =
-            Tensor::find(x->data_type_, {activations, x->dims_[1], size, size},
-                         0, sqrt(2.0 / (x->dims_[1] * size * size)),
+            Tensor::find(x->data_type_, {out_features, in_features, size, size},
+                         0, sqrt(2.0 / (in_features * size * size)),
                          named_tensors, node_tensor_name(n->name_, "w"));
     }
 
     if(!b && n->attributes_.get("bias", false)) {
-        n->inputs_["b"] =
-            Tensor::find(x->data_type_, {1, w->dims_[0]}, 0, 0, named_tensors,
-                         node_tensor_name(n->name_, "b"));
+        const int transpose = n->attributes_.get("transpose", false);
+
+        n->inputs_["b"] = Tensor::find(
+            x->data_type_, {1, w->dims_[!!transpose]}, 0, 0, named_tensors,
+            node_tensor_name(n->name_, transpose ? "b" : "bt"));
     }
 
     return {n};

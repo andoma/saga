@@ -449,26 +449,32 @@ struct CudnnConvolutionFwd : public CudnnOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudnnConvolutionDesc> desc_;
     const std::shared_ptr<CudaTensor> x_, w_, y_;
+    const float y_beta_;
 
     CudnnConvolutionFwd(std::shared_ptr<CudaContext> ctx,
                         std::shared_ptr<CudnnConvolutionDesc> desc,
                         std::shared_ptr<CudaTensor> x,
                         std::shared_ptr<CudaTensor> w,
-                        std::shared_ptr<CudaTensor> y)
-      : CudnnOperation("convfwd"), ctx_(ctx), desc_(desc), x_(x), w_(w), y_(y)
+                        std::shared_ptr<CudaTensor> y, float y_beta)
+      : CudnnOperation("convfwd")
+      , ctx_(ctx)
+      , desc_(desc)
+      , x_(x)
+      , w_(w)
+      , y_(y)
+      , y_beta_(y_beta)
     {
     }
 
     cudnnStatus_t exec(CudaProgram &p)
     {
         float alpha = 1.0f;
-        float beta = 0.0f;
 
         return cudnnConvolutionForward(
             ctx_->m_cudnn, &alpha, x_->desc(), x_->deviceMem(),
             desc_->filter_desc_, w_->deviceMem(), desc_->conv_desc_,
             desc_->conv_fwd_algo_, ctx_->m_workspace.ptr(),
-            ctx_->m_workspace.size(), &beta, y_->desc(), y_->deviceMem());
+            ctx_->m_workspace.size(), &y_beta_, y_->desc(), y_->deviceMem());
     }
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
@@ -653,40 +659,87 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
 
     const int pad = n.attributes_.get("pad", 0);
     const int stride = n.attributes_.get("stride", 1);
+    const bool transpose = n.attributes_.get("transpose", false);
 
-    const char *err = desc->setup(p, *x, *w, *y, pad, stride, training);
-    if(err)
-        return err;
+    if(!transpose) {
+        // Non-transposed (Standard convolution)
 
-    if(!training) {
-        p.infer(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y));
+        const char *err = desc->setup(p, *x, *w, *y, pad, stride, training);
+        if(err)
+            return err;
+
+        if(!training) {
+            p.infer(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w,
+                                                          y, 0));
+            if(b)
+                p.infer(std::make_shared<CudnnAddTensor>(b, y));
+            return NULL;
+        }
+
+        p.fwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y, 0));
         if(b)
-            p.infer(std::make_shared<CudnnAddTensor>(b, y));
-        return NULL;
-    }
+            p.fwd(std::make_shared<CudnnAddTensor>(b, y));
 
-    p.fwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y));
-    if(b)
-        p.fwd(std::make_shared<CudnnAddTensor>(b, y));
+        auto dy = y->makeSharedGrad();
 
-    auto dy = y->makeSharedGrad();
+        if(b) {
+            auto db = b->makePrivateGrad();
+            p.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
+            p.upd(std::make_shared<CudnnAdam>(p, b, db));
+        }
 
-    if(b) {
-        auto db = b->makePrivateGrad();
-        p.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
-        p.upd(std::make_shared<CudnnAdam>(p, b, db));
-    }
+        auto dw = w->makePrivateGrad();
+        p.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, x, dy,
+                                                          dw));
+        p.upd(std::make_shared<CudnnAdam>(p, w, dw));
 
-    auto dw = w->makePrivateGrad();
-    p.bwd(
-        std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, x, dy, dw));
-    p.upd(std::make_shared<CudnnAdam>(p, w, dw));
+        auto dx = x->makeSharedGrad();
+        if(dx) {
+            const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
+            p.bwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w,
+                                                            dy, dx, dx_beta));
+        }
 
-    auto dx = x->makeSharedGrad();
-    if(dx) {
-        const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
-        p.bwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w, dy,
+    } else {
+        // Transposed ("up-convolution" / "fractionally strided convolution")
+
+        const char *err = desc->setup(p, *y, *w, *x, pad, stride, true);
+        if(err)
+            return err;
+
+        if(!training) {
+            p.infer(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w,
+                                                              x, y, 0.0f));
+            if(b)
+                p.infer(std::make_shared<CudnnAddTensor>(b, y));
+            return NULL;
+        }
+
+        p.fwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w, x, y,
+                                                        0.0f));
+        if(b)
+            p.fwd(std::make_shared<CudnnAddTensor>(b, y));
+
+        auto dy = y->makeSharedGrad();
+        if(b) {
+            auto db = b->makePrivateGrad();
+            p.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
+            p.upd(std::make_shared<CudnnAdam>(p, b, db));
+        }
+
+        // Update weights
+        auto dw = w->makePrivateGrad();
+        p.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, dy, x,
+                                                          dw));
+        p.upd(std::make_shared<CudnnAdam>(p, w, dw));
+
+        // Backprop
+        auto dx = x->makeSharedGrad();
+        if(dx) {
+            const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
+            p.bwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, dy, w,
                                                         dx, dx_beta));
+        }
     }
     return NULL;
 }
