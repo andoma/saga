@@ -76,6 +76,7 @@ SRCS-prog += \
 	test/minimal.cpp \
 	test/test_classifier.cpp \
 	test/test_ops.cpp \
+	test/test_conv.cpp \
 	test/test_jpeg_decoder.cpp \
 	test/test_resnode.cpp \
 	test/test_aliasing.cpp \

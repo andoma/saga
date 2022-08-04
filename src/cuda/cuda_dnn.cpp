@@ -1611,7 +1611,12 @@ struct CudaMSEBwd : public CudaOperation {
     const char *exec(CudaProgram &p, long batch)
     {
         const int n = x_->dims_[0];
-        const int c = x_->dims_[1];
+
+        int c = 1;
+        for(size_t i = 1; i < x_->dims_.size(); i++) {
+            c *= x_->dims_[i];
+        }
+
         const float scale = 1.0f / n;
 
         switch(x_->m_type) {
