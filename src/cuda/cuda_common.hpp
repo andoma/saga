@@ -211,11 +211,11 @@ public:
     std::shared_ptr<CudaTensor> resolveTensorGradient_locked(
         std::shared_ptr<Tensor> src);
 
-    cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type, int rank);
+    cudnnTensorFormat_t tensorFormat(Tensor::DataType data_type);
 
     cudnnTensorFormat_t tensorFormat(const Tensor &t)
     {
-        return tensorFormat(t.data_type_, t.dims_.size());
+        return tensorFormat(t.data_type_);
     }
 
     std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,

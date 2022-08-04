@@ -157,11 +157,8 @@ CudaProgram::resolveTensorGradient(std::shared_ptr<Tensor> src)
 }
 
 cudnnTensorFormat_t
-CudaProgram::tensorFormat(Tensor::DataType data_type, int rank)
+CudaProgram::tensorFormat(Tensor::DataType data_type)
 {
-    if(rank < 4)
-        return CUDNN_TENSOR_NCHW;
-
     switch(m_tensor_layout) {
     case TensorLayout::Auto:
 
@@ -204,8 +201,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t minimum_rank)
     dims = dims.batch(m_batch_size);
 
     auto t = std::make_shared<CudaTensor>(
-        src->data_type_, dims, tensorFormat(src->data_type_, dims.size()),
-        m_ctx, src->name_);
+        src->data_type_, dims, tensorFormat(*src), m_ctx, src->name_);
 
     t->copyFromLocked(*src, 0);
     m_tensors[src] = t;

@@ -2656,18 +2656,21 @@ REGISTER_CUDA_TRANSFORM(120, CUDA_TRANSFORM_ALL, spatialtransform_transform);
 static std::vector<std::shared_ptr<Node>>
 reshape_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 {
-    auto x = p.lower_tensor(n->inputs_.get("x"), CUDNN_TENSOR_NCHW);
+    auto xh = n->inputs_.get("x");
+    auto fmt = p.tensorFormat(xh->data_type_);
+
+    auto x = p.lower_tensor(xh, fmt);
     auto dx = x->makeSharedGrad();
     auto y = n->outputs_.get("y");
 
-    auto yl = std::make_shared<CudaTensor>(
-        x->m_storage, y->dims_.batch(p.m_batch_size), CUDNN_TENSOR_NCHW,
-        x->namePostfix("reshape"));
+    auto yl = std::make_shared<CudaTensor>(x->m_storage,
+                                           y->dims_.batch(p.m_batch_size), fmt,
+                                           x->namePostfix("reshape"));
 
     p.m_tensors[y] = yl;
-    yl->m_grad = std::make_shared<CudaTensor>(
-        dx->m_storage, y->dims_.batch(p.m_batch_size), CUDNN_TENSOR_NCHW,
-        x->namePostfix("reshape"));
+    yl->m_grad = std::make_shared<CudaTensor>(dx->m_storage,
+                                              y->dims_.batch(p.m_batch_size),
+                                              fmt, x->namePostfix("reshape"));
     return {};
 }
 
