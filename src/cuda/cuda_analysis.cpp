@@ -353,6 +353,7 @@ struct LiveAnalysis {
                                 if(((1 << k) & def) && !((1 << k) & out)) {
                                     int id = j * 32 + k;
                                     auto s = m_storage[id];
+                                    bitclr(m_lns[i]->m_def, id);
                                     if(!m_ops[i]->killOutput(s)) {
                                         fprintf(
                                             stderr,
