@@ -601,39 +601,34 @@ CudaTensor::stats()
     return Stats({.min = min, .max = max, .mean = mean, .stddev = sqrtf(var)});
 }
 
-struct CollapseDim {
-    int size;
-    int stride;
-    int index;
-};
-
-static std::vector<CollapseDim>
-collapse_dimensions_from_desc(cudnnTensorDescriptor_t desc)
+std::vector<std::pair<int64_t, int64_t>>
+CudaTensor::collapse_dims(void) const
 {
+    using D = std::pair<int64_t, int64_t>;
     const int max_rank = 8;
     cudnnDataType_t data_type;
     int rank;
     int dimsA[max_rank];
     int stridesA[max_rank];
 
-    chkCUDNN(cudnnGetTensorNdDescriptor(desc, max_rank, &data_type, &rank,
+    chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type, &rank,
                                         dimsA, stridesA));
-    std::vector<CollapseDim> dv;
+
+    std::vector<D> dv;
     for(int i = 0; i < rank; i++) {
-        dv.push_back({dimsA[i], stridesA[i], i});
+        dv.push_back({dimsA[i], stridesA[i]});
     }
 
-    std::sort(dv.begin(), dv.end(),
-              [](const CollapseDim &a, const CollapseDim &b) {
-                  if(a.stride == b.stride)
-                      return a.size > b.size;
-                  return a.stride > b.stride;
-              });
+    std::sort(dv.begin(), dv.end(), [](const D &a, const D &b) {
+        if(a.second == b.second)
+            return a.first > b.first;
+        return a.second > b.second;
+    });
 
     for(int i = rank - 1; i > 0; i--) {
-        if(dv[i].size * dv[i].stride == dv[i - 1].stride) {
-            dv[i - 1].size *= dv[i].size;
-            dv[i - 1].stride = dv[i].stride;
+        if(dv[i].first * dv[i].second == dv[i - 1].second) {
+            dv[i - 1].first *= dv[i].first;
+            dv[i - 1].second = dv[i].second;
             dv.erase(dv.begin() + i);
         }
     }
@@ -646,21 +641,20 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
     auto s = m_storage;
     if(s == nullptr)
         return;
-    if(data_type_ == Tensor::DataType::HALF && s->m_nonfinite_is_valid)
+
+    if(s->m_nonfinite_is_valid)
         return;
 
-    auto dv = collapse_dimensions_from_desc(m_desc);
+    auto dv = collapse_dims();
 
     if(dv.size() == 1) {
         switch(data_type_) {
         case Tensor::DataType::FLOAT:
-            find_non_finite_float_1d(dv[0].size, (const float *)deviceMem(),
+            find_non_finite_float_1d(dv[0].first, (const float *)deviceMem(),
                                      ptr, true, s->m_ctx->m_stream);
             break;
         case Tensor::DataType::HALF:
-            if(s->m_nonfinite_is_valid)
-                break;
-            find_non_finite_half_1d(dv[0].size, (const __half *)deviceMem(),
+            find_non_finite_half_1d(dv[0].first, (const __half *)deviceMem(),
                                     ptr, true, s->m_ctx->m_stream);
             break;
         default:
@@ -669,14 +663,12 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
     } else if(dv.size() == 2) {
         switch(data_type_) {
         case Tensor::DataType::FLOAT:
-            find_non_finite_float_2d(dv[1].size, dv[0].size, dv[0].stride,
+            find_non_finite_float_2d(dv[1].first, dv[0].first, dv[0].second,
                                      (const float *)deviceMem(), ptr, true,
                                      s->m_ctx->m_stream);
             break;
         case Tensor::DataType::HALF:
-            if(s->m_nonfinite_is_valid)
-                break;
-            find_non_finite_half_2d(dv[1].size, dv[0].size, dv[0].stride,
+            find_non_finite_half_2d(dv[1].first, dv[0].first, dv[0].second,
                                     (const __half *)deviceMem(), ptr, true,
                                     s->m_ctx->m_stream);
             break;
@@ -699,15 +691,15 @@ CudaTensor::invalidate(void)
     if(s == nullptr)
         return;
 
-    auto dv = collapse_dimensions_from_desc(m_desc);
+    auto dv = collapse_dims();
 
     if(dv.size() == 1) {
-        cudaMemsetAsync(deviceMem(), 0xff, dv[0].size * s->m_element_size);
+        cudaMemsetAsync(deviceMem(), 0xff, dv[0].first * s->m_element_size);
     } else if(dv.size() == 2) {
         char *p = (char *)deviceMem();
-        for(int i = 0; i < dv[0].size; i++) {
-            cudaMemsetAsync(p, 0xff, dv[1].size * s->m_element_size);
-            p += dv[0].stride * s->m_element_size;
+        for(int i = 0; i < dv[0].first; i++) {
+            cudaMemsetAsync(p, 0xff, dv[1].first * s->m_element_size);
+            p += dv[0].second * s->m_element_size;
         }
     } else {
         fprintf(stderr,

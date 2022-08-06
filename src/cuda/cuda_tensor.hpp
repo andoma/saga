@@ -146,6 +146,8 @@ public:
 
     void invalidate(void);
 
+    std::vector<std::pair<int64_t, int64_t>> collapse_dims(void) const;
+
     const cudnnDataType_t m_type;
     int64_t m_offset;
     std::shared_ptr<CudaTensorStorage> m_storage;
