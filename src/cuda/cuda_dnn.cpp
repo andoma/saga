@@ -483,7 +483,10 @@ struct CudnnConvolutionFwd : public CudnnOperation {
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
     {
-        return {x_, w_};
+        auto r = std::vector{x_, w_};
+        if(y_beta_)
+            r.push_back(y_);
+        return r;
     }
 
     std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
@@ -493,7 +496,12 @@ struct CudnnConvolutionFwd : public CudnnOperation {
 
     std::string info() const override
     {
-        return convfwdalgostr(desc_->conv_fwd_algo_);
+        std::stringstream ss;
+        ss << convfwdalgostr(desc_->conv_fwd_algo_);
+        if(y_beta_) {
+            ss << ", beta=" << y_beta_;
+        }
+        return ss.str();
     }
 };
 
