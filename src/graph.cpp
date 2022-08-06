@@ -159,7 +159,6 @@ Graph::saveTensors(const char *path, Program *p)
         if(p != NULL)
             t = p->resolveTensor(t);
 
-        printf("Saving tensor %s : %s\n", it.first.c_str(), t->info().c_str());
         snprintf(filepath, sizeof(filepath), "%s/%s", path, it.first.c_str());
         if(!t->save(filepath))
             return false;
