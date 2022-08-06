@@ -277,9 +277,11 @@ CudaProgram::detect_anomaly(
 
             for(const auto &t : op.getInputs()) {
                 t->print_anomaly("I");
+                t->printStats("I");
             }
             for(const auto &t : op.getOutputs()) {
                 t->print_anomaly("O");
+                t->printStats("O");
             }
 
             printf("Pre invalidate: ");
