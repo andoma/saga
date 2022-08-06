@@ -267,6 +267,65 @@ Graph::addResNetBottleNeck(std::shared_ptr<Tensor> input,
 }
 
 std::shared_ptr<Node>
+Graph::addResNetBottleNeck_transposed(std::shared_ptr<Tensor> input,
+                                      int squeeze_activations,
+                                      int output_activations, bool upsample,
+                                      const std::string &name)
+{
+    std::shared_ptr<Node> a;
+    std::shared_ptr<Tensor> x1;
+
+    a = addNode("conv", {{"x", input}},
+                {{"size", 1},
+                 {"activations", squeeze_activations},
+                 {"stride", 1},
+                 {"pad", 0},
+                 {"transpose", true}},
+                name + "-conv-3");
+    a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-3t");
+    a = addNode("relu", {{"x", a->y()}}, {});
+
+    a = addNode("conv", {{"x", a->y()}},
+                {{"size", 3},
+                 {"activations", squeeze_activations},
+                 {"stride", upsample ? 2 : 1},
+                 {"pad", 1},
+                 {"outputpad", upsample ? 1 : 0},
+                 {"transpose", true}},
+                name + "-conv-2");
+    a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-2t");
+    a = addNode("relu", {{"x", a->y()}}, {});
+
+    a = addNode("conv", {{"x", a->y()}},
+                {{"size", 1},
+                 {"activations", output_activations},
+                 {"stride", 1},
+                 {"pad", 0},
+                 {"transpose", true}},
+                name + "-conv-1");
+    a = addNode("batchnorm", {{"x", a->y()}}, {}, name + "-bn-1t");
+
+    bool need_projection = a->y()->dims_ != input->dims_;
+
+    if(need_projection) {
+        auto c = addNode("conv", {{"x", input}},
+                         {{"size", 1},
+                          {"activations", output_activations},
+                          {"stride", upsample ? 2 : 1},
+                          {"outputpad", upsample ? 1 : 0},
+                          {"transpose", true}},
+                         name + "-conv-p");
+        c = addNode("batchnorm", {{"x", c->y()}}, {}, name + "-bn-pt");
+        x1 = c->y();
+    } else {
+        x1 = input;
+    }
+
+    auto s = addNode("sum", {{"x0", a->y()}, {"x1", x1}}, {});
+    return addNode("relu", {{"x", s->y()}}, {});
+}
+
+std::shared_ptr<Node>
 Graph::addResNet(std::shared_ptr<Tensor> input, int output_activations,
                  bool downsample, const std::string &name)
 {

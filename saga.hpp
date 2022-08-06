@@ -371,6 +371,10 @@ public:
                                               bool downsample,
                                               const std::string &name);
 
+    std::shared_ptr<Node> addResNetBottleNeck_transposed(
+        std::shared_ptr<Tensor> input, int squeeze_activations,
+        int output_activations, bool upsample, const std::string &name);
+
     std::shared_ptr<Node> addResNet(std::shared_ptr<Tensor> input,
                                     int output_activations, bool downsample,
                                     const std::string &name);
