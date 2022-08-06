@@ -317,7 +317,7 @@ struct CudnnConvolutionDesc {
     }
 
     const char *setup(CudaProgram &p, CudaTensor &x, CudaTensor &w,
-                      CudaTensor &y, int pad, int stride, bool bwd)
+                      CudaTensor &y, int pad, int stride, int group, bool bwd)
     {
         auto algo_key = cudnn_conv_hash_key(x, w, y, pad, stride);
 
@@ -329,6 +329,10 @@ struct CudnnConvolutionDesc {
             return cudnnGetErrorString(s);
 
         s = cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH);
+        if(s)
+            return cudnnGetErrorString(s);
+
+        s = cudnnSetConvolutionGroupCount(conv_desc_, group);
         if(s)
             return cudnnGetErrorString(s);
 
@@ -660,11 +664,12 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
     const int pad = n.attributes_.get("pad", 0);
     const int stride = n.attributes_.get("stride", 1);
     const bool transpose = n.attributes_.get("transpose", false);
-
+    const int group = n.attributes_.get("group", 1);
     if(!transpose) {
         // Non-transposed (Standard convolution)
 
-        const char *err = desc->setup(p, *x, *w, *y, pad, stride, training);
+        const char *err =
+            desc->setup(p, *x, *w, *y, pad, stride, group, training);
         if(err)
             return err;
 
@@ -703,7 +708,7 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
     } else {
         // Transposed ("up-convolution" / "fractionally strided convolution")
 
-        const char *err = desc->setup(p, *y, *w, *x, pad, stride, true);
+        const char *err = desc->setup(p, *y, *w, *x, pad, stride, group, true);
         if(err)
             return err;
 

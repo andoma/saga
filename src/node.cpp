@@ -48,12 +48,13 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
     const int stride = n.attributes_.get("stride", 1);
     const int pad = n.attributes_.get("pad", 0);
     const int dilation = n.attributes_.get("dilation", 1);
+    const int group = n.attributes_.get("group", 1);
     const int transpose = n.attributes_.get("transpose", false);
 
     auto w = n.inputs_.get("w");
     if(w == nullptr)
         return nullptr;
-    const int features = w->dims_[transpose ? 1 : 0];
+    const int features = w->dims_[transpose ? 1 : 0] * group;
     const int filterdim_h = w->dims_[2];
     const int filterdim_w = w->dims_[3];
 
@@ -103,8 +104,10 @@ conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
         const int activations = n->attributes_.get("activations", 1);
         const int size = n->attributes_.get("size", 1);
         const int transpose = n->attributes_.get("transpose", false);
+        const int group = n->attributes_.get("group", 1);
 
-        const int in_features = transpose ? activations : (int)x->dims_[1];
+        const int in_features =
+            (transpose ? activations : (int)x->dims_[1]) / group;
         const int out_features = transpose ? (int)x->dims_[1] : activations;
 
         n->inputs_["w"] = w =
@@ -115,10 +118,11 @@ conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 
     if(!b && n->attributes_.get("bias", false)) {
         const int transpose = n->attributes_.get("transpose", false);
+        const int group = n->attributes_.get("group", 1);
 
         n->inputs_["b"] = Tensor::find(
-            x->data_type_, {1, w->dims_[!!transpose]}, 0, 0, named_tensors,
-            node_tensor_name(n->name_, transpose ? "b" : "bt"));
+            x->data_type_, {1, w->dims_[!!transpose] * group}, 0, 0,
+            named_tensors, node_tensor_name(n->name_, transpose ? "b" : "bt"));
     }
 
     return {n};
