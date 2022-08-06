@@ -167,6 +167,18 @@ Graph::saveTensors(const char *path, Program *p)
     return true;
 }
 
+void
+Graph::statsTensors(Program *p)
+{
+    for(const auto &it : tensors_) {
+        auto t = it.second;
+        if(p != NULL) {
+            t = p->resolveTensor(t);
+            t->printStats(it.first.c_str());
+        }
+    }
+}
+
 // -----------------------------------------------------------------------
 // Node creation helpers
 // -----------------------------------------------------------------------

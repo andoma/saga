@@ -343,6 +343,8 @@ public:
 
     void print() const;
 
+    void statsTensors(Program *p);
+
     std::pair<TensorMapping, TensorMapping> tensorMappings() const;
 
     std::unordered_set<std::shared_ptr<Tensor>> inputTensors() const;
