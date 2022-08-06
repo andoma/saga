@@ -360,7 +360,11 @@ mse_y(const Node &n, const std::optional<const std::string> &name)
     auto o = n.inputs_.get("x");
     if(o == nullptr)
         return nullptr;
-    return makeTensor(Tensor::DataType::FLOAT, o->dims_, name);
+
+    Tensor::DataType dt = n.attributes_.get("fp16", false)
+                              ? Tensor::DataType::HALF
+                              : Tensor::DataType::FLOAT;
+    return makeTensor(dt, o->dims_, name);
 }
 
 static std::vector<std::shared_ptr<Node>>

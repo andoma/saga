@@ -137,6 +137,13 @@ mse_bwd_half_float(int n, const __half *x, __half *dx, const float *dy,
     mse_bwd<<<(n + 255) / 256, 256, 0, stream>>>(n, x, dx, dy, loss, c, scale);
 }
 
+void
+mse_bwd_half_half(int n, const __half *x, __half *dx, const __half *dy,
+                  float *loss, unsigned int c, float scale, cudaStream_t stream)
+{
+    mse_bwd<<<(n + 255) / 256, 256, 0, stream>>>(n, x, dx, dy, loss, c, scale);
+}
+
 //------------------------------------------------------------------------
 // Datatype conversion
 //------------------------------------------------------------------------

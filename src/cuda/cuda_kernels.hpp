@@ -28,6 +28,10 @@ void mse_bwd_half_float(int n, const __half *x, __half *dx, const float *dy,
                         float *loss, unsigned int c, float scale,
                         cudaStream_t stream);
 
+void mse_bwd_half_half(int n, const __half *x, __half *dx, const __half *dy,
+                       float *loss, unsigned int c, float scale,
+                       cudaStream_t stream);
+
 void convert_u8_float(const void *src, void *dst, int elements, float scale,
                       cudaStream_t stream);
 

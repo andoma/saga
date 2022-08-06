@@ -1590,12 +1590,15 @@ struct CudaMSEFwd : public CudaOperation {
 
     const char *exec(CudaProgram &p, long batch)
     {
-        switch(x_->m_type) {
-        case CUDNN_DATA_HALF:
+        if(x_->m_type == CUDNN_DATA_HALF && y_->m_type == CUDNN_DATA_FLOAT) {
             convert_half_float(x_->deviceMem(), y_->deviceMem(), m_elements,
                                1.0f, p.m_ctx->m_stream);
-            break;
-        default:
+        } else if(x_->m_type == CUDNN_DATA_HALF &&
+                  y_->m_type == CUDNN_DATA_HALF) {
+            cudaMemcpyAsync(y_->deviceMem(), x_->deviceMem(),
+                            m_elements * sizeof(int16_t), cudaMemcpyHostToHost,
+                            p.m_ctx->m_stream);
+        } else {
             return "Unsupported tensor datatype";
         }
         return NULL;
@@ -1632,16 +1635,21 @@ struct CudaMSEBwd : public CudaOperation {
 
         const float scale = 1.0f / n;
 
-        switch(x_->m_type) {
-        case CUDNN_DATA_HALF:
+        if(x_->m_type == CUDNN_DATA_HALF && dy_->m_type == CUDNN_DATA_FLOAT) {
             mse_bwd_half_float(n, (const __half *)x_->deviceMem(),
                                (__half *)dx_->deviceMem(),
                                (const float *)dy_->deviceMem(),
                                loss_ ? (float *)loss_->deviceMem() : NULL, c,
                                scale * p.m_mp_scaling, p.m_ctx->m_stream);
 
-            break;
-        default:
+        } else if(x_->m_type == CUDNN_DATA_HALF &&
+                  dy_->m_type == CUDNN_DATA_HALF) {
+            mse_bwd_half_half(n, (const __half *)x_->deviceMem(),
+                              (__half *)dx_->deviceMem(),
+                              (const half *)dy_->deviceMem(),
+                              loss_ ? (float *)loss_->deviceMem() : NULL, c,
+                              scale * p.m_mp_scaling, p.m_ctx->m_stream);
+        } else {
             return "Unsupported tensor datatype";
         }
         return NULL;
