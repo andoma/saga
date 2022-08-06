@@ -24,6 +24,7 @@ This project is still very much work in progress.
   * Category Classifier
   * Concat
   * Convolution
+  * Transposed Convolution
   * Dropout
   * Elementwise math operations
   * Fully conneceted
