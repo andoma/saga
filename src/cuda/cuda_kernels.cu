@@ -208,74 +208,74 @@ convert_half_float(const void *src, void *dst, int elements, float scale,
 #define ADAM_B2      0.999
 
 __global__ static void
-adam_kernel(int n, float *weights, const float *dweights, float *t, float b1t,
+adam_kernel(int n, float *weights, const float *dweights, float *t0, float b1t,
             float b2t, float lr, CudaAux *aux)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if(i >= n)
-        return;
+    for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+        i += blockDim.x * gridDim.x) {
+        float *t = t0 + i * 2;
 
-    const float dw = dweights[i];
-    if(!isfinite(dw)) {
-        if(isnan(dw)) {
-            aux->nan = 1;
-        } else {
-            aux->inf = 1;
-        }
-        return;
-    }
-
-    t += i * 2;  // mt and vt are stored next to each other in RAM
-
-    const float b1 = ADAM_B1;
-    const float b2 = ADAM_B2;
-    const float e = ADAM_EPSILON;
-
-    const float m = t[0] = b1 * t[0] + (1.0f - b1) * dw;
-    const float v = t[1] = b2 * t[1] + (1.0f - b2) * dw * dw;
-    const float m_hat = m * b1t;
-    const float v_hat = v * b2t;
-
-    weights[i] -= lr * m_hat / (sqrtf(v_hat) + e);
-}
-
-__global__ static void
-adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
-               float *t, float b1t, float b2t, float lr, CudaAux *aux)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if(i >= n)
-        return;
-
-    const uint16_t u16 = ((const uint16_t *)dweights)[i];
-    if((u16 & 0x7800) == 0x7800) {
-        aux->range = 1;
-        if((u16 & 0x7c00) == 0x7c00) {
-            if(u16 & 0x3ff) {
+        const float dw = dweights[i];
+        if(!isfinite(dw)) {
+            if(isnan(dw)) {
                 aux->nan = 1;
             } else {
                 aux->inf = 1;
             }
-            return;
+            continue;
         }
+
+        const float b1 = ADAM_B1;
+        const float b2 = ADAM_B2;
+        const float e = ADAM_EPSILON;
+
+        const float m = t[0] = b1 * t[0] + (1.0f - b1) * dw;
+        const float v = t[1] = b2 * t[1] + (1.0f - b2) * dw * dw;
+        const float m_hat = m * b1t;
+        const float v_hat = v * b2t;
+
+        weights[i] -= lr * m_hat / (sqrtf(v_hat) + e);
     }
+}
 
-    t += i * 3;
+__global__ static void
+adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
+               float *t0, float b1t, float b2t, float lr, CudaAux *aux)
+{
+    for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+        i += blockDim.x * gridDim.x) {
+        const uint16_t u16 = ((const uint16_t *)dweights)[i];
+        if((u16 & 0x7800) == 0x7800) {
+            aux->range = 1;
+            if((u16 & 0x7c00) == 0x7c00) {
+                if(u16 & 0x3ff) {
+                    aux->nan = 1;
+                } else {
+                    aux->inf = 1;
+                }
+                continue;
+            }
+        }
 
-    const float dw = (float)dweights[i] * alpha;
+        float *t = t0 + i * 3;
 
-    const float b1 = ADAM_B1;
-    const float b2 = ADAM_B2;
-    const float e = ADAM_EPSILON;
+        const float dw = (float)dweights[i] * alpha;
+        const float b1 = ADAM_B1;
+        const float b2 = ADAM_B2;
+        const float e = ADAM_EPSILON;
 
-    const float m = t[0] = b1 * t[0] + (1.0f - b1) * dw;
-    const float v = t[1] = b2 * t[1] + (1.0f - b2) * dw * dw;
-    const float m_hat = m * b1t;
-    const float v_hat = v * b2t;
+        const float m = b1 * t[0] + (1.0f - b1) * dw;
+        const float v = b2 * t[1] + (1.0f - b2) * dw * dw;
+        const float m_hat = m * b1t;
+        const float v_hat = v * b2t;
 
-    const float w = t[2] - lr * m_hat / (sqrtf(v_hat) + e);
-    t[2] = w;
-    weights[i] = w;
+        const float w = t[2] - lr * m_hat / (sqrtf(v_hat) + e);
+
+        t[0] = m;
+        t[1] = v;
+        t[2] = w;
+        weights[i] = w;
+    }
 }
 
 void
