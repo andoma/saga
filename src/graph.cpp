@@ -164,8 +164,11 @@ Graph::saveTensors(const char *path, Program *p)
     mkdir(path, 0777);
     for(const auto &it : tensors_) {
         auto t = it.second;
-        if(p != NULL)
+        if(p != NULL) {
             t = p->resolveTensor(t);
+            if(t == NULL)
+                continue;
+        }
 
         snprintf(filepath, sizeof(filepath), "%s/%s", path, it.first.c_str());
         if(!t->save(filepath))
@@ -181,7 +184,8 @@ Graph::statsTensors(Program *p)
         auto t = it.second;
         if(p != NULL) {
             t = p->resolveTensor(t);
-            t->printStats(it.first.c_str());
+            if(t != NULL)
+                t->printStats(it.first.c_str());
         }
     }
 }
