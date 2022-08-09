@@ -373,13 +373,15 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
         if(!runOps(m_infer_operations, i)) {
             return ExecResult::ERROR;
         }
-        if(i < batches - 1) {
-            run_batched_tensor_callbacks(pre, false, i + 1,
-                                         m_pre_batched_tensors);
-        }
+
         if(i > 0) {
             run_batched_tensor_callbacks(post, false, i - 1,
                                          m_post_batched_tensors);
+        }
+
+        if(i < batches - 1) {
+            run_batched_tensor_callbacks(pre, false, i + 1,
+                                         m_pre_batched_tensors);
         }
 
         flipDoubleBufferedTensors();
@@ -439,13 +441,13 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
             return ExecResult::ERROR;
         }
 
-        if(i < batches - 1) {
-            run_batched_tensor_callbacks(pre, true, i + 1,
-                                         m_pre_batched_tensors);
-        }
         if(i > 0) {
             run_batched_tensor_callbacks(post, true, i - 1,
                                          m_post_batched_tensors);
+        }
+        if(i < batches - 1) {
+            run_batched_tensor_callbacks(pre, true, i + 1,
+                                         m_pre_batched_tensors);
         }
         flipDoubleBufferedTensors();
         if(i < batches - 1) {
