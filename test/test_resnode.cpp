@@ -200,7 +200,7 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
     Graph g;
     auto x = create_tensor(dt, conv_input_x);
     auto w = create_tensor(dt, conv_input_w);
-    auto n = g.addNode("conv", {{"x", x}, {"w", w}},
+    auto n = g.addNode("conv", Tensors{{"x", x}, {"w", w}},
                        {{"activations", 4}, {"size", 1}});
 
     auto s = create_tensor(Tensor::DataType::FLOAT, batchnorm_input_s);
@@ -208,14 +208,15 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
     auto m = create_tensor(Tensor::DataType::FLOAT, batchnorm_input_m);
     auto v = create_tensor(Tensor::DataType::FLOAT, batchnorm_input_v);
 
-    n = g.addNode("batchnorm",
-                  {{"x", n->y()}, {"s", s}, {"b", b}, {"m", m}, {"v", v}},
-                  {{"epsilon", 0.00001f}, {"expavgf", 0.0f}});
+    n = g.addNode(
+        "batchnorm",
+        Tensors{{"x", n->y()}, {"s", s}, {"b", b}, {"m", m}, {"v", v}},
+        {{"epsilon", 0.00001f}, {"expavgf", 0.0f}});
 
     if(bypass) {
-        n = g.addNode("sum", {{"x0", x}, {"x1", n->y()}}, {});
+        n = g.addNode("sum", Tensors{{"x0", x}, {"x1", n->y()}}, {});
     }
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+    n = g.addNode("relu", n->y());
 
     auto p = ctx->createProgram(g,
                                 {.inference = false,

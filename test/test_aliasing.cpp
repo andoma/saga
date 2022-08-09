@@ -35,18 +35,18 @@ aliasing_main(int argc, char **argv)
 
     auto x = makeTensor(dt, Dims({1, 1, 4, 4}), "input");
 
-    auto w0 = g.addNode("window", {{"x", x}},
+    auto w0 = g.addNode("window", x,
                         {{"shape", std::vector<int>{1, 1, 2, 4}},
                          {"offset", std::vector<int>{0, 0, 0, 0}}});
-    auto w1 = g.addNode("window", {{"x", x}},
+    auto w1 = g.addNode("window", x,
                         {{"shape", std::vector<int>{1, 1, 2, 4}},
                          {"offset", std::vector<int>{0, 0, 2, 0}}});
 
-    auto r0 = g.addNode("relu", {{"x", w0->y()}}, {});
-    auto r1 = g.addNode("relu", {{"x", w1->y()}}, {});
+    auto r0 = g.addNode("relu", w0->y());
+    auto r1 = g.addNode("relu", w1->y());
 
-    auto output =
-        g.addNode("concat", {{"x0", r0->y()}, {"x1", r1->y()}}, {{"axis", 2}});
+    auto output = g.addNode("concat", Tensors{{"x0", r0->y()}, {"x1", r1->y()}},
+                            {{"axis", 2}});
 
     g.print();
 

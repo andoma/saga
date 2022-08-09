@@ -328,8 +328,13 @@ public:
     Tensors tensors_;
 
     std::shared_ptr<Node> addNode(
+        const std::string &type, const std::shared_ptr<Tensor> &t,
+        const Attributes &attributes = {},
+        const std::optional<const std::string> &name = std::nullopt);
+
+    std::shared_ptr<Node> addNode(
         const std::string &type, const Tensors &inputs,
-        const Attributes &attributes,
+        const Attributes &attributes = {},
         const std::optional<const std::string> &name = std::nullopt);
 
     std::shared_ptr<Node> addNode(const std::string &type, Loader loader,

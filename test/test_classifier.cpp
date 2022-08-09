@@ -30,7 +30,7 @@ addStats(Graph &g, std::shared_ptr<Tensor> src, Stats *out, bool gradient)
 {
     if(!out)
         return;
-    auto s = g.addNode("stats", {{"x", src}}, {{"gradient", gradient}});
+    auto s = g.addNode("stats", src, {{"gradient", gradient}});
     out->push_back(s->y());
 }
 
@@ -41,85 +41,85 @@ static std::shared_ptr<Node>
 firemodule(Graph &g, std::shared_ptr<Node> input, int s1x1, int e1x1, int e3x3,
            bool with_bn, const std::string &name)
 {
-    auto s = g.addNode("conv", {{"x", input->y()}},
+    auto s = g.addNode("conv", input->y(),
                        {{"size", 1}, {"activations", s1x1}, {"bias", !with_bn}},
                        name + "-s1x1");
 
     if(with_bn)
-        s = g.addNode("batchnorm", {{"x", s->y()}}, {}, name + "-bn");
+        s = g.addNode("batchnorm", s->y(), {}, name + "-bn");
 
-    s = g.addNode("relu", {{"x", s->y()}}, {});
+    s = g.addNode("relu", s->y());
 
-    auto e1 = g.addNode("conv", {{"x", s->y()}},
+    auto e1 = g.addNode("conv", s->y(),
                         {{"size", 1}, {"activations", e1x1}, {"bias", true}},
                         name + "-e1x1");
     auto e3 = g.addNode(
-        "conv", {{"x", s->y()}},
+        "conv", s->y(),
         {{"size", 3}, {"activations", e3x3}, {"pad", 1}, {"bias", true}},
         name + "-e3x3");
 
-    e1 = g.addNode("relu", {{"x", e1->y()}}, {});
-    e3 = g.addNode("relu", {{"x", e3->y()}}, {});
+    e1 = g.addNode("relu", e1->y());
+    e3 = g.addNode("relu", e3->y());
 
-    return g.addNode("concat", {{"x0", e1->y()}, {"x1", e3->y()}}, {});
+    return g.addNode("concat", Tensors{{"x0", e1->y()}, {"x1", e3->y()}});
 }
 
 static std::shared_ptr<Node>
 squeezenet(Graph &g, std::shared_ptr<Node> n, bool with_bn, int output_classes)
 {
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", 3}, {"activations", 64}, {"bias", true}}, "conv0");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 3}, {"stride", 2}});
+    n = g.addNode("relu", n->y());
+    n = g.addNode("maxpool", n->y(), {{"size", 3}, {"stride", 2}});
     n = firemodule(g, n, 16, 64, 64, with_bn, "f1a");
     n = firemodule(g, n, 16, 64, 64, with_bn, "f1b");
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 3}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 3}, {"stride", 2}});
     n = firemodule(g, n, 32, 128, 128, with_bn, "f2a");
     n = firemodule(g, n, 32, 128, 128, with_bn, "f2b");
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 3}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 3}, {"stride", 2}});
     n = firemodule(g, n, 48, 192, 192, with_bn, "f3a");
     n = firemodule(g, n, 48, 192, 192, with_bn, "f3b");
 
     n = g.addNode(
-        "conv", {{"x", n->y()}},
+        "conv", n->y(),
         {{"size", 1}, {"activations", output_classes}, {"bias", true}},
         "conv4");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("avgpool", {{"x", n->y()}},
-                  {{"global", true}, {"stride", 2}});
+    n = g.addNode("relu", n->y());
+    n = g.addNode("avgpool", n->y(), {{"global", true}, {"stride", 2}});
     return n;
 }
 
 static std::shared_ptr<Node>
 lecun(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
 {
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", 5}, {"activations", 32}, {"bias", true}}, "conv1");
 
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("relu", n->y());
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
     addStats(g, n->y(), stats, false);
     addStats(g, n->y(), stats, true);
 
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", 5}, {"activations", 64}, {"bias", true}}, "conv2");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("relu", n->y());
+
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
     addStats(g, n->y(), stats, false);
     addStats(g, n->y(), stats, true);
 
-    n = g.addNode("fc", {{"x", n->y()}},
+    n = g.addNode("fc", n->y(),
                   {{"outputs", 1024}, {"bias", true}, {"transW", true}}, "fc1");
 
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+    n = g.addNode("relu", n->y());
 
     addStats(g, n->y(), stats, false);
     addStats(g, n->y(), stats, true);
 
     n = g.addNode(
-        "fc", {{"x", n->y()}},
+        "fc", n->y(),
         {{"outputs", output_classes}, {"bias", true}, {"transW", true}}, "fc2");
     return n;
 }
@@ -128,16 +128,15 @@ static std::shared_ptr<Node>
 convrelu(Graph &g, std::shared_ptr<Node> n, bool bn, int kernel_size,
          int activations, const std::string &name)
 {
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", kernel_size},
                    {"activations", activations},
                    {"pad", 1},
                    {"bias", !bn}},
                   name + "conv");
     if(bn)
-        n = g.addNode("batchnorm", {{"x", n->y()}}, {}, name + "bn");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    return n;
+        n = g.addNode("batchnorm", n->y(), {}, name + "bn");
+    return g.addNode("relu", n->y());
 }
 
 static std::shared_ptr<Node>
@@ -145,39 +144,39 @@ vgg19(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 {
     n = convrelu(g, n, true, 3, 64, "1a");
     n = convrelu(g, n, bn, 3, 64, "1b");
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
     n = convrelu(g, n, bn, 3, 128, "2a");
     n = convrelu(g, n, bn, 3, 128, "2b");
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
     n = convrelu(g, n, bn, 3, 256, "3a");
     n = convrelu(g, n, bn, 3, 256, "3b");
     n = convrelu(g, n, bn, 3, 256, "3c");
     n = convrelu(g, n, bn, 3, 256, "3d");
     if(n->y()->dims_[2] > 7)
-        n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+        n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
     n = convrelu(g, n, bn, 3, 512, "4a");
     n = convrelu(g, n, bn, 3, 512, "4b");
     n = convrelu(g, n, bn, 3, 512, "4c");
     n = convrelu(g, n, bn, 3, 512, "4d");
     if(n->y()->dims_[2] > 7)
-        n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+        n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
     n = convrelu(g, n, bn, 3, 512, "5a");
     n = convrelu(g, n, bn, 3, 512, "5b");
     n = convrelu(g, n, bn, 3, 512, "5c");
     n = convrelu(g, n, bn, 3, 512, "5d");
     if(n->y()->dims_[2] > 7)
-        n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+        n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
-    n = g.addNode("fc", {{"x", n->y()}},
+    n = g.addNode("fc", n->y(),
                   {{"outputs", 4096}, {"bias", true}, {"transW", true}}, "fc1");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
-    n = g.addNode("fc", {{"x", n->y()}},
+    n = g.addNode("relu", n->y());
+    n = g.addNode("dropout", n->y(), {{"prob", 0.5f}});
+    n = g.addNode("fc", n->y(),
                   {{"outputs", 4096}, {"bias", true}, {"transW", true}}, "fc2");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
+    n = g.addNode("relu", n->y());
+    n = g.addNode("dropout", n->y(), {{"prob", 0.5f}});
     n = g.addNode(
-        "fc", {{"x", n->y()}},
+        "fc", n->y(),
         {{"outputs", output_classes}, {"bias", true}, {"transW", true}}, "fc3");
     return n;
 }
@@ -200,80 +199,78 @@ vgg19(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 static std::shared_ptr<Node>
 test(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
 {
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", 3}, {"activations", 32}, {"pad", 1}, {"bias", !bn}},
                   "conv1");
     if(bn)
-        n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn1");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+        n = g.addNode("batchnorm", n->y(), {}, "bn1");
+    n = g.addNode("relu", n->y());
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", !bn}},
                   "conv2");
     if(bn)
-        n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn2");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+        n = g.addNode("batchnorm", n->y(), {}, "bn2");
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", 3}, {"activations", 64}, {"pad", 1}, {"bias", !bn}},
                   "conv3");
     if(bn)
-        n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn3");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+        n = g.addNode("batchnorm", n->y(), {}, "bn3");
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
     n = g.addNode(
-        "conv", {{"x", n->y()}},
+        "conv", n->y(),
         {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", !bn}},
         "conv4");
     if(bn)
-        n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn4");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+        n = g.addNode("batchnorm", n->y(), {}, "bn4");
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
     n = g.addNode(
-        "conv", {{"x", n->y()}},
+        "conv", n->y(),
         {{"size", 3}, {"activations", 128}, {"pad", 1}, {"bias", !bn}},
         "conv5");
     if(bn)
-        n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn5");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+        n = g.addNode("batchnorm", n->y(), {}, "bn5");
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
     n = g.addNode(
-        "conv", {{"x", n->y()}},
+        "conv", n->y(),
         {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", !bn}},
         "conv6");
     if(bn)
-        n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn6");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+        n = g.addNode("batchnorm", n->y(), {}, "bn6");
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
     n = g.addNode(
-        "conv", {{"x", n->y()}},
+        "conv", n->y(),
         {{"size", 3}, {"activations", 256}, {"pad", 1}, {"bias", !bn}},
         "conv7");
     if(bn)
-        n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "bn7");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+        n = g.addNode("batchnorm", n->y(), {}, "bn7");
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("maxpool", {{"x", n->y()}}, {{"size", 2}, {"stride", 2}});
+    n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
-    n = g.addNode("fc", {{"x", n->y()}}, {{"outputs", 1024}, {"bias", true}},
-                  "fc1");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
-    n = g.addNode("fc", {{"x", n->y()}}, {{"outputs", 1024}, {"bias", true}},
-                  "fc2");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("dropout", {{"x", n->y()}}, {{"prob", 0.5f}});
-    n = g.addNode("fc", {{"x", n->y()}},
-                  {{"outputs", output_classes}, {"bias", true}}, "fc3");
+    n = g.addNode("fc", n->y(), {{"outputs", 1024}, {"bias", true}}, "fc1");
+    n = g.addNode("relu", n->y());
+    n = g.addNode("dropout", n->y(), {{"prob", 0.5f}});
+    n = g.addNode("fc", n->y(), {{"outputs", 1024}, {"bias", true}}, "fc2");
+    n = g.addNode("relu", n->y());
+    n = g.addNode("dropout", n->y(), {{"prob", 0.5f}});
+    n = g.addNode("fc", n->y(), {{"outputs", output_classes}, {"bias", true}},
+                  "fc3");
 
     return n;
 }
@@ -282,17 +279,16 @@ static std::shared_ptr<Node>
 resnet(Graph &g, std::shared_ptr<Node> n, int output_classes, int stage2,
        int stage3, int stage4, int stage5, Stats *stats)
 {
-    n = g.addNode("spatialtransform", {{"x", n->y()}},
+    n = g.addNode("spatialtransform", n->y(),
                   {{"width", 224}, {"height", 224}});
 
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", 7}, {"activations", 64}, {"stride", 2}, {"pad", 3}},
                   "s1-conv");
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "s1-bn");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", n->y(), {}, "s1-bn");
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("maxpool", {{"x", n->y()}},
-                  {{"size", 3}, {"stride", 2}, {"pad", 1}});
+    n = g.addNode("maxpool", n->y(), {{"size", 3}, {"stride", 2}, {"pad", 1}});
 
     addStats(g, n->y(), stats, true);
 
@@ -322,27 +318,26 @@ resnet(Graph &g, std::shared_ptr<Node> n, int output_classes, int stage2,
                         std::string("s5_") + std::to_string(i));
     }
 
-    n = g.addNode("avgpool", {{"x", n->y()}}, {{"global", true}});
+    n = g.addNode("avgpool", n->y(), {{"global", true}});
 
-    n = g.addNode("fc", {{"x", n->y()}},
-                  {{"outputs", output_classes}, {"bias", true}}, "fc3");
+    n = g.addNode("fc", n->y(), {{"outputs", output_classes}, {"bias", true}},
+                  "fc3");
     return n;
 }
 
 static std::shared_ptr<Node>
 resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
 {
-    n = g.addNode("spatialtransform", {{"x", n->y()}},
+    n = g.addNode("spatialtransform", n->y(),
                   {{"width", 224}, {"height", 224}});
 
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"size", 7}, {"activations", 64}, {"stride", 2}, {"pad", 3}},
                   "s1-conv");
-    n = g.addNode("batchnorm", {{"x", n->y()}}, {}, "s1-bn");
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+    n = g.addNode("batchnorm", n->y(), {}, "s1-bn");
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("maxpool", {{"x", n->y()}},
-                  {{"size", 3}, {"stride", 2}, {"pad", 1}});
+    n = g.addNode("maxpool", n->y(), {{"size", 3}, {"stride", 2}, {"pad", 1}});
 
     addStats(g, n->y(), stats, true);
 
@@ -372,10 +367,10 @@ resnet50(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
     n = g.addResNetBottleNeck(n->y(), 512, 2048, false, "s5_2");
     n = g.addResNetBottleNeck(n->y(), 512, 2048, false, "s5_3");
 
-    n = g.addNode("avgpool", {{"x", n->y()}}, {{"global", true}});
+    n = g.addNode("avgpool", n->y(), {{"global", true}});
 
-    n = g.addNode("fc", {{"x", n->y()}},
-                  {{"outputs", output_classes}, {"bias", true}}, "fc3");
+    n = g.addNode("fc", n->y(), {{"outputs", output_classes}, {"bias", true}},
+                  "fc3");
     return n;
 }
 
@@ -534,7 +529,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         fprintf(stderr, "Network type %s not available\n", mode.c_str());
         exit(1);
     }
-    n = g.addNode("catclassifier", {{"x", n->y()}}, {});
+    n = g.addNode("catclassifier", n->y());
 
     if(verbose)
         g.print();

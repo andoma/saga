@@ -97,7 +97,7 @@ conv_main(int argc, char **argv)
 
     auto x = load_tensor(dt, conv_input_x);
 
-    auto n = g.addNode("conv", {{"x", x}},
+    auto n = g.addNode("conv", x,
                        {{"transpose", false},
                         {"bias", true},
                         {"stride", 2},
@@ -106,19 +106,19 @@ conv_main(int argc, char **argv)
                         {"activations", 5}},
                        "node");
 
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("fc", {{"x", n->y()}},
+    n = g.addNode("fc", n->y(),
                   {{"outputs", 20}, {"bias", true}, {"transW", true}}, "fc1");
 
     auto mid = n->y();
 
-    n = g.addNode("relu", {{"x", n->y()}}, {});
+    n = g.addNode("relu", n->y());
 
-    n = g.addNode("reshape", {{"x", n->y()}},
+    n = g.addNode("reshape", n->y(),
                   {{"cpacked", true}, {"shape", saga::Dims({2, 5, 2, 2})}});
 
-    n = g.addNode("conv", {{"x", n->y()}},
+    n = g.addNode("conv", n->y(),
                   {{"transpose", true},
                    {"bias", true},
                    {"stride", 2},
@@ -128,7 +128,7 @@ conv_main(int argc, char **argv)
                   "node");
     auto last = n->y();
 
-    n = g.addNode("mse", {{"x", n->y()}}, {});
+    n = g.addNode("mse", n->y());
 
     auto out = n->y();
 

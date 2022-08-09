@@ -62,10 +62,10 @@ minimal_main(int argc, char **argv)
 
     auto x = makeTensor(dt, Dims({1, 2}), "input");
     std::shared_ptr<Node> n;
-    n = g.addNode("fc", {{"x", x}}, {{"outputs", 2}, {"bias", true}});
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("fc", {{"x", n->y()}}, {{"outputs", 2}, {"bias", true}});
-    n = g.addNode("catclassifier", {{"x", n->y()}}, {});
+    n = g.addNode("fc", x, {{"outputs", 2}, {"bias", true}});
+    n = g.addNode("relu", n->y());
+    n = g.addNode("fc", n->y(), {{"outputs", 2}, {"bias", true}});
+    n = g.addNode("catclassifier", n->y());
 
     auto loss = n->outputs_["loss"];
     auto y = n->y();
@@ -141,11 +141,11 @@ mse_main(int argc, char **argv)
 
     auto x = makeTensor(dt, Dims({1, 4}), "input");
     std::shared_ptr<Node> n;
-    n = g.addNode("fc", {{"x", x}}, {{"outputs", 5}, {"bias", true}});
-    n = g.addNode("relu", {{"x", n->y()}}, {});
-    n = g.addNode("fc", {{"x", n->y()}}, {{"outputs", 4}, {"bias", true}});
-    n = g.addNode("tanh", {{"x", n->y()}}, {});
-    n = g.addNode("mse", {{"x", n->y()}}, {});
+    n = g.addNode("fc", x, {{"outputs", 5}, {"bias", true}});
+    n = g.addNode("relu", n->y());
+    n = g.addNode("fc", n->y(), {{"outputs", 4}, {"bias", true}});
+    n = g.addNode("tanh", n->y());
+    n = g.addNode("mse", n->y());
 
     auto loss = n->outputs_["loss"];
     auto y = n->y();
