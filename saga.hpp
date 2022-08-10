@@ -41,6 +41,8 @@
 
 namespace saga {
 
+class Program;
+
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
@@ -254,6 +256,10 @@ public:
         }
         return v;
     }
+
+    void loadTensors(const char *path);
+
+    bool saveTensors(const char *path, Program *p);
 };
 
 //------------------------------------------------------------------------
@@ -313,8 +319,6 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-class Program;
-
 typedef std::unordered_map<
     std::shared_ptr<Tensor>,
     std::vector<std::pair<std::string, std::shared_ptr<Node>>>>
@@ -322,10 +326,17 @@ typedef std::unordered_map<
 
 class Graph {
 public:
+    Graph() : m_named_tensors(std::make_shared<Tensors>()) {}
+
+    Graph(std::shared_ptr<Tensors> named_tensors)
+      : m_named_tensors(named_tensors)
+    {
+    }
+
     Nodes nodes_;
     std::unordered_set<std::shared_ptr<Tensor>> inputs_;
     std::unordered_set<std::shared_ptr<Tensor>> outputs_;
-    Tensors tensors_;
+    const std::shared_ptr<Tensors> m_named_tensors;
 
     std::shared_ptr<Node> addNode(
         const std::string &type, const std::shared_ptr<Tensor> &t,

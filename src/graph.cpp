@@ -33,6 +33,52 @@
 namespace saga {
 
 void
+Tensors::loadTensors(const char *path)
+{
+    struct dirent **namelist;
+    int n = scandir(path, &namelist, NULL, NULL);
+    if(n == -1) {
+        fprintf(stderr, "Unable to load tensors from %s -- %s\n", path,
+                strerror(errno));
+        return;
+    }
+
+    while(n--) {
+        const char *fname = namelist[n]->d_name;
+        if(fname[0] != '.') {
+            char filepath[PATH_MAX];
+            snprintf(filepath, sizeof(filepath), "%s/%s", path, fname);
+            auto t = Tensor::load(filepath, fname);
+            if(t) {
+                (*this)[fname] = t;
+            }
+        }
+        free(namelist[n]);
+    }
+    free(namelist);
+}
+
+bool
+Tensors::saveTensors(const char *path, Program *p)
+{
+    char filepath[PATH_MAX];
+    mkdir(path, 0777);
+    for(const auto &it : *this) {
+        auto t = it.second;
+        if(p != NULL) {
+            t = p->resolveTensor(t);
+            if(t == NULL)
+                continue;
+        }
+
+        snprintf(filepath, sizeof(filepath), "%s/%s", path, it.first.c_str());
+        if(!t->save(filepath))
+            return false;
+    }
+    return true;
+}
+
+void
 Graph::print() const
 {
     for(const auto &n : nodes_) {
@@ -45,7 +91,7 @@ Graph::addNode(const std::string &type, const Tensors &inputs,
                const Attributes &attributes,
                const std::optional<const std::string> &name)
 {
-    auto nodes = Node::make(type, inputs, attributes, tensors_, name);
+    auto nodes = Node::make(type, inputs, attributes, *m_named_tensors, name);
     nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
     if(nodes_.size() == 0)
         return nullptr;
@@ -133,54 +179,19 @@ Graph::tensorMappings() const
 void
 Graph::loadTensors(const char *path)
 {
-    struct dirent **namelist;
-    int n = scandir(path, &namelist, NULL, NULL);
-    if(n == -1) {
-        fprintf(stderr, "Unable to load tensors from %s -- %s\n", path,
-                strerror(errno));
-        return;
-    }
-
-    while(n--) {
-        const char *fname = namelist[n]->d_name;
-        if(fname[0] != '.') {
-            char filepath[PATH_MAX];
-            snprintf(filepath, sizeof(filepath), "%s/%s", path, fname);
-            auto t = Tensor::load(filepath, fname);
-            if(t) {
-                tensors_[fname] = t;
-                printf("Loaded %s: %s\n", fname, t->info().c_str());
-            }
-        }
-        free(namelist[n]);
-    }
-    free(namelist);
+    m_named_tensors->loadTensors(path);
 }
 
 bool
 Graph::saveTensors(const char *path, Program *p)
 {
-    char filepath[PATH_MAX];
-    mkdir(path, 0777);
-    for(const auto &it : tensors_) {
-        auto t = it.second;
-        if(p != NULL) {
-            t = p->resolveTensor(t);
-            if(t == NULL)
-                continue;
-        }
-
-        snprintf(filepath, sizeof(filepath), "%s/%s", path, it.first.c_str());
-        if(!t->save(filepath))
-            return false;
-    }
-    return true;
+    return m_named_tensors->saveTensors(path, p);
 }
 
 void
 Graph::statsTensors(Program *p)
 {
-    for(const auto &it : tensors_) {
+    for(const auto &it : *m_named_tensors) {
         auto t = it.second;
         if(p != NULL) {
             t = p->resolveTensor(t);

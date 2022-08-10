@@ -359,8 +359,8 @@ make_tensor(const onnx::TensorProto &tp)
 static shared_ptr<Tensor>
 find_tensor(Graph &g, const std::string &name)
 {
-    auto it = g.tensors_.find(name);
-    if(it != g.tensors_.end())
+    auto it = g.m_named_tensors->find(name);
+    if(it != g.m_named_tensors->end())
         return it->second;
     return nullptr;
 }
@@ -369,7 +369,7 @@ static void
 make_tensor_y(Graph &g, Node &n, const std::string &name)
 {
     auto t = n.inferTensor_y(name);
-    g.tensors_[name] = t;
+    (*g.m_named_tensors)[name] = t;
     n.outputs_["y"] = t;
 }
 
@@ -670,16 +670,16 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
 {
     for(const auto &vip : gp.input()) {
         auto t = make_tensor(vip);
-        g.tensors_[vip.name()] = t;
+        (*g.m_named_tensors)[vip.name()] = t;
         g.inputs_.insert(t);
     }
 
     for(const auto &tp : gp.initializer()) {
-        auto it = g.tensors_.find(tp.name());
-        if(it != g.tensors_.end()) {
+        auto it = g.m_named_tensors->find(tp.name());
+        if(it != g.m_named_tensors->end()) {
             g.inputs_.erase(it->second);
         }
-        g.tensors_[tp.name()] = make_tensor(tp);
+        (*g.m_named_tensors)[tp.name()] = make_tensor(tp);
     }
 
     for(const auto &np : gp.node()) {
@@ -750,7 +750,7 @@ loadgraph(Graph &g, const onnx::GraphProto &gp)
     }
 
     for(const auto &vip : gp.output()) {
-        g.outputs_.insert(g.tensors_[vip.name()]);
+        g.outputs_.insert((*g.m_named_tensors)[vip.name()]);
     }
 
     return true;
