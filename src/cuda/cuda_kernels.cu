@@ -118,12 +118,6 @@ mse_bwd(int n, const T *x, T *dx, const L *dy, float *loss,
         float xx = x[j];
         float d = xx - yy;
         sum += d * d;
-
-        if(d < -1.0f)
-            d = -1.0f;
-        else if(d > 1.0f)
-            d = 1.0f;
-
         dx[j] = d * scale;
     }
     loss[i] = sum / channels;
