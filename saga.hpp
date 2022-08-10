@@ -504,6 +504,24 @@ std::shared_ptr<Context> createContext();
 
 std::vector<std::shared_ptr<Context>> createContexts();
 
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
+
+class Publisher {
+public:
+    virtual ~Publisher(){};
+
+    virtual void publish(const char *id, Tensor &t, const Dims &offset,
+                         TensorAccess *ta) = 0;
+
+    virtual void sync() = 0;
+};
+
+std::shared_ptr<Publisher> make_tcp_publisher(int bind_port);
+
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
+
 int64_t Now();
 
 };  // namespace saga

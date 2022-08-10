@@ -24,7 +24,7 @@ SRCS-lib += \
 	src/node.cpp \
 	src/context.cpp \
 	src/ui/statbar.cpp \
-
+	src/pub.cpp \
 
 ###########################################
 # Dnnl
