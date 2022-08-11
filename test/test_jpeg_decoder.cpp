@@ -1,3 +1,5 @@
+#if 0
+
 #include <math.h>
 #include <signal.h>
 #include <assert.h>
@@ -140,3 +142,4 @@ jpeg_decoder_main(int argc, char **argv)
 
 SAGA_CLI_CMD("jpeg-decoder", "jpeg-decoder [OPTIONS ...]",
              "Run JPEG decoder test", jpeg_decoder_main);
+#endif

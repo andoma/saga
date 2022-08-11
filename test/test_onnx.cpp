@@ -17,16 +17,15 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
     char input_path[PATH_MAX];
     char output_path[PATH_MAX];
 
-    auto p = ctx->createProgram(g, {.inference = true,
-                                    .training = false,
-                                    .batch_size = 1,
-                                    .tensor_layout = TensorLayout::NHWC});
+    auto p = ctx->createProgram(
+        g, ProgramType::INFERENCE,
+        {.batch_size = 1, .tensor_layout = TensorLayout::NHWC});
 
     if(verbose)
         p->dump(stdout);
 
-    auto input = p->resolveTensor(*g.inputs_.begin());
-    auto output = p->resolveTensor(*g.outputs_.begin());
+    auto input = ctx->resolveTensor(*g.inputs_.begin());
+    auto output = ctx->resolveTensor(*g.outputs_.begin());
 
     printf("Test: %s (Internal Tensor Layout: %s)\n", base_path,
            layout == TensorLayout::NCHW ? "NCHW" : "NHWC");
@@ -56,7 +55,7 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
             return 1;
         }
 
-        p->infer();
+        p->run();
 
         const double sse = loaded_output->sse(*output);
         if(sse > 0.001) {
@@ -160,7 +159,7 @@ test_tandem_onnx_main(int argc, char **argv)
 
     if(ctxs.size() < 2) {
         fprintf(stderr,
-                "No point in tandem mode with only a ingle runtime type\n");
+                "No point in tandem mode with only a single runtime type\n");
         return 1;
     }
 
@@ -190,14 +189,13 @@ test_tandem_onnx_main(int argc, char **argv)
 
     std::vector<std::shared_ptr<Program>> ps;
     for(auto ctx : ctxs) {
-        auto p = ctx->createProgram(*g, {.inference = true,
-                                         .training = false,
-                                         .batch_size = 1,
-                                         .tensor_layout = TensorLayout::Auto});
+        auto p = ctx->createProgram(
+            *g, ProgramType::INFERENCE,
+            {.batch_size = 1, .tensor_layout = TensorLayout::Auto});
 
-        auto input = p->resolveTensor(*g->inputs_.begin());
+        auto input = ctx->resolveTensor(*g->inputs_.begin());
         input->copyFrom(*loaded_input);
-        p->infer();
+        p->run();
         ps.push_back(p);
     }
 
@@ -207,8 +205,8 @@ test_tandem_onnx_main(int argc, char **argv)
         n->print();
 
         for(auto &i : n->inputs_) {
-            auto t0 = ps[0]->resolveTensor(i.second);
-            auto t1 = ps[1]->resolveTensor(i.second);
+            auto t0 = ctxs[0]->resolveTensor(i.second);
+            auto t1 = ctxs[1]->resolveTensor(i.second);
             if(!t0 || !t1)
                 continue;
             double sse = t0->sse(*t1);
@@ -224,8 +222,8 @@ test_tandem_onnx_main(int argc, char **argv)
             }
         }
         for(auto &i : n->outputs_) {
-            auto t0 = ps[0]->resolveTensor(i.second);
-            auto t1 = ps[1]->resolveTensor(i.second);
+            auto t0 = ctxs[0]->resolveTensor(i.second);
+            auto t1 = ctxs[1]->resolveTensor(i.second);
             if(!t0 || !t1)
                 continue;
 

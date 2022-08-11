@@ -41,7 +41,7 @@
 
 namespace saga {
 
-class Program;
+class Context;
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
@@ -259,7 +259,7 @@ public:
 
     void loadTensors(const char *path);
 
-    bool saveTensors(const char *path, Program *p);
+    bool saveTensors(const char *path, Context *ctx);
 };
 
 //------------------------------------------------------------------------
@@ -355,11 +355,11 @@ public:
 
     void loadTensors(const char *path);
 
-    bool saveTensors(const char *path, Program *p);
+    bool saveTensors(const char *path, Context *p);
 
     void print() const;
 
-    void statsTensors(Program *p);
+    void statsTensors(Context *p);
 
     std::pair<TensorMapping, TensorMapping> tensorMappings() const;
 
@@ -447,8 +447,6 @@ typedef std::function<void(
 typedef std::function<bool(void)> StopCheck;
 
 struct ProgramConfig {
-    bool inference{true};
-    bool training{false};
     int batch_size{1};
     float learning_rate{0};
     TensorLayout tensor_layout{TensorLayout::Auto};
@@ -476,12 +474,7 @@ enum class ExecResult {
 class Program {
 public:
     virtual ~Program() {}
-    virtual std::shared_ptr<Tensor> resolveTensor(
-        std::shared_ptr<Tensor> t) = 0;
-    virtual std::shared_ptr<Tensor> resolveTensorGradient(
-        std::shared_ptr<Tensor> t) = 0;
-    virtual ExecResult infer(long batches = 1) = 0;
-    virtual ExecResult train(long batches = 1) = 0;
+    virtual ExecResult run(long batches = 1) = 0;
     virtual void dump(FILE *output, bool detailed = false) const = 0;
     virtual void debug(bool on) = 0;
     virtual bool dumpGraph(const char *path) { return false; }
@@ -490,11 +483,23 @@ public:
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
+enum class ProgramType {
+    INFERENCE,
+    TRAINING,
+};
+
 class Context {
 public:
     virtual ~Context() {}
     virtual std::shared_ptr<Program> createProgram(const Graph &graph,
+                                                   ProgramType pt,
                                                    const ProgramConfig &pc) = 0;
+
+    virtual std::shared_ptr<Tensor> resolveTensor(
+        std::shared_ptr<Tensor> t) = 0;
+
+    virtual std::shared_ptr<Tensor> resolveTensorGradient(
+        std::shared_ptr<Tensor> t) = 0;
 
     virtual std::string info() const = 0;
 

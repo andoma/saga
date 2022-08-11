@@ -84,14 +84,20 @@ public:
 
     int init();
 
-    std::shared_ptr<Program> createProgram(const Graph &g,
+    std::shared_ptr<Program> createProgram(const Graph &g, ProgramType pt,
                                            const ProgramConfig &pc) override;
+
+    std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
+
+    std::shared_ptr<Tensor> resolveTensorGradient(
+        std::shared_ptr<Tensor> t) override;
 
     void print() const override;
 
     std::string info() const override;
 
     CudaTmpMem m_workspace;
+    CudaTmpMem m_tensor_mem;
 
     cudaStream_t m_stream = 0;
     cudnnHandle_t m_cudnn = NULL;
@@ -100,11 +106,17 @@ public:
     nvmlDevice_t m_nvmldev = NULL;
 #endif
     int m_deviceId;
-    std::mutex m_mutex;
 
     int m_tensor_storage_id_gen = 0;
 
     bool m_tensor_cores = false;
+
+    // Tensors we've handed out external handles to
+    // Their storage need to be kept alive all the time
+    std::vector<std::shared_ptr<CudaTensorStorage>> m_exported_storage;
+
+    std::unordered_map<std::shared_ptr<Tensor>, std::shared_ptr<CudaTensor>>
+        m_tensors;
 };
 
 struct CudaBatchAccessOp {
@@ -119,8 +131,9 @@ typedef std::vector<std::shared_ptr<CudaOperation>> CudaOps;
 
 class CudaProgram : public Program {
 public:
-    CudaProgram(std::shared_ptr<CudaContext> ctx, const ProgramConfig &pc)
-      : m_ctx(ctx), m_pc(pc)
+    CudaProgram(std::shared_ptr<CudaContext> ctx, ProgramType pt,
+                const ProgramConfig &pc)
+      : m_ctx(ctx), m_pt(pt), m_pc(pc), m_mp_scaling(pc.batch_size)
     {
         chkCuda(cudaMallocManaged((void **)&m_aux, 4096, cudaMemAttachGlobal));
         chkCuda(cudaMemset(m_aux, 0, 4096));
@@ -128,30 +141,19 @@ public:
 
     ~CudaProgram() { chkCuda(cudaFree(m_aux)); }
 
-    std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
-    std::shared_ptr<Tensor> resolveTensorGradient(
-        std::shared_ptr<Tensor> src) override;
-    ExecResult infer(long batches) override;
-    ExecResult train(long batches) override;
+    ExecResult run(long batches) override;
     void dump(FILE *output, bool detailed) const override;
     void debug(bool) override;
 
     const std::shared_ptr<CudaContext> m_ctx;
+    const ProgramType m_pt;
     const ProgramConfig m_pc;
 
     bool m_debug = false;
 
     bool m_finalized = false;
 
-    // Tensors we've handed out external handles to
-    // Their storage need to be kept alive all the time
-    std::vector<std::shared_ptr<CudaTensorStorage>> m_exported_storage;
-
-    std::unordered_map<std::shared_ptr<Tensor>, std::shared_ptr<CudaTensor>>
-        m_tensors;
-
-    CudaOps m_infer_operations;
-    CudaOps m_train_operations;
+    CudaOps m_ops;
 
     CudaOps m_fwd_operations;
     CudaOps m_bwd_operations;
@@ -162,20 +164,11 @@ public:
 
     std::vector<std::shared_ptr<CudaTensorStorageDoubleBuffered>> m_flips;
 
-    std::shared_ptr<CudaMemoryLayout> m_train_memory_layout;
-    std::shared_ptr<CudaMemoryLayout> m_infer_memory_layout;
-
-    CudaTmpMem m_tensor_mem;
+    std::shared_ptr<CudaMemoryLayout> m_memory_layout;
 
     CudaAux *m_aux;
     float m_mp_scaling;
     bool m_mp_enabled = false;
-
-    StopCheck m_stop_check;
-
-    std::shared_ptr<UI> m_ui;
-
-    const bool m_anomaly_detect{false};
 
     std::map<std::string, int> m_algo_hash;
 
@@ -209,8 +202,6 @@ public:
 
     std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
                                              const CudaTensor &blueprint);
-
-    void infer(const std::shared_ptr<CudaOperation> &op);
 
     void fwd(const std::shared_ptr<CudaOperation> &op);
     void bwd(const std::shared_ptr<CudaOperation> &op);

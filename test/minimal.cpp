@@ -1,3 +1,4 @@
+#if 0
 #include <signal.h>
 #include <assert.h>
 #include <unistd.h>
@@ -72,11 +73,10 @@ minimal_main(int argc, char **argv)
     g.print();
 
     auto ctx = createContext();
-    auto p = ctx->createProgram(g, {.inference = true,
-                                    .training = true,
-                                    .batch_size = 4,
-                                    .learning_rate = 1e-3,
-                                    .tensor_layout = TensorLayout::NCHW});
+    auto p = ctx->createProgram(g, ProgramType::INFERENCE,
+                                {.batch_size = 4,
+                                 .learning_rate = 1e-3,
+                                 .tensor_layout = TensorLayout::NCHW});
 
     p->dump(stdout);
 
@@ -193,3 +193,4 @@ mse_main(int argc, char **argv)
 }
 
 SAGA_CLI_CMD("mse", "mse [OPTIONS ...]", "Run small mse test", mse_main);
+#endif

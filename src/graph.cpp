@@ -59,14 +59,14 @@ Tensors::loadTensors(const char *path)
 }
 
 bool
-Tensors::saveTensors(const char *path, Program *p)
+Tensors::saveTensors(const char *path, Context *ctx)
 {
     char filepath[PATH_MAX];
     mkdir(path, 0777);
     for(const auto &it : *this) {
         auto t = it.second;
-        if(p != NULL) {
-            t = p->resolveTensor(t);
+        if(ctx != NULL) {
+            t = ctx->resolveTensor(t);
             if(t == NULL)
                 continue;
         }
@@ -183,18 +183,18 @@ Graph::loadTensors(const char *path)
 }
 
 bool
-Graph::saveTensors(const char *path, Program *p)
+Graph::saveTensors(const char *path, Context *ctx)
 {
-    return m_named_tensors->saveTensors(path, p);
+    return m_named_tensors->saveTensors(path, ctx);
 }
 
 void
-Graph::statsTensors(Program *p)
+Graph::statsTensors(Context *ctx)
 {
     for(const auto &it : *m_named_tensors) {
         auto t = it.second;
-        if(p != NULL) {
-            t = p->resolveTensor(t);
+        if(ctx != NULL) {
+            t = ctx->resolveTensor(t);
             if(t != NULL)
                 t->printStats(it.first.c_str());
         }

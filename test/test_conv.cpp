@@ -135,17 +135,16 @@ conv_main(int argc, char **argv)
     if(verbose)
         g.print();
 
-    auto p = ctx->createProgram(g, {.inference = false,
-                                    .training = true,
-                                    .batch_size = batch_size,
-                                    .learning_rate = 1e-3,
-                                    .tensor_layout = TensorLayout::Auto});
+    auto p = ctx->createProgram(g, ProgramType::TRAINING,
+                                {.batch_size = batch_size,
+                                 .learning_rate = 1e-3,
+                                 .tensor_layout = TensorLayout::Auto});
 
-    auto loss = p->resolveTensor(n->outputs_["loss"]);
-    auto grad = p->resolveTensorGradient(out);
-    mid = p->resolveTensor(mid);
-    out = p->resolveTensor(out);
-    last = p->resolveTensorGradient(last);
+    auto loss = ctx->resolveTensor(n->outputs_["loss"]);
+    auto grad = ctx->resolveTensorGradient(out);
+    mid = ctx->resolveTensor(mid);
+    out = ctx->resolveTensor(out);
+    last = ctx->resolveTensorGradient(last);
 
     if(verbose)
         p->dump(stdout, verbose > 1);
@@ -155,7 +154,7 @@ conv_main(int argc, char **argv)
             auto grad_ta = grad->access();
             load_tensor(*grad_ta, conv_input_x);
         }
-        if(p->train() != ExecResult::OK)
+        if(p->run() != ExecResult::OK)
             break;
 
         mid->print("mid");

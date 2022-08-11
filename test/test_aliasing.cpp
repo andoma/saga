@@ -1,3 +1,4 @@
+#if 0
 #include <signal.h>
 #include <assert.h>
 #include <unistd.h>
@@ -92,3 +93,4 @@ aliasing_main(int argc, char **argv)
 }
 
 SAGA_CLI_CMD("aliasing", "aliasing", "Run small aliasing test", aliasing_main);
+#endif

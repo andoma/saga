@@ -656,10 +656,7 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
                                                x->namePostfix("nhwc"));
 
         auto tr = std::make_shared<CudnnTransform>(x, xx, 0.0f);
-        if(training)
-            p.fwd(tr);
-        else
-            p.infer(tr);
+        p.fwd(tr);
         x = xx;
     }
 
@@ -682,10 +679,10 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
             return err;
 
         if(!training) {
-            p.infer(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w,
-                                                          y, 0));
+            p.fwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y,
+                                                        0));
             if(b)
-                p.infer(std::make_shared<CudnnAddTensor>(b, y));
+                p.fwd(std::make_shared<CudnnAddTensor>(b, y));
             return NULL;
         }
 
@@ -721,10 +718,10 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
             return err;
 
         if(!training) {
-            p.infer(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w,
-                                                              x, y, 0.0f));
+            p.fwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w, x,
+                                                            y, 0.0f));
             if(b)
-                p.infer(std::make_shared<CudnnAddTensor>(b, y));
+                p.fwd(std::make_shared<CudnnAddTensor>(b, y));
             return NULL;
         }
 
@@ -890,7 +887,7 @@ activation_setup(CudaProgram &p, const Node &n, bool training,
     auto fwd = std::make_shared<CudnnActivationFwd>(x, y, mode, alpha, 0);
 
     if(!training) {
-        p.infer(fwd);
+        p.fwd(fwd);
         return NULL;
     }
 
@@ -1000,7 +997,7 @@ leakyrelu_setup(CudaProgram &p, const Node &n, bool training)
     auto y = p.lower_tensor(n.outputs_.get("y"));
     float alpha = n.attributes_.get("alpha", 0.01f);
     auto op = std::make_shared<CudaLeakyRelu>(x, y, alpha);
-    p.infer(op);
+    p.fwd(op);
     return NULL;
 }
 
@@ -1111,7 +1108,7 @@ pooling_setup(CudaProgram &p, const Node &n, bool training,
     auto fwd = std::make_shared<CudnnPoolingFwd>(x, y, mode, size, pad, stride);
 
     if(!training) {
-        p.infer(fwd);
+        p.fwd(fwd);
         return NULL;
     }
 
@@ -1276,9 +1273,9 @@ fc_setup(CudaProgram &p, const Node &n, bool training)
         transW ? num_inputs : num_outputs, x, num_inputs, y, num_outputs);
 
     if(!training) {
-        p.infer(fwd);
+        p.fwd(fwd);
         if(b)
-            p.infer(std::make_shared<CudnnAddTensor>(b, y));
+            p.fwd(std::make_shared<CudnnAddTensor>(b, y));
         return NULL;
     }
 
@@ -1394,7 +1391,7 @@ convert_setup(CudaProgram &p, const Node &n, bool training)
         auto y =
             std::make_shared<CudaTensor>(x, x->dims_, std::vector<int64_t>{},
                                          xh->namePostfix("nop-convert"));
-        p.m_tensors[yh] = y;
+        p.m_ctx->m_tensors[yh] = y;
         return NULL;
     }
 
@@ -1406,7 +1403,7 @@ convert_setup(CudaProgram &p, const Node &n, bool training)
     }
 
     if(!training) {
-        p.infer(op);
+        p.fwd(op);
     } else {
         p.fwd(op);
     }
@@ -1561,7 +1558,7 @@ catclassifier_setup(CudaProgram &p, const Node &n, bool training)
     auto op = std::make_shared<CudaCatClassifierFwd>(x, y);
 
     if(!training) {
-        p.infer(op);
+        p.fwd(op);
         return NULL;
     }
     p.fwd(op);
@@ -1675,7 +1672,7 @@ mse_setup(CudaProgram &p, const Node &n, bool training)
     auto op = std::make_shared<CudaMSEFwd>(x, y);
 
     if(!training) {
-        p.infer(op);
+        p.fwd(op);
         return NULL;
     }
     p.fwd(op);
@@ -1804,21 +1801,21 @@ static std::vector<std::shared_ptr<Node>>
 dropout_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 {
     auto y = n->outputs_.get("y");
-    auto ly = p.m_tensors[y];
+    auto ly = p.m_ctx->m_tensors[y];
 
     if(ly) {
         auto x = n->inputs_.get("x");
         auto lx = std::make_shared<CudaTensor>(ly->m_storage, ly->dims_,
                                                p.tensorFormat(*ly),
                                                ly->namePostfix("dropout"));
-        p.m_tensors[x] = ly;
+        p.m_ctx->m_tensors[x] = ly;
 
     } else {
         auto x = p.lower_tensor(n->inputs_.get("x"));
         ly = std::make_shared<CudaTensor>(x->m_storage, x->dims_,
                                           p.tensorFormat(*x),
                                           x->namePostfix("dropout"));
-        p.m_tensors[y] = ly;
+        p.m_ctx->m_tensors[y] = ly;
     }
     return {};
 }
@@ -2000,8 +1997,8 @@ batchnorm_setup(CudaProgram &p, const Node &n, bool training)
     const float epsilon = n.attributes_.get("epsilon", 1e-5f);
 
     if(!training) {
-        p.infer(std::make_shared<CudnnBatchNormInference>(x, s, b, m, v, y,
-                                                          epsilon));
+        p.fwd(std::make_shared<CudnnBatchNormInference>(x, s, b, m, v, y,
+                                                        epsilon));
         return NULL;
     }
 
@@ -2099,7 +2096,7 @@ sum_setup(CudaProgram &p, const Node &n, bool training)
     auto fwd = std::make_shared<CudnnOpTensor>(x0, x1, y, CUDNN_OP_TENSOR_ADD);
 
     if(!training) {
-        p.infer(fwd);
+        p.fwd(fwd);
         return NULL;
     }
 
@@ -2132,7 +2129,7 @@ add_setup(CudaProgram &p, const Node &n, bool training)
     auto fwd = std::make_shared<CudnnOpTensor>(x, b, y, CUDNN_OP_TENSOR_ADD);
 
     if(!training) {
-        p.infer(fwd);
+        p.fwd(fwd);
         return NULL;
     }
     return "Add not supported for backprop (yet)";
@@ -2180,7 +2177,7 @@ softmax_setup(CudaProgram &p, const Node &n, bool training)
 
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
-    p.infer(std::make_shared<CudnnSoftmaxFwd>(x, y));
+    p.fwd(std::make_shared<CudnnSoftmaxFwd>(x, y));
     return NULL;
 }
 
@@ -2268,7 +2265,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
             sv_->deviceMem(), desc_, ctx_->m_workspace.ptr(),
             ctx_->m_workspace.size(), reserve_, reserve_size_);
 
-        if(!p.m_anomaly_detect)
+        if(!p.m_pc.anomaly_detect)
             return s;
 
         s = cudnnQueryRuntimeError(ctx_->m_cudnn, &s, CUDNN_ERRQUERY_BLOCKING,
@@ -2337,7 +2334,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
             fwd_->sv_->deviceMem(), fwd_->desc_, p.m_ctx->m_workspace.ptr(),
             p.m_ctx->m_workspace.size(), fwd_->reserve_, fwd_->reserve_size_);
 
-        if(!p.m_anomaly_detect)
+        if(!p.m_pc.anomaly_detect)
             return s;
 
         s = cudnnQueryRuntimeError(p.m_ctx->m_cudnn, &s,
@@ -2455,16 +2452,16 @@ batchnorm_persistent_transform_node(CudaProgram &p, std::shared_ptr<Node> bn,
     if(x->dims_[1] % 4)
         return nullptr;
 
-    auto lx = p.m_tensors.find(x);
-    if(lx != p.m_tensors.end()) {
+    auto lx = p.m_ctx->m_tensors.find(x);
+    if(lx != p.m_ctx->m_tensors.end()) {
         if(!lx->second->cpacked())
             return nullptr;
     }
 
     auto y = relu ? relu->outputs_["y"] : bn->outputs_["y"];
 
-    auto ly = p.m_tensors.find(y);
-    if(ly != p.m_tensors.end()) {
+    auto ly = p.m_ctx->m_tensors.find(y);
+    if(ly != p.m_ctx->m_tensors.end()) {
         if(!ly->second->cpacked())
             return nullptr;
     }
@@ -2611,7 +2608,7 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
     const bool bypass = disable && x->dims_ == y->dims_;
 
     if(bypass) {
-        p.infer(std::make_shared<CudnnTransform>(x, y, 0.0f));
+        p.fwd(std::make_shared<CudnnTransform>(x, y, 0.0f));
         return NULL;
     }
 
@@ -2635,7 +2632,7 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
     if(training) {
         p.fwd(op);
     } else {
-        p.infer(op);
+        p.fwd(op);
     }
     return NULL;
 }
@@ -2693,7 +2690,7 @@ reshape_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
                                            y->dims_.batch(p.m_pc.batch_size),
                                            fmt, x->namePostfix("reshape"));
 
-    p.m_tensors[y] = yl;
+    p.m_ctx->m_tensors[y] = yl;
     yl->m_grad = std::make_shared<CudaTensor>(dx->m_storage,
                                               y->dims_.batch(p.m_pc.batch_size),
                                               fmt, x->namePostfix("reshape"));
@@ -2733,7 +2730,7 @@ window_transform_node(CudaProgram &p, const Node &n)
         std::make_shared<CudaTensor>(x, y->dims_.batch(p.m_pc.batch_size),
                                      offset.i64(), y->namePostfix("alias"));
 
-    p.m_tensors[y] = yl;
+    p.m_ctx->m_tensors[y] = yl;
 
     yl->m_grad =
         std::make_shared<CudaTensor>(dx, y->dims_.batch(p.m_pc.batch_size),
@@ -2774,7 +2771,7 @@ concat_transform_node(CudaProgram &p, const Node &n)
             y, xh->dims_.batch(p.m_pc.batch_size), element_offset,
             xh->namePostfix("alias"));
         x->copyFromLocked(*xh);
-        p.m_tensors[xh] = x;
+        p.m_ctx->m_tensors[xh] = x;
         x->m_grad = std::make_shared<CudaTensor>(
             dy, xh->dims_.batch(p.m_pc.batch_size), element_offset,
             xh->namePostfix("alias"));
@@ -2841,8 +2838,8 @@ struct CudaStats : public CudaOperation {
 static const char *
 stats_setup(CudaProgram &p, const Node &n, bool training)
 {
-    auto it = p.m_tensors.find(n.inputs_.get("x"));
-    if(it == p.m_tensors.end())
+    auto it = p.m_ctx->m_tensors.find(n.inputs_.get("x"));
+    if(it == p.m_ctx->m_tensors.end())
         return "x-tensor not found";
 
     auto x = it->second;
@@ -2860,7 +2857,7 @@ stats_setup(CudaProgram &p, const Node &n, bool training)
     if(training) {
         p.upd(op);
     } else {
-        p.infer(op);
+        p.fwd(op);
     }
     return NULL;
 }

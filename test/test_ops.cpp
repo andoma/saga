@@ -511,14 +511,13 @@ test_op(std::shared_ptr<Context> ctx, const char *op, const Tensors &inputs,
     auto x = xit->second;
     int batch_size = x->dims_[0];
     auto n = g.addNode(op, inputs, attributes);
-    auto p = ctx->createProgram(g, {.inference = true,
-                                    .training = false,
-                                    .batch_size = batch_size,
-                                    .learning_rate = 1e-3,
-                                    .tensor_layout = TensorLayout::Auto});
+    auto p = ctx->createProgram(g, ProgramType::INFERENCE,
+                                {.batch_size = batch_size,
+                                 .learning_rate = 1e-3,
+                                 .tensor_layout = TensorLayout::Auto});
 
-    auto y = p->resolveTensor(n->y());
-    p->infer();
+    auto y = ctx->resolveTensor(n->y());
+    p->run();
 
     if(g_verbose)
         p->dump(stdout);

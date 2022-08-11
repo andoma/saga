@@ -94,11 +94,7 @@ public:
         for(int i = 0; i < rank; i++) {
             m_strides.push_back(strides[i]);
         }
-
-        m_storage->m_ctx->m_mutex.lock();
     }
-
-    ~CudaTensorAccess() { m_storage->m_ctx->m_mutex.unlock(); }
 
     Dims strides() override { return m_strides; }
 

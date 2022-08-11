@@ -6,10 +6,21 @@ namespace saga {
 
 class NullContext : public Context {
 public:
-    std::shared_ptr<Program> createProgram(const Graph &graph,
+    std::shared_ptr<Program> createProgram(const Graph &graph, ProgramType pt,
                                            const ProgramConfig &pc) override
     {
         fprintf(stderr, "Warning: NullContext can't create program\n");
+        return nullptr;
+    }
+
+    std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override
+    {
+        return nullptr;
+    }
+
+    std::shared_ptr<Tensor> resolveTensorGradient(
+        std::shared_ptr<Tensor> t) override
+    {
         return nullptr;
     }
 

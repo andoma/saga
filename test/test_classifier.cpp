@@ -403,7 +403,7 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
     }
 }
 
-static void
+static void __attribute__((unused))
 fill_theta(Tensor *t, int batch_size, int augmentation_angle,
            int augmentation_zoom)
 {
@@ -441,7 +441,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     auto tensor_layout = TensorLayout::Auto;
     const char *savepath = NULL;
     const char *loadpath = NULL;
-    bool no_train = false;
+    bool train = true;
 
     int augmentation_angle = 0;
     int augmentation_zoom = 0;
@@ -452,7 +452,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:")) != -1) {
         switch(opt) {
         case 'n':
-            no_train = true;
+            train = false;
             break;
         case 's':
             savepath = optarg;
@@ -522,8 +522,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         n = g.addSpatialTransform(n->y(), theta);
     }
 
-    auto postconv = n->y();
-
     n = make_network(g, n, mode, output_labels, stats.get());
     if(!n) {
         fprintf(stderr, "Network type %s not available\n", mode.c_str());
@@ -577,41 +575,48 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
-    auto p = ctx->createProgram(g, {.inference = true,
-                                    .training = !no_train,
-                                    .batch_size = batch_size,
-                                    .learning_rate = learning_rate,
-                                    .tensor_layout = tensor_layout,
-                                    .stop_check = [&]() { return !g_run; },
-                                    .ui = saga::make_statbar(),
-                                    .pre_ops = pre_ops,
-                                    .post_ops = post_ops,
-                                    .batched_tensors = bt});
+    ProgramConfig pc{.batch_size = batch_size,
+                     .learning_rate = learning_rate,
+                     .tensor_layout = tensor_layout,
+                     .stop_check = [&]() { return !g_run; },
+                     .ui = saga::make_statbar(),
+                     .pre_ops = pre_ops,
+                     .post_ops = post_ops,
+                     .batched_tensors = bt};
 
-    if(verbose > 1)
-        p->dump(stdout, verbose > 2);
+    auto testing = ctx->createProgram(g, ProgramType::INFERENCE, pc);
 
-    theta = p->resolveTensor(theta);
-    postconv = p->resolveTensor(postconv);
+    auto training =
+        train ? ctx->createProgram(g, ProgramType::TRAINING, pc) : nullptr;
+
+    if(verbose > 1) {
+        testing->dump(stdout, verbose > 2);
+
+        if(training)
+            training->dump(stdout, verbose > 2);
+    }
+
     int epoch = 0;
 
-    if(graphdump) {
-        p->dumpGraph(graphdump);
+    if(graphdump && training) {
+        training->dumpGraph(graphdump);
         exit(0);
     }
 
     while(g_run) {
         const int64_t t0 = get_ts();
 
-        if(!no_train) {
+        if(train) {
+#if 0
             if(theta)
                 fill_theta(theta.get(), batch_size, augmentation_angle,
                            augmentation_zoom);
+#endif
 
             // Train
             epoch_begin(batch_size, false);
             loss_sum = 0;
-            if(p->train(train_inputs / batch_size) != ExecResult::OK)
+            if(training->run(train_inputs / batch_size) != ExecResult::OK)
                 break;
         }
 
@@ -619,7 +624,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         epoch_begin(batch_size, true);
         const int64_t t1 = get_ts();
         correct = 0;
-        if(p->infer(test_inputs / batch_size) != ExecResult::OK)
+        if(testing->run(test_inputs / batch_size) != ExecResult::OK)
             break;
 
         const int64_t t2 = get_ts();
@@ -633,7 +638,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     }
 
     if(savepath != NULL)
-        g.saveTensors(savepath, p.get());
+        g.saveTensors(savepath, ctx.get());
 }
 
 }  // namespace saga
