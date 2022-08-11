@@ -100,9 +100,9 @@ public:
 
     ~CudaTensorAccess() { m_storage->m_ctx->m_mutex.unlock(); }
 
-    Dims strides() { return m_strides; }
+    Dims strides() override { return m_strides; }
 
-    void *data() { return m_storage->data(); }
+    void *data() override { return m_storage->data(); }
 
     int64_t offsetForElement(const Dims &element) const
     {
@@ -113,7 +113,7 @@ public:
         return offset;
     }
 
-    virtual double get(const Dims &element)
+    virtual double get(const Dims &element) override
     {
         if(!m_sync) {
             cudaStreamSynchronize(m_storage->m_ctx->m_stream);
@@ -128,13 +128,13 @@ public:
         return (void *)((char *)m_storage->data() + off);
     };
 
-    virtual void set(const Dims &element, double value)
+    virtual void set(const Dims &element, double value) override
     {
         m_storage->set(offsetForElement(element), value);
     }
 
     virtual void copyBytesFrom(const Dims &element, const void *data,
-                               size_t size)
+                               size_t size) override
     {
         const size_t o = offsetForElement(element) * m_storage->m_element_size;
         char *dst = (char *)m_storage->data();

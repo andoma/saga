@@ -150,7 +150,7 @@ struct CudnnAddTensor : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         return cudnnAddTensor(p.m_ctx->m_cudnn, &alpha, x_->desc(),
@@ -181,7 +181,7 @@ struct CudnnTransform : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         return cudnnTransformTensor(p.m_ctx->m_cudnn, &alpha, a_->desc(),
@@ -470,7 +470,7 @@ struct CudnnConvolutionFwd : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
@@ -516,7 +516,7 @@ struct CudnnConvolutionBwdBias : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -556,7 +556,7 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -605,7 +605,7 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
@@ -811,7 +811,7 @@ struct CudnnActivationFwd : public CudnnOperation {
 
     ~CudnnActivationFwd() { chkCUDNN(cudnnDestroyActivationDescriptor(desc_)); }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
@@ -853,7 +853,7 @@ struct CudnnActivationBwd : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
@@ -964,7 +964,7 @@ struct CudaLeakyRelu : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch)
+    const char *exec(CudaProgram &p, long batch) override
     {
         switch(x_->data_type_) {
         case Tensor::DataType::FLOAT:
@@ -1027,7 +1027,7 @@ struct CudnnPoolingFwd : public CudnnOperation {
 
     ~CudnnPoolingFwd() { chkCUDNN(cudnnDestroyPoolingDescriptor(desc_)); }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -1068,7 +1068,7 @@ struct CudnnPoolingBwd : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
@@ -1216,7 +1216,7 @@ struct CudaGemm : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch)
+    const char *exec(CudaProgram &p, long batch) override
     {
         float alpha = 1.0f, beta = 0.0f;
         __half halpha = 1.0f, hbeta = 0.0f;
@@ -1362,7 +1362,7 @@ struct CudaConvert : public CudaOperation {
         }
     }
 
-    const char *exec(CudaProgram &p, long batch)
+    const char *exec(CudaProgram &p, long batch) override
     {
         algo_(x_->deviceMem(), y_->deviceMem(), m_elements, scale_,
               p.m_ctx->m_stream);
@@ -1463,7 +1463,7 @@ struct CudaCatClassifierFwd : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch)
+    const char *exec(CudaProgram &p, long batch) override
     {
         switch(x_->m_type) {
         case CUDNN_DATA_FLOAT:
@@ -1510,7 +1510,7 @@ struct CudaCatClassifierBwd : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch)
+    const char *exec(CudaProgram &p, long batch) override
     {
         const int n = x_->dims_[0];
         const int c = x_->dims_[1];
@@ -1588,7 +1588,7 @@ struct CudaMSEFwd : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch)
+    const char *exec(CudaProgram &p, long batch) override
     {
         if(x_->m_type == CUDNN_DATA_HALF && y_->m_type == CUDNN_DATA_FLOAT) {
             convert_half_float(x_->deviceMem(), y_->deviceMem(), m_elements,
@@ -1624,7 +1624,7 @@ struct CudaMSEBwd : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch)
+    const char *exec(CudaProgram &p, long batch) override
     {
         const int n = x_->dims_[0];
 
@@ -1726,7 +1726,7 @@ struct CudnnDropoutFwd : public CudnnOperation {
         chkCuda(cudaFree(reserve_));
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         return cudnnDropoutForward(p.m_ctx->m_cudnn, desc_, x_->desc(),
                                    x_->deviceMem(), y_->desc(), y_->deviceMem(),
@@ -1757,7 +1757,7 @@ struct CudnnDropoutBwd : public CudnnOperation {
 
     ~CudnnDropoutBwd() {}
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         return cudnnDropoutBackward(
             p.m_ctx->m_cudnn, fwd_->desc_, dy_->desc(), dy_->deviceMem(),
@@ -1866,7 +1866,7 @@ struct CudnnBatchNormInference : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -1914,7 +1914,7 @@ struct CudnnBatchNormTrain : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -1961,7 +1961,7 @@ struct CudnnBatchNormBwd : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f, beta = 0.0f;
 
@@ -2066,7 +2066,7 @@ struct CudnnOpTensor : public CudnnOperation {
 
     ~CudnnOpTensor() { cudnnDestroyOpTensorDescriptor(desc_); }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -2151,7 +2151,7 @@ struct CudnnSoftmaxFwd : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f, beta = 0.0f;
 
@@ -2254,7 +2254,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         chkCuda(cudaFree(reserve_));
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -2322,7 +2322,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
         p.m_ctx->m_workspace.request(workspace);
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f, beta = 0.0f;
 
@@ -2365,7 +2365,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
         return r;
     }
 
-    virtual bool killOutput(std::shared_ptr<CudaTensorStorage> s)
+    virtual bool killOutput(std::shared_ptr<CudaTensorStorage> s) override
     {
         if(dz_ && dz_->m_storage == s) {
             dz_.reset();
@@ -2576,7 +2576,7 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
         chkCUDNN(cudnnDestroySpatialTransformerDescriptor(desc_));
     }
 
-    cudnnStatus_t exec(CudaProgram &p)
+    cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f, beta = 0.0f;
         cudnnStatus_t s;
@@ -2810,7 +2810,7 @@ struct CudaStats : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch)
+    const char *exec(CudaProgram &p, long batch) override
     {
         switch(x_->data_type_) {
         case Tensor::DataType::FLOAT:
