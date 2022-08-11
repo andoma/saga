@@ -5,13 +5,12 @@
 namespace saga {
 
 struct StatBar : public UI {
-    void updateBatchInfo(enum Phase phase, int batch_size, int total_batches,
-                         int epoch) override
+    void updateBatchInfo(enum Phase phase, int batch_size,
+                         int total_batches) override
     {
         m_phase = phase;
         m_batch_size = batch_size;
         m_total_batches = total_batches;
-        m_current_epoch = epoch;
         if(!m_start)
             m_start = Now();
         refresh(m_start);
@@ -66,9 +65,9 @@ struct StatBar : public UI {
         m_last_update = now;
         printf("\033[K");
 
-        printf("%s | E: %-4d | B: %5d/%-5d N:%-4d | Mem %6zu/%-6zu",
-               m_phase == TRAIN ? "Train" : "Infer", m_current_epoch,
-               m_current_batch, m_total_batches, m_batch_size, m_mem_use >> 20,
+        printf("%s | B: %5d/%-5d N:%-4d | Mem %6zu/%-6zu",
+               m_phase == TRAIN ? "Train" : "Infer", m_current_batch,
+               m_total_batches, m_batch_size, m_mem_use >> 20,
                m_mem_total >> 20);
 
         if(m_total_samples[TRAIN]) {

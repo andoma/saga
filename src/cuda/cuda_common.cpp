@@ -323,77 +323,96 @@ updateMemUsage(UI &ui)
     ui.updateMemUsage(memtotal - memfree, memtotal);
 }
 
-ExecResult
-CudaProgram::run(long batches)
+void
+CudaProgram::prep(long batches)
 {
-    if(batches == 0)
-        return ExecResult::OK;
-
-    if(m_pc.stop_check && m_pc.stop_check())
-        return ExecResult::STOPPED;
-
     finalize();
 
     run_batched_tensor_callbacks(m_pc.pre_ops, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
 
-    if(m_pc.ui) {
-        m_pc.ui->updateBatchInfo(UI::TRAIN, m_pc.batch_size, batches, m_epoch);
+    if(m_pc.ui)
+        m_pc.ui->updateBatchInfo(UI::TRAIN, m_pc.batch_size, batches);
+
+    cudaStreamSynchronize(m_ctx->m_stream);
+}
+
+ExecResult
+CudaProgram::step(long batch, long batches)
+{
+    setupTensorStorage(m_memory_layout);
+    if(!runOps(m_ops, batch, m_pc.anomaly_detect)) {
+        return ExecResult::ERROR;
     }
 
-    m_epoch++;
+    if(batch > 0) {
+        run_batched_tensor_callbacks(m_pc.post_ops, batch - 1,
+                                     m_post_batched_tensors);
+    }
+    if(batch < batches - 1) {
+        run_batched_tensor_callbacks(m_pc.pre_ops, batch + 1,
+                                     m_pre_batched_tensors);
+    }
+    flipDoubleBufferedTensors();
+
+    if(m_pc.ui) {
+        m_pc.ui->updateProgress(batch, m_total_trained);
+        updateMemUsage(*m_pc.ui);
+    }
+
+    m_total_trained += m_pc.batch_size;
+
     cudaStreamSynchronize(m_ctx->m_stream);
 
-    for(long i = 0; i < batches; i++) {
-        setupTensorStorage(m_memory_layout);
-        if(!runOps(m_ops, i, m_pc.anomaly_detect)) {
-            return ExecResult::ERROR;
+    if(m_mp_enabled) {
+        if(m_aux->inf || m_aux->nan) {
+            m_mp_scaling *= 0.5;
+        } else if(m_aux->range > 1) {
+            m_mp_scaling *= 0.9;
+        } else {
+            m_mp_scaling *= 1.02;
         }
 
-        if(i > 0) {
-            run_batched_tensor_callbacks(m_pc.post_ops, i - 1,
-                                         m_post_batched_tensors);
-        }
-        if(i < batches - 1) {
-            run_batched_tensor_callbacks(m_pc.pre_ops, i + 1,
-                                         m_pre_batched_tensors);
-        }
-        flipDoubleBufferedTensors();
-
-        if(m_pc.stop_check && m_pc.stop_check()) {
-            return ExecResult::STOPPED;
-        }
-
+        m_aux->range = 0;
+        m_aux->inf = 0;
+        m_aux->nan = 0;
         if(m_pc.ui) {
-            m_pc.ui->updateProgress(i, m_total_trained);
-            updateMemUsage(*m_pc.ui);
+            m_pc.ui->updateMpScaling(m_mp_scaling);
         }
+    }
+    return ExecResult::OK;
+}
 
-        m_total_trained += m_pc.batch_size;
+void
+CudaProgram::post(long batches)
+{
+    run_batched_tensor_callbacks(m_pc.post_ops, batches - 1,
+                                 m_post_batched_tensors);
+}
 
-        cudaStreamSynchronize(m_ctx->m_stream);
+ExecResult
+CudaProgram::run(long batches, StopCheck stop_check)
+{
+    if(batches == 0)
+        return ExecResult::OK;
 
-        if(m_mp_enabled) {
-            if(m_aux->inf || m_aux->nan) {
-                m_mp_scaling *= 0.5;
-            } else if(m_aux->range > 1) {
-                m_mp_scaling *= 0.9;
-            } else {
-                m_mp_scaling *= 1.02;
-            }
+    if(stop_check && stop_check())
+        return ExecResult::STOPPED;
 
-            m_aux->range = 0;
-            m_aux->inf = 0;
-            m_aux->nan = 0;
-            if(m_pc.ui) {
-                m_pc.ui->updateMpScaling(m_mp_scaling);
-            }
+    prep(batches);
+
+    for(long i = 0; i < batches; i++) {
+        ExecResult r = step(i, batches);
+        if(r != ExecResult::OK)
+            return r;
+
+        if(stop_check && stop_check()) {
+            return ExecResult::STOPPED;
         }
     }
 
-    run_batched_tensor_callbacks(m_pc.post_ops, batches - 1,
-                                 m_post_batched_tensors);
+    post(batches);
     return ExecResult::OK;
 }
 
@@ -769,11 +788,6 @@ CudaProgram::finalize()
     m_ctx->m_tensor_mem.alloc();
 
     m_ctx->m_workspace.alloc();
-
-    printf("Tensor memory: %zd MB\n",
-           m_ctx->m_tensor_mem.requested() / 1048576);
-    printf("Workspace memory: %zd MB\n",
-           m_ctx->m_workspace.requested() / 1048576);
 }
 
 void

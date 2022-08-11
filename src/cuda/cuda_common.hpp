@@ -141,7 +141,12 @@ public:
 
     ~CudaProgram() { chkCuda(cudaFree(m_aux)); }
 
-    ExecResult run(long batches) override;
+    ExecResult run(long batches, StopCheck stop_check) override;
+
+    void prep(long batches);
+    ExecResult step(long batch, long batches);
+    void post(long batches);
+
     void dump(FILE *output, bool detailed) const override;
     void debug(bool) override;
 
@@ -172,7 +177,6 @@ public:
 
     std::map<std::string, int> m_algo_hash;
 
-    int m_epoch{0};
     int64_t m_total_inferred{0};
     int64_t m_total_trained{0};
 

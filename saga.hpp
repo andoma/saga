@@ -403,8 +403,8 @@ struct UI {
     virtual ~UI() {}
 
     enum Phase { INFER, TRAIN };
-    virtual void updateBatchInfo(Phase phase, int batch_size, int total_batches,
-                                 int epoch) = 0;
+    virtual void updateBatchInfo(Phase phase, int batch_size,
+                                 int total_batches) = 0;
     virtual void updateProgress(int current_batch, int64_t total_samples) = 0;
     virtual void updateLoss(double loss) = 0;
     virtual void updateMemUsage(size_t use, size_t total) = 0;
@@ -455,7 +455,6 @@ struct ProgramConfig {
     int batch_size{1};
     float learning_rate{0};
     TensorLayout tensor_layout{TensorLayout::Auto};
-    StopCheck stop_check;
     std::shared_ptr<UI> ui;
 
     TensorBatchCallback pre_ops;
@@ -479,7 +478,8 @@ enum class ExecResult {
 class Program {
 public:
     virtual ~Program() {}
-    virtual ExecResult run(long batches = 1) = 0;
+    virtual ExecResult run(long batches = 1,
+                           StopCheck stop_check = nullptr) = 0;
     virtual void dump(FILE *output, bool detailed = false) const = 0;
     virtual void debug(bool on) = 0;
     virtual bool dumpGraph(const char *path) { return false; }
