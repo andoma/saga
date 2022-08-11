@@ -72,13 +72,11 @@ minimal_main(int argc, char **argv)
     g.print();
 
     auto ctx = createContext();
-    auto p = ctx->createProgram(g,
-                                {.inference = true,
-                                 .training = true,
-                                 .batch_size = 4,
-                                 .learning_rate = 1e-3,
-                                 .tensor_layout = TensorLayout::NCHW},
-                                {});
+    auto p = ctx->createProgram(g, {.inference = true,
+                                    .training = true,
+                                    .batch_size = 4,
+                                    .learning_rate = 1e-3,
+                                    .tensor_layout = TensorLayout::NCHW});
 
     p->dump(stdout);
 
@@ -152,13 +150,11 @@ mse_main(int argc, char **argv)
     g.print();
 
     auto ctx = createContext();
-    auto p = ctx->createProgram(g,
-                                {.inference = true,
-                                 .training = true,
-                                 .batch_size = 1,
-                                 .learning_rate = 1e-3,
-                                 .tensor_layout = TensorLayout::NCHW},
-                                {});
+    auto p = ctx->createProgram(g, {.inference = true,
+                                    .training = true,
+                                    .batch_size = 1,
+                                    .learning_rate = 1e-3,
+                                    .tensor_layout = TensorLayout::NCHW});
 
     p->dump(stdout);
 

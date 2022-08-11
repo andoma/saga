@@ -135,13 +135,12 @@ conv_main(int argc, char **argv)
     if(verbose)
         g.print();
 
-    auto p = ctx->createProgram(g,
-                                {.inference = false,
-                                 .training = true,
-                                 .batch_size = batch_size,
-                                 .learning_rate = 1e-3,
-                                 .tensor_layout = TensorLayout::Auto},
-                                {});
+    auto p = ctx->createProgram(g, {.inference = false,
+                                    .training = true,
+                                    .batch_size = batch_size,
+                                    .learning_rate = 1e-3,
+                                    .tensor_layout = TensorLayout::Auto});
+
     auto loss = p->resolveTensor(n->outputs_["loss"]);
     auto grad = p->resolveTensorGradient(out);
     mid = p->resolveTensor(mid);

@@ -218,13 +218,11 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
     }
     n = g.addNode("relu", n->y());
 
-    auto p = ctx->createProgram(g,
-                                {.inference = false,
-                                 .training = true,
-                                 .batch_size = batch_size,
-                                 .learning_rate = 1e-3,
-                                 .tensor_layout = TensorLayout::Auto},
-                                {});
+    auto p = ctx->createProgram(g, {.inference = false,
+                                    .training = true,
+                                    .batch_size = batch_size,
+                                    .learning_rate = 1e-3,
+                                    .tensor_layout = TensorLayout::Auto});
 
     auto y = p->resolveTensor(n->y());
     auto dx = check_dx ? p->resolveTensorGradient(x) : nullptr;

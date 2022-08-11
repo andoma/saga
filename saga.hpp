@@ -459,6 +459,8 @@ struct ProgramConfig {
 
     TensorBatchCallback post_ops;
 
+    BatchedTensors batched_tensors;
+
     // Scan tensors for NAN values
     // Caution: Makes everything slower.
     // Only use for debug
@@ -491,9 +493,8 @@ public:
 class Context {
 public:
     virtual ~Context() {}
-    virtual std::shared_ptr<Program> createProgram(
-        const Graph &graph, const ProgramConfig &pc,
-        const BatchedTensors &bts) = 0;
+    virtual std::shared_ptr<Program> createProgram(const Graph &graph,
+                                                   const ProgramConfig &pc) = 0;
 
     virtual std::string info() const = 0;
 

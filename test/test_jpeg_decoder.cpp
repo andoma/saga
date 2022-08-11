@@ -124,8 +124,7 @@ jpeg_decoder_main(int argc, char **argv)
 
     auto ctx = createContext();
     auto p = ctx->createProgram(
-        g, {.inference = true, .training = false, .batch_size = batch_size},
-        {});
+        g, {.inference = true, .training = false, .batch_size = batch_size});
 
     if(g_verbose > 1)
         p->dump(stdout);

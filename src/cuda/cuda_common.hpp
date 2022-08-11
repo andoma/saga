@@ -84,9 +84,8 @@ public:
 
     int init();
 
-    std::shared_ptr<Program> createProgram(
-        const Graph &g, const ProgramConfig &pc,
-        const BatchedTensors &bts = {}) override;
+    std::shared_ptr<Program> createProgram(const Graph &g,
+                                           const ProgramConfig &pc) override;
 
     void print() const override;
 

@@ -379,7 +379,6 @@ CudaProgram::infer(long batches)
             run_batched_tensor_callbacks(m_pc.pre_ops, false, i + 1,
                                          m_pre_batched_tensors);
         }
-
         flipDoubleBufferedTensors();
 
         if(m_stop_check && m_stop_check()) {
@@ -420,9 +419,9 @@ CudaProgram::train(long batches)
     if(m_ui) {
         m_ui->updateBatchInfo(UI::TRAIN, m_pc.batch_size, batches, m_epoch);
     }
+
     m_epoch++;
     cudaStreamSynchronize(m_ctx->m_stream);
-
     for(long i = 0; i < batches; i++) {
         if(!runOps(m_train_operations, i, m_anomaly_detect)) {
             return ExecResult::ERROR;
@@ -780,14 +779,13 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
 }
 
 std::shared_ptr<Program>
-CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
-                           const BatchedTensors &bts)
+CudaContext::createProgram(const Graph &g, const ProgramConfig &pc)
 {
     std::scoped_lock lock(m_mutex);
 
     auto p = std::make_shared<CudaProgram>(shared_from_this(), pc);
 
-    p->setupBatchedTensors(bts);
+    p->setupBatchedTensors(pc.batched_tensors);
 
     auto nodes = applyTransforms(CUDA_TRANSFORM_ALL, *p, g.nodes_);
 

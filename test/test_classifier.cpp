@@ -577,17 +577,16 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
-    auto p = ctx->createProgram(g,
-                                {.inference = true,
-                                 .training = !no_train,
-                                 .batch_size = batch_size,
-                                 .learning_rate = learning_rate,
-                                 .tensor_layout = tensor_layout,
-                                 .stop_check = [&]() { return !g_run; },
-                                 .ui = saga::make_statbar(),
-                                 .pre_ops = pre_ops,
-                                 .post_ops = post_ops},
-                                bt);
+    auto p = ctx->createProgram(g, {.inference = true,
+                                    .training = !no_train,
+                                    .batch_size = batch_size,
+                                    .learning_rate = learning_rate,
+                                    .tensor_layout = tensor_layout,
+                                    .stop_check = [&]() { return !g_run; },
+                                    .ui = saga::make_statbar(),
+                                    .pre_ops = pre_ops,
+                                    .post_ops = post_ops,
+                                    .batched_tensors = bt});
 
     if(verbose > 1)
         p->dump(stdout, verbose > 2);

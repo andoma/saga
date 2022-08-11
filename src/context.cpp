@@ -6,9 +6,8 @@ namespace saga {
 
 class NullContext : public Context {
 public:
-    std::shared_ptr<Program> createProgram(
-        const Graph &graph, const ProgramConfig &pc,
-        const BatchedTensors &bts = {}) override
+    std::shared_ptr<Program> createProgram(const Graph &graph,
+                                           const ProgramConfig &pc) override
     {
         fprintf(stderr, "Warning: NullContext can't create program\n");
         return nullptr;

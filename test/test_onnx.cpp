@@ -17,12 +17,10 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
     char input_path[PATH_MAX];
     char output_path[PATH_MAX];
 
-    auto p = ctx->createProgram(g,
-                                {.inference = true,
-                                 .training = false,
-                                 .batch_size = 1,
-                                 .tensor_layout = TensorLayout::NHWC},
-                                {});
+    auto p = ctx->createProgram(g, {.inference = true,
+                                    .training = false,
+                                    .batch_size = 1,
+                                    .tensor_layout = TensorLayout::NHWC});
 
     if(verbose)
         p->dump(stdout);
@@ -192,12 +190,10 @@ test_tandem_onnx_main(int argc, char **argv)
 
     std::vector<std::shared_ptr<Program>> ps;
     for(auto ctx : ctxs) {
-        auto p = ctx->createProgram(*g,
-                                    {.inference = true,
-                                     .training = false,
-                                     .batch_size = 1,
-                                     .tensor_layout = TensorLayout::Auto},
-                                    {});
+        auto p = ctx->createProgram(*g, {.inference = true,
+                                         .training = false,
+                                         .batch_size = 1,
+                                         .tensor_layout = TensorLayout::Auto});
 
         auto input = p->resolveTensor(*g->inputs_.begin());
         input->copyFrom(*loaded_input);
