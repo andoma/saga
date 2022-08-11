@@ -450,10 +450,14 @@ struct ProgramConfig {
     bool inference{true};
     bool training{false};
     int batch_size{1};
-    float initial_learning_rate{0};
+    float learning_rate{0};
     TensorLayout tensor_layout{TensorLayout::Auto};
-    StopCheck stop_check = nullptr;
+    StopCheck stop_check;
     std::shared_ptr<UI> ui;
+
+    TensorBatchCallback pre_ops;
+
+    TensorBatchCallback post_ops;
 
     // Scan tensors for NAN values
     // Caution: Makes everything slower.
@@ -474,12 +478,8 @@ public:
         std::shared_ptr<Tensor> t) = 0;
     virtual std::shared_ptr<Tensor> resolveTensorGradient(
         std::shared_ptr<Tensor> t) = 0;
-    virtual ExecResult infer(long batches = 1,
-                             const TensorBatchCallback &pre = nullptr,
-                             const TensorBatchCallback &post = nullptr) = 0;
-    virtual ExecResult train(long batches = 1,
-                             const TensorBatchCallback &pre = nullptr,
-                             const TensorBatchCallback &post = nullptr) = 0;
+    virtual ExecResult infer(long batches = 1) = 0;
+    virtual ExecResult train(long batches = 1) = 0;
     virtual void dump(FILE *output, bool detailed = false) const = 0;
     virtual void debug(bool on) = 0;
     virtual bool dumpGraph(const char *path) { return false; }

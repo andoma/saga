@@ -76,7 +76,7 @@ minimal_main(int argc, char **argv)
                                 {.inference = true,
                                  .training = true,
                                  .batch_size = 4,
-                                 .initial_learning_rate = 1e-3,
+                                 .learning_rate = 1e-3,
                                  .tensor_layout = TensorLayout::NCHW},
                                 {});
 
@@ -156,7 +156,7 @@ mse_main(int argc, char **argv)
                                 {.inference = true,
                                  .training = true,
                                  .batch_size = 1,
-                                 .initial_learning_rate = 1e-3,
+                                 .learning_rate = 1e-3,
                                  .tensor_layout = TensorLayout::NCHW},
                                 {});
 

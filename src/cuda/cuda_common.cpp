@@ -159,7 +159,7 @@ CudaProgram::resolveTensorGradient(std::shared_ptr<Tensor> src)
 cudnnTensorFormat_t
 CudaProgram::tensorFormat(Tensor::DataType data_type)
 {
-    switch(m_tensor_layout) {
+    switch(m_pc.tensor_layout) {
     case TensorLayout::Auto:
 
         switch(data_type) {
@@ -198,7 +198,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t minimum_rank)
         while(dims.size() < minimum_rank) dims.insert(dims.begin(), 1);
     }
 
-    dims = dims.batch(m_batch_size);
+    dims = dims.batch(m_pc.batch_size);
 
     auto t = std::make_shared<CudaTensor>(
         src->data_type_, dims, tensorFormat(*src), m_ctx, src->name_);
@@ -239,7 +239,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
     }
 
     auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                          src->dims_.batch(m_batch_size),
+                                          src->dims_.batch(m_pc.batch_size),
                                           tensor_format, m_ctx, src->name_);
 
     t->copyFromLocked(*src, 0);
@@ -344,8 +344,7 @@ updateMemUsage(UI &ui)
 }
 
 ExecResult
-CudaProgram::infer(long batches, const TensorBatchCallback &pre,
-                   const TensorBatchCallback &post)
+CudaProgram::infer(long batches)
 {
     if(batches == 0)
         return ExecResult::OK;
@@ -357,15 +356,12 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
 
     setupTensorStorage(m_infer_memory_layout);
 
-    run_batched_tensor_callbacks(pre, false, 0, m_pre_batched_tensors);
+    run_batched_tensor_callbacks(m_pc.pre_ops, false, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
-    if(!runOps(m_load_operations, 0)) {
-        return ExecResult::ERROR;
-    }
 
     if(m_ui) {
-        m_ui->updateBatchInfo(UI::INFER, m_batch_size, batches, m_epoch);
+        m_ui->updateBatchInfo(UI::INFER, m_pc.batch_size, batches, m_epoch);
     }
 
     cudaStreamSynchronize(m_ctx->m_stream);
@@ -375,27 +371,22 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
         }
 
         if(i > 0) {
-            run_batched_tensor_callbacks(post, false, i - 1,
+            run_batched_tensor_callbacks(m_pc.post_ops, false, i - 1,
                                          m_post_batched_tensors);
         }
 
         if(i < batches - 1) {
-            run_batched_tensor_callbacks(pre, false, i + 1,
+            run_batched_tensor_callbacks(m_pc.pre_ops, false, i + 1,
                                          m_pre_batched_tensors);
         }
 
         flipDoubleBufferedTensors();
-        if(i < batches - 1) {
-            if(!runOps(m_load_operations, i + 1)) {
-                return ExecResult::ERROR;
-            }
-        }
 
         if(m_stop_check && m_stop_check()) {
             return ExecResult::STOPPED;
         }
 
-        m_total_inferred += m_batch_size;
+        m_total_inferred += m_pc.batch_size;
 
         if(m_ui) {
             m_ui->updateProgress(i, m_total_inferred);
@@ -404,14 +395,13 @@ CudaProgram::infer(long batches, const TensorBatchCallback &pre,
 
         cudaStreamSynchronize(m_ctx->m_stream);
     }
-    run_batched_tensor_callbacks(post, false, batches - 1,
+    run_batched_tensor_callbacks(m_pc.post_ops, false, batches - 1,
                                  m_post_batched_tensors);
     return ExecResult::OK;
 }
 
 ExecResult
-CudaProgram::train(long batches, const TensorBatchCallback &pre,
-                   const TensorBatchCallback &post)
+CudaProgram::train(long batches)
 {
     if(batches == 0)
         return ExecResult::OK;
@@ -423,15 +413,12 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
 
     setupTensorStorage(m_train_memory_layout);
 
-    run_batched_tensor_callbacks(pre, true, 0, m_pre_batched_tensors);
+    run_batched_tensor_callbacks(m_pc.pre_ops, true, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
-    if(!runOps(m_load_operations, 0)) {
-        return ExecResult::ERROR;
-    }
 
     if(m_ui) {
-        m_ui->updateBatchInfo(UI::TRAIN, m_batch_size, batches, m_epoch);
+        m_ui->updateBatchInfo(UI::TRAIN, m_pc.batch_size, batches, m_epoch);
     }
     m_epoch++;
     cudaStreamSynchronize(m_ctx->m_stream);
@@ -442,19 +429,14 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         }
 
         if(i > 0) {
-            run_batched_tensor_callbacks(post, true, i - 1,
+            run_batched_tensor_callbacks(m_pc.post_ops, true, i - 1,
                                          m_post_batched_tensors);
         }
         if(i < batches - 1) {
-            run_batched_tensor_callbacks(pre, true, i + 1,
+            run_batched_tensor_callbacks(m_pc.pre_ops, true, i + 1,
                                          m_pre_batched_tensors);
         }
         flipDoubleBufferedTensors();
-        if(i < batches - 1) {
-            if(!runOps(m_load_operations, i + 1)) {
-                return ExecResult::ERROR;
-            }
-        }
 
         if(m_stop_check && m_stop_check()) {
             return ExecResult::STOPPED;
@@ -465,7 +447,7 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
             updateMemUsage(*m_ui);
         }
 
-        m_total_trained += m_batch_size;
+        m_total_trained += m_pc.batch_size;
 
         cudaStreamSynchronize(m_ctx->m_stream);
 
@@ -487,7 +469,7 @@ CudaProgram::train(long batches, const TensorBatchCallback &pre,
         }
     }
 
-    run_batched_tensor_callbacks(post, true, batches - 1,
+    run_batched_tensor_callbacks(m_pc.post_ops, true, batches - 1,
                                  m_post_batched_tensors);
     return ExecResult::OK;
 }
@@ -763,7 +745,7 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
         if(src->value())
             continue;  // This was a gradient
 
-        auto dims = src->dims_.batch(m_batch_size);
+        auto dims = src->dims_.batch(m_pc.batch_size);
 
         auto fmt = tensorFormat(*src);
         auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(
@@ -783,7 +765,7 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
         if(!value)
             continue;
 
-        auto dims = src->dims_.batch(m_batch_size);
+        auto dims = src->dims_.batch(m_pc.batch_size);
 
         auto fmt = tensorFormat(*src);
         auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(
@@ -803,9 +785,7 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
 {
     std::scoped_lock lock(m_mutex);
 
-    auto p = std::make_shared<CudaProgram>(
-        shared_from_this(), pc.tensor_layout, pc.batch_size,
-        pc.initial_learning_rate, pc.stop_check, pc.ui, pc.anomaly_detect);
+    auto p = std::make_shared<CudaProgram>(shared_from_this(), pc);
 
     p->setupBatchedTensors(bts);
 
@@ -870,11 +850,6 @@ CudaContext::createProgram(const Graph &g, const ProgramConfig &pc,
         }
     }
 
-    for(const auto &kv : p->m_load_map) {
-        p->m_load_operations.push_back(kv.second);
-    }
-
-    p->m_load_map.clear();
     return p;
 }
 

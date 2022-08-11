@@ -549,28 +549,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
     auto ctx = createContext();
 
-    auto p = ctx->createProgram(g,
-                                {.inference = true,
-                                 .training = !no_train,
-                                 .batch_size = batch_size,
-                                 .initial_learning_rate = learning_rate,
-                                 .tensor_layout = tensor_layout,
-                                 .stop_check = [&]() { return !g_run; },
-                                 .ui = saga::make_statbar()},
-                                bt);
-
-    if(verbose > 1)
-        p->dump(stdout, verbose > 2);
-
-    theta = p->resolveTensor(theta);
-    postconv = p->resolveTensor(postconv);
-    int epoch = 0;
-
-    if(graphdump) {
-        p->dumpGraph(graphdump);
-        exit(0);
-    }
-
     auto pre_ops = [&](long batch, bool training, auto tas) {
         load_inputs(*tas[INPUT], batch);
 
@@ -599,6 +577,30 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
+    auto p = ctx->createProgram(g,
+                                {.inference = true,
+                                 .training = !no_train,
+                                 .batch_size = batch_size,
+                                 .learning_rate = learning_rate,
+                                 .tensor_layout = tensor_layout,
+                                 .stop_check = [&]() { return !g_run; },
+                                 .ui = saga::make_statbar(),
+                                 .pre_ops = pre_ops,
+                                 .post_ops = post_ops},
+                                bt);
+
+    if(verbose > 1)
+        p->dump(stdout, verbose > 2);
+
+    theta = p->resolveTensor(theta);
+    postconv = p->resolveTensor(postconv);
+    int epoch = 0;
+
+    if(graphdump) {
+        p->dumpGraph(graphdump);
+        exit(0);
+    }
+
     while(g_run) {
         const int64_t t0 = get_ts();
 
@@ -610,8 +612,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             // Train
             epoch_begin(batch_size, false);
             loss_sum = 0;
-            if(p->train(train_inputs / batch_size, pre_ops, post_ops) !=
-               ExecResult::OK)
+            if(p->train(train_inputs / batch_size) != ExecResult::OK)
                 break;
         }
 
@@ -619,8 +620,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         epoch_begin(batch_size, true);
         const int64_t t1 = get_ts();
         correct = 0;
-        if(p->infer(test_inputs / batch_size, pre_ops, post_ops) !=
-           ExecResult::OK)
+        if(p->infer(test_inputs / batch_size) != ExecResult::OK)
             break;
 
         const int64_t t2 = get_ts();

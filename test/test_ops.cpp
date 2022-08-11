@@ -515,7 +515,7 @@ test_op(std::shared_ptr<Context> ctx, const char *op, const Tensors &inputs,
                                 {.inference = true,
                                  .training = false,
                                  .batch_size = batch_size,
-                                 .initial_learning_rate = 1e-3,
+                                 .learning_rate = 1e-3,
                                  .tensor_layout = TensorLayout::Auto},
                                 {});
     auto y = p->resolveTensor(n->y());

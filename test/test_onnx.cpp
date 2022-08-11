@@ -21,7 +21,6 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
                                 {.inference = true,
                                  .training = false,
                                  .batch_size = 1,
-                                 .initial_learning_rate = 0,
                                  .tensor_layout = TensorLayout::NHWC},
                                 {});
 
@@ -197,7 +196,6 @@ test_tandem_onnx_main(int argc, char **argv)
                                     {.inference = true,
                                      .training = false,
                                      .batch_size = 1,
-                                     .initial_learning_rate = 0,
                                      .tensor_layout = TensorLayout::Auto},
                                     {});
 

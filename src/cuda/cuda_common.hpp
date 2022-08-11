@@ -120,17 +120,8 @@ typedef std::vector<std::shared_ptr<CudaOperation>> CudaOps;
 
 class CudaProgram : public Program {
 public:
-    CudaProgram(std::shared_ptr<CudaContext> ctx, TensorLayout tensor_layout,
-                int batch_size, float learning_rate, StopCheck stop_check,
-                std::shared_ptr<UI> ui, bool anomaly_detect)
-      : m_ctx(ctx)
-      , m_tensor_layout(tensor_layout)
-      , m_batch_size(batch_size)
-      , m_learning_rate(learning_rate)
-      , m_mp_scaling(batch_size)
-      , m_stop_check(stop_check)
-      , m_ui(ui)
-      , m_anomaly_detect(anomaly_detect)
+    CudaProgram(std::shared_ptr<CudaContext> ctx, const ProgramConfig &pc)
+      : m_ctx(ctx), m_pc(pc)
     {
         chkCuda(cudaMallocManaged((void **)&m_aux, 4096, cudaMemAttachGlobal));
         chkCuda(cudaMemset(m_aux, 0, 4096));
@@ -141,17 +132,14 @@ public:
     std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
     std::shared_ptr<Tensor> resolveTensorGradient(
         std::shared_ptr<Tensor> src) override;
-    ExecResult infer(long batches, const TensorBatchCallback &pre,
-                     const TensorBatchCallback &post) override;
-    ExecResult train(long batches, const TensorBatchCallback &pre,
-                     const TensorBatchCallback &post) override;
+    ExecResult infer(long batches) override;
+    ExecResult train(long batches) override;
     void dump(FILE *output, bool detailed) const override;
     void debug(bool) override;
 
     const std::shared_ptr<CudaContext> m_ctx;
-    const TensorLayout m_tensor_layout;
-    const int m_batch_size;
-    const float m_learning_rate;
+    const ProgramConfig m_pc;
+
     bool m_debug = false;
 
     bool m_finalized = false;
@@ -163,10 +151,6 @@ public:
     std::unordered_map<std::shared_ptr<Tensor>, std::shared_ptr<CudaTensor>>
         m_tensors;
 
-    std::unordered_map<std::shared_ptr<Tensor>, std::shared_ptr<CudaOperation>>
-        m_load_map;
-
-    CudaOps m_load_operations;
     CudaOps m_infer_operations;
     CudaOps m_train_operations;
 

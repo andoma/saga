@@ -222,7 +222,7 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
                                 {.inference = false,
                                  .training = true,
                                  .batch_size = batch_size,
-                                 .initial_learning_rate = 1e-3,
+                                 .learning_rate = 1e-3,
                                  .tensor_layout = TensorLayout::Auto},
                                 {});
 
