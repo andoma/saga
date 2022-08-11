@@ -42,7 +42,7 @@ class CudaTensor;
 class CudaOperation;
 class CudaTensorStorage;
 class CudaTensorStorageDoubleBuffered;
-class CudaMemoryLayout;
+struct CudaMemoryLayout;
 
 struct CudaTmpMem {
     CudaTmpMem &operator=(CudaTmpMem const &) = delete;
