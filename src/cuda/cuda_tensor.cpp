@@ -866,7 +866,7 @@ public:
 
 void
 CudaProgram::run_batched_tensor_callbacks(const TensorBatchCallback &cb,
-                                          bool training, long batch,
+                                          long batch,
                                           const CudaBatchAccessOps &list)
 {
     if(!cb)
@@ -885,7 +885,7 @@ CudaProgram::run_batched_tensor_callbacks(const TensorBatchCallback &cb,
         amap[op.m_high] = ta.get();
         v.push_back(std::move(ta));
     }
-    cb(batch, training, amap);
+    cb(batch, m_pt, amap);
 }
 
 void

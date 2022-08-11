@@ -642,7 +642,7 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
 };
 
 static const char *
-conv_setup(CudaProgram &p, const Node &n, bool training)
+conv_setup(CudaProgram &p, const Node &n)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
 
@@ -673,22 +673,17 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
     if(!transpose) {
         // Non-transposed (Standard convolution)
 
-        const char *err =
-            desc->setup(p, *x, *w, *y, pad, stride, group, training);
+        const char *err = desc->setup(p, *x, *w, *y, pad, stride, group,
+                                      p.m_pt == ProgramType::TRAINING);
         if(err)
             return err;
-
-        if(!training) {
-            p.fwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y,
-                                                        0));
-            if(b)
-                p.fwd(std::make_shared<CudnnAddTensor>(b, y));
-            return NULL;
-        }
 
         p.fwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y, 0));
         if(b)
             p.fwd(std::make_shared<CudnnAddTensor>(b, y));
+
+        if(p.m_pt == ProgramType::INFERENCE)
+            return NULL;
 
         auto dy = y->makeSharedGrad();
 
@@ -717,18 +712,13 @@ conv_setup(CudaProgram &p, const Node &n, bool training)
         if(err)
             return err;
 
-        if(!training) {
-            p.fwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w, x,
-                                                            y, 0.0f));
-            if(b)
-                p.fwd(std::make_shared<CudnnAddTensor>(b, y));
-            return NULL;
-        }
-
         p.fwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w, x, y,
                                                         0.0f));
         if(b)
             p.fwd(std::make_shared<CudnnAddTensor>(b, y));
+
+        if(p.m_pt == ProgramType::INFERENCE)
+            return NULL;
 
         auto dy = y->makeSharedGrad();
         if(b) {
@@ -879,19 +869,17 @@ struct CudnnActivationBwd : public CudnnOperation {
 };
 
 static const char *
-activation_setup(CudaProgram &p, const Node &n, bool training,
-                 cudnnActivationMode_t mode, float alpha)
+activation_setup(CudaProgram &p, const Node &n, cudnnActivationMode_t mode,
+                 float alpha)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
     auto fwd = std::make_shared<CudnnActivationFwd>(x, y, mode, alpha, 0);
 
-    if(!training) {
-        p.fwd(fwd);
-        return NULL;
-    }
-
     p.fwd(fwd);
+
+    if(p.m_pt == ProgramType::INFERENCE)
+        return NULL;
 
     auto dx = x->m_grad;
     if(!dx)
@@ -904,42 +892,42 @@ activation_setup(CudaProgram &p, const Node &n, bool training,
 }
 
 static const char *
-relu_setup(CudaProgram &p, const Node &n, bool training)
+relu_setup(CudaProgram &p, const Node &n)
 {
-    return activation_setup(p, n, training, CUDNN_ACTIVATION_RELU, 0.0f);
+    return activation_setup(p, n, CUDNN_ACTIVATION_RELU, 0.0f);
 }
 
 REGISTER_CUDA_OP("relu", relu_setup);
 
 static const char *
-elu_setup(CudaProgram &p, const Node &n, bool training)
+elu_setup(CudaProgram &p, const Node &n)
 {
-    return activation_setup(p, n, training, CUDNN_ACTIVATION_ELU,
+    return activation_setup(p, n, CUDNN_ACTIVATION_ELU,
                             n.attributes_.get("alpha", 0.1f));
 }
 
 REGISTER_CUDA_OP("elu", relu_setup);
 
 static const char *
-sigmoid_setup(CudaProgram &p, const Node &n, bool training)
+sigmoid_setup(CudaProgram &p, const Node &n)
 {
-    return activation_setup(p, n, training, CUDNN_ACTIVATION_SIGMOID, 0.0f);
+    return activation_setup(p, n, CUDNN_ACTIVATION_SIGMOID, 0.0f);
 }
 
 REGISTER_CUDA_OP("sigmoid", sigmoid_setup);
 
 static const char *
-tanh_setup(CudaProgram &p, const Node &n, bool training)
+tanh_setup(CudaProgram &p, const Node &n)
 {
-    return activation_setup(p, n, training, CUDNN_ACTIVATION_TANH, 0.0f);
+    return activation_setup(p, n, CUDNN_ACTIVATION_TANH, 0.0f);
 }
 
 REGISTER_CUDA_OP("tanh", tanh_setup);
 
 static const char *
-swish_setup(CudaProgram &p, const Node &n, bool training)
+swish_setup(CudaProgram &p, const Node &n)
 {
-    return activation_setup(p, n, training, CUDNN_ACTIVATION_SWISH, 0.0f);
+    return activation_setup(p, n, CUDNN_ACTIVATION_SWISH, 0.0f);
 }
 
 REGISTER_CUDA_OP("swish", swish_setup);
@@ -987,11 +975,10 @@ struct CudaLeakyRelu : public CudaOperation {
 };
 
 static const char *
-leakyrelu_setup(CudaProgram &p, const Node &n, bool training)
+leakyrelu_setup(CudaProgram &p, const Node &n)
 {
-    if(training) {
+    if(p.m_pt != ProgramType::INFERENCE)
         return "LeakRelu not supported for training";
-    }
 
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
@@ -1090,8 +1077,7 @@ struct CudnnPoolingBwd : public CudnnOperation {
 };
 
 static const char *
-pooling_setup(CudaProgram &p, const Node &n, bool training,
-              cudnnPoolingMode_t mode)
+pooling_setup(CudaProgram &p, const Node &n, cudnnPoolingMode_t mode)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
@@ -1107,12 +1093,10 @@ pooling_setup(CudaProgram &p, const Node &n, bool training,
 
     auto fwd = std::make_shared<CudnnPoolingFwd>(x, y, mode, size, pad, stride);
 
-    if(!training) {
-        p.fwd(fwd);
-        return NULL;
-    }
-
     p.fwd(fwd);
+
+    if(p.m_pt == ProgramType::INFERENCE)
+        return NULL;
 
     auto dx = x->m_grad;
     if(!dx)
@@ -1125,18 +1109,17 @@ pooling_setup(CudaProgram &p, const Node &n, bool training,
 }
 
 static const char *
-maxpool_setup(CudaProgram &p, const Node &n, bool training)
+maxpool_setup(CudaProgram &p, const Node &n)
 {
-    return pooling_setup(p, n, training, CUDNN_POOLING_MAX);
+    return pooling_setup(p, n, CUDNN_POOLING_MAX);
 }
 
 REGISTER_CUDA_OP("maxpool", maxpool_setup);
 
 static const char *
-avgpool_setup(CudaProgram &p, const Node &n, bool training)
+avgpool_setup(CudaProgram &p, const Node &n)
 {
-    return pooling_setup(p, n, training,
-                         CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
+    return pooling_setup(p, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
 }
 
 REGISTER_CUDA_OP("avgpool", avgpool_setup);
@@ -1251,7 +1234,7 @@ struct CudaGemm : public CudaOperation {
 };
 
 static const char *
-fc_setup(CudaProgram &p, const Node &n, bool training)
+fc_setup(CudaProgram &p, const Node &n)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
@@ -1272,17 +1255,13 @@ fc_setup(CudaProgram &p, const Node &n, bool training)
         transa, transb, num_outputs, batch_size, num_inputs, w,
         transW ? num_inputs : num_outputs, x, num_inputs, y, num_outputs);
 
-    if(!training) {
-        p.fwd(fwd);
-        if(b)
-            p.fwd(std::make_shared<CudnnAddTensor>(b, y));
-        return NULL;
-    }
-
     p.fwd(fwd);
 
     if(b)
         p.fwd(std::make_shared<CudnnAddTensor>(b, y));
+
+    if(p.m_pt == ProgramType::INFERENCE)
+        return NULL;
 
     if(!transW) {
         // Fix this
@@ -1378,7 +1357,7 @@ struct CudaConvert : public CudaOperation {
 };
 
 static const char *
-convert_setup(CudaProgram &p, const Node &n, bool training)
+convert_setup(CudaProgram &p, const Node &n)
 {
     auto scale = n.attributes_.get("scale", 1.0f);
 
@@ -1402,11 +1381,7 @@ convert_setup(CudaProgram &p, const Node &n, bool training)
         return "Unable to convert between given formats";
     }
 
-    if(!training) {
-        p.fwd(op);
-    } else {
-        p.fwd(op);
-    }
+    p.fwd(op);
     return NULL;
 }
 
@@ -1550,18 +1525,17 @@ struct CudaCatClassifierBwd : public CudaOperation {
 };
 
 static const char *
-catclassifier_setup(CudaProgram &p, const Node &n, bool training)
+catclassifier_setup(CudaProgram &p, const Node &n)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
 
     auto op = std::make_shared<CudaCatClassifierFwd>(x, y);
 
-    if(!training) {
-        p.fwd(op);
-        return NULL;
-    }
     p.fwd(op);
+
+    if(p.m_pt == ProgramType::INFERENCE)
+        return NULL;
 
     auto dx = x->m_grad;
     if(!dx)
@@ -1664,18 +1638,17 @@ struct CudaMSEBwd : public CudaOperation {
 };
 
 static const char *
-mse_setup(CudaProgram &p, const Node &n, bool training)
+mse_setup(CudaProgram &p, const Node &n)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
 
     auto op = std::make_shared<CudaMSEFwd>(x, y);
 
-    if(!training) {
-        p.fwd(op);
-        return NULL;
-    }
     p.fwd(op);
+
+    if(p.m_pt == ProgramType::INFERENCE)
+        return NULL;
 
     auto dx = x->m_grad;
     if(!dx)
@@ -1773,9 +1746,9 @@ struct CudnnDropoutBwd : public CudnnOperation {
 };
 
 static const char *
-dropout_setup(CudaProgram &p, const Node &n, bool training)
+dropout_setup(CudaProgram &p, const Node &n)
 {
-    assert(training);
+    assert(p.m_pt == ProgramType::TRAINING);
 
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
@@ -1985,7 +1958,7 @@ struct CudnnBatchNormBwd : public CudnnOperation {
 };
 
 static const char *
-batchnorm_setup(CudaProgram &p, const Node &n, bool training)
+batchnorm_setup(CudaProgram &p, const Node &n)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
@@ -1996,7 +1969,7 @@ batchnorm_setup(CudaProgram &p, const Node &n, bool training)
     auto v = p.lower_tensor(n.inputs_.get("v"), 2);
     const float epsilon = n.attributes_.get("epsilon", 1e-5f);
 
-    if(!training) {
+    if(p.m_pt == ProgramType::INFERENCE) {
         p.fwd(std::make_shared<CudnnBatchNormInference>(x, s, b, m, v, y,
                                                         epsilon));
         return NULL;
@@ -2086,7 +2059,7 @@ struct CudnnOpTensor : public CudnnOperation {
 };
 
 static const char *
-sum_setup(CudaProgram &p, const Node &n, bool training)
+sum_setup(CudaProgram &p, const Node &n)
 {
     auto x0 = p.lower_tensor(n.inputs_.get("x0"));
     auto x1 = p.lower_tensor(n.inputs_.get("x1"));
@@ -2095,12 +2068,10 @@ sum_setup(CudaProgram &p, const Node &n, bool training)
 
     auto fwd = std::make_shared<CudnnOpTensor>(x0, x1, y, CUDNN_OP_TENSOR_ADD);
 
-    if(!training) {
-        p.fwd(fwd);
-        return NULL;
-    }
-
     p.fwd(fwd);
+
+    if(p.m_pt == ProgramType::INFERENCE)
+        return NULL;
 
     auto dy = y->makeSharedGrad();
 
@@ -2120,7 +2091,7 @@ sum_setup(CudaProgram &p, const Node &n, bool training)
 REGISTER_CUDA_OP("sum", sum_setup);
 
 static const char *
-add_setup(CudaProgram &p, const Node &n, bool training)
+add_setup(CudaProgram &p, const Node &n)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
@@ -2128,7 +2099,7 @@ add_setup(CudaProgram &p, const Node &n, bool training)
 
     auto fwd = std::make_shared<CudnnOpTensor>(x, b, y, CUDNN_OP_TENSOR_ADD);
 
-    if(!training) {
+    if(p.m_pt == ProgramType::INFERENCE) {
         p.fwd(fwd);
         return NULL;
     }
@@ -2170,10 +2141,11 @@ struct CudnnSoftmaxFwd : public CudnnOperation {
 };
 
 static const char *
-softmax_setup(CudaProgram &p, const Node &n, bool training)
+softmax_setup(CudaProgram &p, const Node &n)
 {
-    if(training)
+    if(p.m_pt != ProgramType::INFERENCE) {
         return "not supported for training";
+    }
 
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
@@ -2376,10 +2348,11 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
 };
 
 static const char *
-batchnorm_persistent_setup(CudaProgram &p, const Node &n, bool training)
+batchnorm_persistent_setup(CudaProgram &p, const Node &n)
 {
-    if(!training)
+    if(p.m_pt == ProgramType::INFERENCE) {
         return "not supported for inferenece";
+    }
 
     auto x0 = p.lower_tensor(n.inputs_.get("x0"));
     auto x1 = p.lower_tensor(n.inputs_.get("x1"));
@@ -2599,12 +2572,13 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
 };
 
 static const char *
-spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
+spatialtransform_setup(CudaProgram &p, const Node &n)
 {
     auto x = p.lower_tensor(n.inputs_.get("x"));
     auto y = p.lower_tensor(n.outputs_.get("y"));
 
-    const bool disable = !training && !n.attributes_.get("inference", false);
+    const bool disable = p.m_pt == ProgramType::INFERENCE &&
+                         !n.attributes_.get("inference", false);
     const bool bypass = disable && x->dims_ == y->dims_;
 
     if(bypass) {
@@ -2628,12 +2602,7 @@ spatialtransform_setup(CudaProgram &p, const Node &n, bool training)
     theta = p.lower_tensor(th);
 
     auto op = std::make_shared<CudnnSpatialTransformFwd>(p.m_ctx, x, theta, y);
-
-    if(training) {
-        p.fwd(op);
-    } else {
-        p.fwd(op);
-    }
+    p.fwd(op);
     return NULL;
 }
 
@@ -2836,7 +2805,7 @@ struct CudaStats : public CudaOperation {
 };
 
 static const char *
-stats_setup(CudaProgram &p, const Node &n, bool training)
+stats_setup(CudaProgram &p, const Node &n)
 {
     auto it = p.m_ctx->m_tensors.find(n.inputs_.get("x"));
     if(it == p.m_ctx->m_tensors.end())
@@ -2854,7 +2823,7 @@ stats_setup(CudaProgram &p, const Node &n, bool training)
 
     auto op = std::make_shared<CudaStats>(x, y);
 
-    if(training) {
+    if(p.m_pt == ProgramType::TRAINING) {
         p.upd(op);
     } else {
         p.fwd(op);

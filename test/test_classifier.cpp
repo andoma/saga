@@ -547,10 +547,10 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
     auto ctx = createContext();
 
-    auto pre_ops = [&](long batch, bool training, auto tas) {
+    auto pre_ops = [&](long batch, ProgramType pt, auto tas) {
         load_inputs(*tas[INPUT], batch);
 
-        if(training) {
+        if(pt == ProgramType::TRAINING) {
             auto &labels = *tas[LABELS];
             const size_t offset = batch * batch_size;
             for(int i = 0; i < batch_size; i++) {
@@ -559,8 +559,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
-    auto post_ops = [&](long batch, bool training, auto tas) {
-        if(training) {
+    auto post_ops = [&](long batch, ProgramType pt, auto tas) {
+        if(pt == ProgramType::TRAINING) {
             auto &loss = *tas[LOSS];
             for(int i = 0; i < batch_size; i++) {
                 loss_sum += loss.get({i});
@@ -575,14 +575,14 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
-    ProgramConfig pc{.batch_size = batch_size,
-                     .learning_rate = learning_rate,
-                     .tensor_layout = tensor_layout,
-                     .stop_check = [&]() { return !g_run; },
-                     .ui = saga::make_statbar(),
-                     .pre_ops = pre_ops,
-                     .post_ops = post_ops,
-                     .batched_tensors = bt};
+    const ProgramConfig pc{.batch_size = batch_size,
+                           .learning_rate = learning_rate,
+                           .tensor_layout = tensor_layout,
+                           .stop_check = [&]() { return !g_run; },
+                           .ui = saga::make_statbar(),
+                           .pre_ops = pre_ops,
+                           .post_ops = post_ops,
+                           .batched_tensors = bt};
 
     auto testing = ctx->createProgram(g, ProgramType::INFERENCE, pc);
 

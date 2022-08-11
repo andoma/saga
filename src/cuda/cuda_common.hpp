@@ -178,8 +178,7 @@ public:
 
     void finalize();
 
-    void run_batched_tensor_callbacks(const TensorBatchCallback &cb,
-                                      bool training, long batch,
+    void run_batched_tensor_callbacks(const TensorBatchCallback &cb, long batch,
                                       const CudaBatchAccessOps &list);
 
     std::shared_ptr<CudaTensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
@@ -271,8 +270,7 @@ protected:
 #define CPPJOIN(a, b) CPPGLUE(a, b)
 
 void CudaRegisterOpFactory(const char *name,
-                           const char *(*setup)(CudaProgram &p, const Node &n,
-                                                bool training));
+                           const char *(*setup)(CudaProgram &p, const Node &n));
 
 #define REGISTER_CUDA_OP(name, setup)                                      \
     static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) \

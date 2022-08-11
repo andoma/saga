@@ -417,6 +417,11 @@ std::shared_ptr<UI> make_statbar();
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
+enum class ProgramType {
+    INFERENCE,
+    TRAINING,
+};
+
 enum class Phase { PRE = 0x1, POST = 0x2 };
 
 inline constexpr Phase
@@ -440,7 +445,7 @@ operator!(Phase a)
 typedef std::unordered_map<std::shared_ptr<Tensor>, Phase> BatchedTensors;
 
 typedef std::function<void(
-    long batch, bool training,
+    long batch, ProgramType pt,
     std::unordered_map<std::shared_ptr<Tensor>, TensorAccess *>)>
     TensorBatchCallback;
 
@@ -482,11 +487,6 @@ public:
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
-
-enum class ProgramType {
-    INFERENCE,
-    TRAINING,
-};
 
 class Context {
 public:

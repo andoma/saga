@@ -334,10 +334,7 @@ CudaProgram::run(long batches)
 
     finalize();
 
-    setupTensorStorage(m_memory_layout);
-
-    run_batched_tensor_callbacks(m_pc.pre_ops, m_pt == ProgramType::TRAINING, 0,
-                                 m_pre_batched_tensors);
+    run_batched_tensor_callbacks(m_pc.pre_ops, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
 
@@ -347,19 +344,19 @@ CudaProgram::run(long batches)
 
     m_epoch++;
     cudaStreamSynchronize(m_ctx->m_stream);
+
     for(long i = 0; i < batches; i++) {
+        setupTensorStorage(m_memory_layout);
         if(!runOps(m_ops, i, m_pc.anomaly_detect)) {
             return ExecResult::ERROR;
         }
 
         if(i > 0) {
-            run_batched_tensor_callbacks(m_pc.post_ops,
-                                         m_pt == ProgramType::TRAINING, i - 1,
+            run_batched_tensor_callbacks(m_pc.post_ops, i - 1,
                                          m_post_batched_tensors);
         }
         if(i < batches - 1) {
-            run_batched_tensor_callbacks(m_pc.pre_ops,
-                                         m_pt == ProgramType::TRAINING, i + 1,
+            run_batched_tensor_callbacks(m_pc.pre_ops, i + 1,
                                          m_pre_batched_tensors);
         }
         flipDoubleBufferedTensors();
@@ -395,8 +392,8 @@ CudaProgram::run(long batches)
         }
     }
 
-    run_batched_tensor_callbacks(m_pc.post_ops, m_pt == ProgramType::TRAINING,
-                                 batches - 1, m_post_batched_tensors);
+    run_batched_tensor_callbacks(m_pc.post_ops, batches - 1,
+                                 m_post_batched_tensors);
     return ExecResult::OK;
 }
 
@@ -475,15 +472,14 @@ CudaProgram::debug(bool on)
 //------------------------------------------------------------------------
 
 struct OpFactory {
-    const char *(*setup)(CudaProgram &p, const Node &n, bool training);
+    const char *(*setup)(CudaProgram &p, const Node &n);
 };
 
 static std::map<std::string, OpFactory> *cuda_op_factories;
 
 void
 CudaRegisterOpFactory(const char *name,
-                      const char *(*setup)(CudaProgram &p, const Node &n,
-                                           bool train))
+                      const char *(*setup)(CudaProgram &p, const Node &n))
 {
     if(!cuda_op_factories)
         cuda_op_factories = new std::map<std::string, OpFactory>;
@@ -492,7 +488,7 @@ CudaRegisterOpFactory(const char *name,
 }
 
 static const char *
-no_setup(CudaProgram &p, const Node &n, bool train)
+no_setup(CudaProgram &p, const Node &n)
 {
     return "operation does not exist";
 }
@@ -712,10 +708,7 @@ CudaContext::createProgram(const Graph &g, ProgramType pt,
 
     int cnt = 0;
     for(const auto &n : nodes) {
-        const char *err =
-            find_operation(*n)->setup(*p, *n,
-                                      // XXX: Pass pt as-is instead
-                                      pt == ProgramType::TRAINING);
+        const char *err = find_operation(*n)->setup(*p, *n);
         if(err) {
             fprintf(stderr,
                     "Unable to create operation for %s "
