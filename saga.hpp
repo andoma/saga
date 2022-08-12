@@ -402,14 +402,14 @@ public:
 struct UI {
     virtual ~UI() {}
 
-    enum Phase { INFER, TRAIN };
-    virtual void updateBatchInfo(Phase phase, int batch_size,
-                                 int total_batches) = 0;
-    virtual void updateProgress(int current_batch, int64_t total_samples) = 0;
-    virtual void updateLoss(double loss) = 0;
+    virtual void updateBatchInfo(int batch_size, int total_batches) = 0;
     virtual void updateMemUsage(size_t use, size_t total) = 0;
-    virtual void updateMpScaling(double scaling) = 0;
-    virtual void updateExtra(const std::string &extra) = 0;
+    virtual void updateCurrentBatch(int current_batch) = 0;
+    virtual void updateName(int program_index, const std::string &name) = 0;
+    virtual void updateProgress(int program_index, int64_t total_samples) = 0;
+    virtual void updateLoss(int program_index, double loss) = 0;
+    virtual void updateMpScaling(int program_index, double scaling) = 0;
+    virtual void updateExtra(int program_index, const std::string &extra) = 0;
 };
 
 std::shared_ptr<UI> make_statbar();
@@ -483,6 +483,7 @@ public:
     virtual void dump(FILE *output, bool detailed = false) const = 0;
     virtual void debug(bool on) = 0;
     virtual bool dumpGraph(const char *path) { return false; }
+    virtual int getProgramIndex() const = 0;
 };
 
 //------------------------------------------------------------------------
@@ -491,9 +492,9 @@ public:
 class Context {
 public:
     virtual ~Context() {}
-    virtual std::shared_ptr<Program> createProgram(const Graph &graph,
-                                                   ProgramType pt,
-                                                   const ProgramConfig &pc) = 0;
+    virtual std::shared_ptr<Program> createProgram(
+        const Graph &graph, ProgramType pt, const ProgramConfig &pc,
+        std::optional<std::string> name = std::nullopt) = 0;
 
     virtual std::shared_ptr<Tensor> resolveTensor(
         std::shared_ptr<Tensor> t) = 0;
@@ -504,6 +505,12 @@ public:
     virtual std::string info() const = 0;
 
     virtual void print() const = 0;
+
+    virtual void reset() = 0;
+
+    virtual ExecResult multiRun(
+        const std::vector<std::shared_ptr<Program>> &programs, long batches = 1,
+        StopCheck stop_check = nullptr) = 0;
 };
 
 std::shared_ptr<Context> createContext();

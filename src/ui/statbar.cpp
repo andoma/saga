@@ -1,35 +1,30 @@
 #include "saga.hpp"
 
 #include <cmath>
+#include <map>
+#include <cstdarg>
 
 namespace saga {
 
 struct StatBar : public UI {
-    void updateBatchInfo(enum Phase phase, int batch_size,
-                         int total_batches) override
+    struct ProgInfo {
+        int64_t m_total_samples{0};
+        double m_loss{NAN};
+        double m_mp_scaling{NAN};
+        std::string m_extra;
+        std::string m_name;
+        int64_t m_start{0};
+    };
+
+    void updateBatchInfo(int batch_size, int total_batches) override
     {
-        m_phase = phase;
         m_batch_size = batch_size;
         m_total_batches = total_batches;
-        if(!m_start)
-            m_start = Now();
-        refresh(m_start);
-    }
 
-    void updateProgress(int current_batch, int64_t total_samples) override
-    {
-        m_current_batch = current_batch;
-        m_total_samples[m_phase] = total_samples;
-        maybe_refresh();
-    }
-
-    void updateLoss(double loss) override
-    {
-        if(std::isfinite(m_loss)) {
-            m_loss += (loss - m_loss) * 0.99f;
-        } else {
-            m_loss = loss;
+        for(auto &it : m_pi) {
+            it.second.m_start = 0;
         }
+
         maybe_refresh();
     }
 
@@ -40,15 +35,48 @@ struct StatBar : public UI {
         maybe_refresh();
     }
 
-    void updateMpScaling(double scaling) override
+    void updateCurrentBatch(int current_batch) override
     {
-        m_mp_scaling = scaling;
+        m_current_batch = current_batch;
         maybe_refresh();
     }
 
-    void updateExtra(const std::string &extra) override
+    void updateName(int program_index, const std::string &name) override
     {
-        m_extra = extra;
+        auto &pi = m_pi[program_index];
+        pi.m_name = name;
+    }
+
+    void updateProgress(int program_index, int64_t total_samples) override
+    {
+        auto &pi = m_pi[program_index];
+        if(pi.m_start == 0)
+            pi.m_start = Now();
+        pi.m_total_samples = total_samples;
+    }
+
+    void updateLoss(int program_index, double loss) override
+    {
+        auto &pi = m_pi[program_index];
+        if(std::isfinite(pi.m_loss)) {
+            pi.m_loss += (loss - pi.m_loss) * 0.99f;
+        } else {
+            pi.m_loss = loss;
+        }
+        maybe_refresh();
+    }
+
+    void updateMpScaling(int program_index, double scaling) override
+    {
+        auto &pi = m_pi[program_index];
+        pi.m_mp_scaling = scaling;
+        maybe_refresh();
+    }
+
+    void updateExtra(int program_index, const std::string &extra) override
+    {
+        auto &pi = m_pi[program_index];
+        pi.m_extra = extra;
         maybe_refresh();
     }
 
@@ -60,55 +88,112 @@ struct StatBar : public UI {
         }
     }
 
+    void addCell(const char *fmt, ...)
+    {
+        char buf[512];
+        va_list ap;
+        va_start(ap, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, ap);
+        va_end(ap);
+
+        if(m_cells.size() == 0) {
+            m_cells.push_back({});
+        }
+
+        m_cells[m_cells.size() - 1].push_back(buf);
+    }
+
+    void nextRow() { m_cells.push_back({}); }
+
     void refresh(int64_t now)
     {
         m_last_update = now;
-        printf("\033[K");
+        m_cells.clear();
 
-        printf("%s | B: %5d/%-5d N:%-4d | Mem %6zu/%-6zu",
-               m_phase == TRAIN ? "Train" : "Infer", m_current_batch,
-               m_total_batches, m_batch_size, m_mem_use >> 20,
-               m_mem_total >> 20);
+        addCell("Saga");
+        addCell("Batch: %d / %d", m_current_batch, m_total_batches);
+        if(m_mem_use)
+            addCell("Memory: %zu/%-zu", m_mem_use >> 20, m_mem_total >> 20);
 
-        if(m_total_samples[TRAIN]) {
-            const int64_t total_samples = m_total_samples[TRAIN];
-            printf(" | Samples/s: %6.2f",
-                   total_samples * 1e6 / (double)(now - m_start));
+        for(const auto &it : m_pi) {
+            nextRow();
+            int index = it.first;
+            const auto &pi = it.second;
+
+            if(pi.m_name.size()) {
+                addCell("%s", pi.m_name.c_str());
+            } else {
+                addCell("Prog: %d", index);
+            }
+
+            if(pi.m_total_samples) {
+                const int64_t total_samples = pi.m_total_samples;
+                addCell("Samples/s: %6.2f",
+                        total_samples * 1e6 / (double)(now - pi.m_start));
+            }
+
+            if(std::isfinite(pi.m_loss)) {
+                addCell("Loss: %8.4f", pi.m_loss);
+            }
+
+            if(std::isfinite(pi.m_mp_scaling)) {
+                addCell("MPS: %1.1e", pi.m_mp_scaling);
+            }
+
+            if(pi.m_extra.size()) {
+                addCell("%s", pi.m_extra.c_str());
+            }
         }
 
-        if(std::isfinite(m_loss)) {
-            printf(" | L: %8.4f", m_loss);
+        if(m_status_size) {
+            printf("\033[%dA", m_status_size);
         }
 
-        if(std::isfinite(m_mp_scaling)) {
-            printf(" | MPS: %1.1e", m_mp_scaling);
+        m_status_size = m_cells.size();
+
+        size_t maxlen = 0;
+        for(size_t i = 0; i < m_cells.size(); i++) {
+            const auto &r = m_cells[i];
+            maxlen = std::max(maxlen, r.size());
         }
 
-        if(m_extra.size()) {
-            printf(" | %s", m_extra.c_str());
+        std::vector<int> colwidth(maxlen);
+        for(size_t i = 0; i < m_cells.size(); i++) {
+            const auto &r = m_cells[i];
+            for(size_t j = 0; j < r.size(); j++) {
+                colwidth[j] = std::max(colwidth[j], (int)r[j].size());
+            }
         }
 
-        printf("\r");
-        fflush(stdout);
+        for(size_t i = 0; i < m_cells.size(); i++) {
+            const auto &r = m_cells[i];
+            printf("\033[K");
+            for(size_t j = 0; j < r.size(); j++) {
+                printf("%s%-*s", j ? " | " : "", colwidth[j], r[j].c_str());
+            }
+            printf("\n");
+        }
     }
 
-    enum Phase m_phase { TRAIN };
+    std::vector<std::vector<std::string>> m_cells;
+    size_t m_max_cell_length;
+
+    std::map<int, ProgInfo> m_pi;
+
     int m_batch_size{1};
     int m_total_batches{0};
     int m_current_batch{0};
     int m_current_epoch{0};
-    int64_t m_total_samples[2] = {};
-    double m_loss{NAN};
     size_t m_mem_use{0};
     size_t m_mem_total{0};
-    double m_mp_scaling{NAN};
-    std::string m_extra;
 
     int64_t m_last_update{0};
-    int64_t m_start{0};
+
+    int m_status_size{0};
 };
 
-std::shared_ptr<UI> make_statbar()
+std::shared_ptr<UI>
+make_statbar()
 {
     return std::make_shared<StatBar>();
 }

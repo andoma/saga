@@ -333,9 +333,11 @@ CudaProgram::prep(long batches)
     flipDoubleBufferedTensors();
 
     if(m_pc.ui)
-        m_pc.ui->updateBatchInfo(UI::TRAIN, m_pc.batch_size, batches);
+        m_pc.ui->updateBatchInfo(m_pc.batch_size, batches);
 
     cudaStreamSynchronize(m_ctx->m_stream);
+
+    m_total_samples = 0;
 }
 
 ExecResult
@@ -357,11 +359,10 @@ CudaProgram::step(long batch, long batches)
     flipDoubleBufferedTensors();
 
     if(m_pc.ui) {
-        m_pc.ui->updateProgress(batch, m_total_trained);
-        updateMemUsage(*m_pc.ui);
+        m_pc.ui->updateProgress(m_index, m_total_samples);
     }
 
-    m_total_trained += m_pc.batch_size;
+    m_total_samples += m_pc.batch_size;
 
     cudaStreamSynchronize(m_ctx->m_stream);
 
@@ -378,7 +379,7 @@ CudaProgram::step(long batch, long batches)
         m_aux->inf = 0;
         m_aux->nan = 0;
         if(m_pc.ui) {
-            m_pc.ui->updateMpScaling(m_mp_scaling);
+            m_pc.ui->updateMpScaling(m_index, m_mp_scaling);
         }
     }
     return ExecResult::OK;
@@ -403,6 +404,9 @@ CudaProgram::run(long batches, StopCheck stop_check)
     prep(batches);
 
     for(long i = 0; i < batches; i++) {
+        if(m_pc.ui)
+            m_pc.ui->updateCurrentBatch(i);
+
         ExecResult r = step(i, batches);
         if(r != ExecResult::OK)
             return r;
@@ -410,9 +414,58 @@ CudaProgram::run(long batches, StopCheck stop_check)
         if(stop_check && stop_check()) {
             return ExecResult::STOPPED;
         }
+
+        if(m_pc.ui)
+            updateMemUsage(*m_pc.ui);
     }
 
     post(batches);
+    return ExecResult::OK;
+}
+
+ExecResult
+CudaContext::multiRun(const std::vector<std::shared_ptr<Program>> &programs,
+                      long batches, StopCheck stop_check)
+{
+    if(programs.size() == 0)
+        return ExecResult::OK;
+
+    if(batches == 0)
+        return ExecResult::OK;
+
+    if(stop_check && stop_check())
+        return ExecResult::STOPPED;
+
+    for(const auto &p : programs) {
+        CudaProgram *cp = (CudaProgram *)p.get();
+        cp->prep(batches);
+    }
+
+    CudaProgram *cp = (CudaProgram *)programs[0].get();
+    auto ui = cp->m_pc.ui;
+
+    for(long i = 0; i < batches; i++) {
+        if(ui)
+            ui->updateCurrentBatch(i);
+
+        for(const auto &p : programs) {
+            CudaProgram *cp = (CudaProgram *)p.get();
+            ExecResult r = cp->step(i, batches);
+            if(r != ExecResult::OK)
+                return r;
+
+            if(stop_check && stop_check()) {
+                return ExecResult::STOPPED;
+            }
+        }
+        if(ui)
+            updateMemUsage(*ui);
+    }
+
+    for(const auto &p : programs) {
+        CudaProgram *cp = (CudaProgram *)p.get();
+        cp->post(batches);
+    }
     return ExecResult::OK;
 }
 
@@ -712,9 +765,18 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
 
 std::shared_ptr<Program>
 CudaContext::createProgram(const Graph &g, ProgramType pt,
-                           const ProgramConfig &pc)
+                           const ProgramConfig &pc,
+                           std::optional<std::string> user_name)
 {
     auto p = std::make_shared<CudaProgram>(shared_from_this(), pt, pc);
+
+    p->m_name = pt == ProgramType::INFERENCE ? "inference" : "training";
+
+    if(user_name)
+        p->m_name = *user_name;
+
+    if(pc.ui)
+        pc.ui->updateName(p->m_index, p->m_name);
 
     p->setupBatchedTensors(pc.batched_tensors);
 
@@ -726,7 +788,12 @@ CudaContext::createProgram(const Graph &g, ProgramType pt,
                         *p, nodes);
 
     int cnt = 0;
+    int tot = nodes.size();
     for(const auto &n : nodes) {
+        printf("\033[KInitializing %s : %d%%\r", p->m_name.c_str(),
+               (int)(100.0f * cnt / tot));
+        fflush(stdout);
+
         const char *err = find_operation(*n)->setup(*p, *n);
         if(err) {
             fprintf(stderr,
@@ -738,6 +805,7 @@ CudaContext::createProgram(const Graph &g, ProgramType pt,
         }
         cnt++;
     }
+    printf("\033[KInitializing %s : Done\n", p->m_name.c_str());
 
     if(pc.anomaly_detect) {
         // Any tensors written by the bwd operations may contain
@@ -782,6 +850,7 @@ CudaProgram::finalize()
 
         m_memory_layout =
             memoryLayout(m_ops, m_ctx->m_exported_storage, m_pc.anomaly_detect);
+
         m_ctx->m_tensor_mem.request(m_memory_layout->size_);
     }
 

@@ -343,8 +343,8 @@ struct CudnnConvolutionDesc {
             return cudnnGetErrorString(s);
 
         auto fwd_algo_key = std::string("conv.fwd;") + algo_key;
-        if(auto it = p.m_algo_hash.find(fwd_algo_key);
-           it != p.m_algo_hash.end()) {
+        if(auto it = p.m_ctx->m_algo_hash.find(fwd_algo_key);
+           it != p.m_ctx->m_algo_hash.end()) {
             conv_fwd_algo_ = (cudnnConvolutionFwdAlgo_t)it->second;
         } else {
             int count;
@@ -365,7 +365,7 @@ struct CudnnConvolutionDesc {
                 return "No forwarding algo found";
 
             conv_fwd_algo_ = fwdalgos[0].algo;
-            p.m_algo_hash[fwd_algo_key] = conv_fwd_algo_;
+            p.m_ctx->m_algo_hash[fwd_algo_key] = conv_fwd_algo_;
         }
         size_t workspace;
         s = cudnnGetConvolutionForwardWorkspaceSize(
@@ -380,8 +380,8 @@ struct CudnnConvolutionDesc {
             return NULL;
 
         auto bwd_data_algo_key = std::string("conv.bwd.data;") + algo_key;
-        if(auto it = p.m_algo_hash.find(bwd_data_algo_key);
-           it != p.m_algo_hash.end()) {
+        if(auto it = p.m_ctx->m_algo_hash.find(bwd_data_algo_key);
+           it != p.m_ctx->m_algo_hash.end()) {
             bwd_data_algo_ = (cudnnConvolutionBwdDataAlgo_t)it->second;
         } else {
             int count;
@@ -402,7 +402,7 @@ struct CudnnConvolutionDesc {
                 return "No backward data algo found";
 
             bwd_data_algo_ = bwdalgos[0].algo;
-            p.m_algo_hash[bwd_data_algo_key] = bwd_data_algo_;
+            p.m_ctx->m_algo_hash[bwd_data_algo_key] = bwd_data_algo_;
         }
         s = cudnnGetConvolutionBackwardDataWorkspaceSize(
             p.m_ctx->m_cudnn, filter_desc_, y.desc(), conv_desc_, x.desc(),
@@ -413,8 +413,8 @@ struct CudnnConvolutionDesc {
         p.m_ctx->m_workspace.request(workspace);
 
         auto bwd_filter_algo_key = std::string("conv.bwd.filter;") + algo_key;
-        if(auto it = p.m_algo_hash.find(bwd_filter_algo_key);
-           it != p.m_algo_hash.end()) {
+        if(auto it = p.m_ctx->m_algo_hash.find(bwd_filter_algo_key);
+           it != p.m_ctx->m_algo_hash.end()) {
             bwd_filter_algo_ = (cudnnConvolutionBwdFilterAlgo_t)it->second;
         } else {
             int count;
@@ -435,7 +435,7 @@ struct CudnnConvolutionDesc {
                 return "No backward filter algo found";
 
             bwd_filter_algo_ = filteralgos[0].algo;
-            p.m_algo_hash[bwd_filter_algo_key] = bwd_filter_algo_;
+            p.m_ctx->m_algo_hash[bwd_filter_algo_key] = bwd_filter_algo_;
         }
         s = cudnnGetConvolutionBackwardFilterWorkspaceSize(
             p.m_ctx->m_cudnn, x.desc(), y.desc(), conv_desc_, filter_desc_,

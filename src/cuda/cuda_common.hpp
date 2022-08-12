@@ -84,8 +84,9 @@ public:
 
     int init();
 
-    std::shared_ptr<Program> createProgram(const Graph &g, ProgramType pt,
-                                           const ProgramConfig &pc) override;
+    std::shared_ptr<Program> createProgram(
+        const Graph &g, ProgramType pt, const ProgramConfig &pc,
+        std::optional<std::string> name) override;
 
     std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
 
@@ -95,6 +96,18 @@ public:
     void print() const override;
 
     std::string info() const override;
+
+    void reset() override
+    {
+        m_exported_storage.clear();
+        m_tensors.clear();
+        m_tensor_storage_id_gen = 0;
+        m_program_index_generator = 0;
+    }
+
+    ExecResult multiRun(const std::vector<std::shared_ptr<Program>> &programs,
+                        long batches = 1,
+                        StopCheck stop_check = nullptr) override;
 
     CudaTmpMem m_workspace;
     CudaTmpMem m_tensor_mem;
@@ -106,10 +119,11 @@ public:
     nvmlDevice_t m_nvmldev = NULL;
 #endif
     int m_deviceId;
+    bool m_tensor_cores = false;
 
     int m_tensor_storage_id_gen = 0;
 
-    bool m_tensor_cores = false;
+    int m_program_index_generator = 0;
 
     // Tensors we've handed out external handles to
     // Their storage need to be kept alive all the time
@@ -117,6 +131,8 @@ public:
 
     std::unordered_map<std::shared_ptr<Tensor>, std::shared_ptr<CudaTensor>>
         m_tensors;
+
+    std::map<std::string, int> m_algo_hash;
 };
 
 struct CudaBatchAccessOp {
@@ -133,7 +149,11 @@ class CudaProgram : public Program {
 public:
     CudaProgram(std::shared_ptr<CudaContext> ctx, ProgramType pt,
                 const ProgramConfig &pc)
-      : m_ctx(ctx), m_pt(pt), m_pc(pc), m_mp_scaling(pc.batch_size)
+      : m_ctx(ctx)
+      , m_index(ctx->m_program_index_generator++)
+      , m_pt(pt)
+      , m_pc(pc)
+      , m_mp_scaling(pc.batch_size)
     {
         chkCuda(cudaMallocManaged((void **)&m_aux, 4096, cudaMemAttachGlobal));
         chkCuda(cudaMemset(m_aux, 0, 4096));
@@ -151,12 +171,15 @@ public:
     void debug(bool) override;
 
     const std::shared_ptr<CudaContext> m_ctx;
+    const int m_index;
     const ProgramType m_pt;
     const ProgramConfig m_pc;
 
     bool m_debug = false;
 
     bool m_finalized = false;
+
+    std::string m_name;
 
     CudaOps m_ops;
 
@@ -175,10 +198,7 @@ public:
     float m_mp_scaling;
     bool m_mp_enabled = false;
 
-    std::map<std::string, int> m_algo_hash;
-
-    int64_t m_total_inferred{0};
-    int64_t m_total_trained{0};
+    int64_t m_total_samples{0};
 
     void finalize();
 
@@ -232,6 +252,8 @@ public:
     bool dumpGraphFromOps(const char *path, const CudaOps &ops);
 
     bool dumpGraph(const char *path) override;
+
+    int getProgramIndex() const override { return m_index; }
 };
 
 class CudaOperation {

@@ -575,18 +575,20 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
+    auto ui = saga::make_statbar();
     const ProgramConfig pc{.batch_size = batch_size,
                            .learning_rate = learning_rate,
                            .tensor_layout = tensor_layout,
-                           .ui = saga::make_statbar(),
+                           .ui = ui,
                            .pre_ops = pre_ops,
                            .post_ops = post_ops,
                            .batched_tensors = bt};
 
-    auto testing = ctx->createProgram(g, ProgramType::INFERENCE, pc);
+    auto testing = ctx->createProgram(g, ProgramType::INFERENCE, pc, "Test");
 
     auto training =
-        train ? ctx->createProgram(g, ProgramType::TRAINING, pc) : nullptr;
+        train ? ctx->createProgram(g, ProgramType::TRAINING, pc, "Train")
+              : nullptr;
 
     if(verbose > 1) {
         testing->dump(stdout, verbose > 2);
@@ -594,8 +596,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         if(training)
             training->dump(stdout, verbose > 2);
     }
-
-    int epoch = 0;
 
     if(graphdump && training) {
         training->dumpGraph(graphdump);
@@ -605,8 +605,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     auto stop_check = [&]() { return !g_run; };
 
     while(g_run) {
-        const int64_t t0 = get_ts();
-
         if(train) {
 #if 0
             if(theta)
@@ -616,6 +614,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
             // Train
             epoch_begin(batch_size, false);
+            ui->updateLoss(training->getProgramIndex(),
+                           loss_sum / train_inputs);
+
             loss_sum = 0;
             if(training->run(train_inputs / batch_size, stop_check) !=
                ExecResult::OK)
@@ -624,17 +625,16 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
         // Test
         epoch_begin(batch_size, true);
-        const int64_t t1 = get_ts();
         correct = 0;
         if(testing->run(test_inputs / batch_size, stop_check) != ExecResult::OK)
             break;
 
-        const int64_t t2 = get_ts();
         float percentage = 100.0 * correct / test_inputs;
-        epoch++;
-        printf("\033[KEpoch %4d: %3.3f%% Train:%.3fs Test:%.3fs Loss:%f\n",
-               epoch, percentage, (t1 - t0) / 1e6, (t2 - t1) / 1e6,
-               loss_sum / train_inputs);
+
+        char str[100];
+        snprintf(str, sizeof(str), "Recall: %f", percentage);
+        ui->updateExtra(testing->getProgramIndex(), str);
+
         if(!g_run || percentage > 99)
             break;
     }
