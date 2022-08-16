@@ -319,7 +319,11 @@ CudaTensor::CudaTensor(DataType data_type, const CudaTensor &o,
                                                     o.m_storage->m_ctx);
 }
 
-CudaTensor::~CudaTensor() { chkCUDNN(cudnnDestroyTensorDescriptor(m_desc)); }
+CudaTensor::~CudaTensor()
+{
+    chkCUDNN(cudnnDestroyTensorDescriptor(m_desc));
+    chkCuda(cudaFree(m_optimizer_aux));
+}
 
 std::unique_ptr<TensorAccess>
 CudaTensor::access()

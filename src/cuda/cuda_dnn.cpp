@@ -54,7 +54,6 @@ struct CudnnOperation : public CudaOperation {
 struct CudnnAdam : public CudaOperation {
     const std::shared_ptr<CudaTensor> weights_, gradient_;
     float learning_rate_;
-    float *temp_;
     int iter_;
 
     CudnnAdam(CudaProgram &p, std::shared_ptr<CudaTensor> weights,
@@ -69,20 +68,27 @@ struct CudnnAdam : public CudaOperation {
     {
         assert(weights->dims_ == gradient->dims_);
 
+        if(weights->m_optimizer_aux)
+            return;
+
         switch(weights->data_type_) {
         case Tensor::DataType::FLOAT:
             // Allocate 2x floats for each weight (m and v)
-            chkCuda(cudaMallocManaged(&temp_, m_elements * 2 * sizeof(float)));
-            chkCuda(cudaMemset(temp_, 0, m_elements * 2 * sizeof(float)));
+            chkCuda(cudaMallocManaged(&weights->m_optimizer_aux,
+                                      m_elements * 2 * sizeof(float)));
+            chkCuda(cudaMemset(weights->m_optimizer_aux, 0,
+                               m_elements * 2 * sizeof(float)));
             break;
 
         case Tensor::DataType::HALF:
+
             // Allocate 3x floats for each weight (m and v and float32 copy)
-            chkCuda(cudaMallocManaged(&temp_, m_elements * 3 * sizeof(float),
+            chkCuda(cudaMallocManaged(&weights->m_optimizer_aux,
+                                      m_elements * 3 * sizeof(float),
                                       cudaMemAttachGlobal));
             {
                 const __half *src = (const __half *)weights->deviceMem();
-                float *dst = temp_;
+                float *dst = (float *)weights->m_optimizer_aux;
                 for(size_t i = 0; i < m_elements; i++) {
                     *dst++ = 0;
                     *dst++ = 0;
@@ -95,8 +101,6 @@ struct CudnnAdam : public CudaOperation {
             break;
         }
     }
-
-    ~CudnnAdam() { chkCuda(cudaFree(temp_)); }
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
     {
@@ -121,15 +125,17 @@ struct CudnnAdam : public CudaOperation {
         switch(weights_->data_type_) {
         case Tensor::DataType::FLOAT:
             adam_float(m_elements, (float *)weights_->deviceMem(),
-                       (const float *)gradient_->deviceMem(), (float *)temp_,
-                       b1t, b2t, learning_rate_, p.m_aux, p.m_ctx->m_stream);
+                       (const float *)gradient_->deviceMem(),
+                       (float *)weights_->m_optimizer_aux, b1t, b2t,
+                       learning_rate_, p.m_aux, p.m_ctx->m_stream);
             break;
         case Tensor::DataType::HALF:
             p.m_mp_enabled = true;
             adam_mixed(m_elements, 1.0f / p.m_mp_scaling,
                        (__half *)weights_->deviceMem(),
-                       (const __half *)gradient_->deviceMem(), (float *)temp_,
-                       b1t, b2t, learning_rate_, p.m_aux, p.m_ctx->m_stream);
+                       (const __half *)gradient_->deviceMem(),
+                       (float *)weights_->m_optimizer_aux, b1t, b2t,
+                       learning_rate_, p.m_aux, p.m_ctx->m_stream);
             break;
         default:
             return "Unsupported tensor datatype";

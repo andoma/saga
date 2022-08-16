@@ -154,6 +154,8 @@ public:
     cudnnTensorDescriptor_t m_desc;
     std::shared_ptr<CudaTensor> m_grad;
     bool m_partial{false};
+
+    void *m_optimizer_aux{nullptr};
 };
 
 }  // namespace saga
