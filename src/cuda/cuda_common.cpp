@@ -809,8 +809,7 @@ CudaContext::createProgram(const Graph &g, ProgramType pt,
 
     if(pc.anomaly_detect) {
         // Any tensors written by the bwd operations may contain
-        // nonfinite numbers (Strictly only for FP16)
-        // (These will be filtered out by the optimizers)
+        // nonfinite numbers
         for(const auto &op : p->m_bwd_operations) {
             for(auto &t : op->getOutputs()) {
                 t->m_storage->m_nonfinite_is_valid = true;
@@ -824,26 +823,24 @@ CudaContext::createProgram(const Graph &g, ProgramType pt,
         assert(p->m_upd_operations.empty());
     }
 
-    p->m_ops.insert(p->m_ops.end(), p->m_fwd_operations.begin(),
-                    p->m_fwd_operations.end());
-    p->m_ops.insert(p->m_ops.end(), p->m_bwd_operations.begin(),
-                    p->m_bwd_operations.end());
-    p->m_ops.insert(p->m_ops.end(), p->m_upd_operations.begin(),
-                    p->m_upd_operations.end());
-
-    p->m_fwd_operations.clear();
-    p->m_bwd_operations.clear();
-    p->m_upd_operations.clear();
-
     return p;
 }
 
 void
 CudaProgram::finalize()
 {
-    if(m_finalized)
+    if(m_finalized) {
         return;
+    }
     m_finalized = true;
+
+    m_ops.insert(m_ops.end(), m_fwd_operations.begin(), m_fwd_operations.end());
+    m_ops.insert(m_ops.end(), m_bwd_operations.begin(), m_bwd_operations.end());
+    m_ops.insert(m_ops.end(), m_upd_operations.begin(), m_upd_operations.end());
+
+    m_fwd_operations.clear();
+    m_bwd_operations.clear();
+    m_upd_operations.clear();
 
     if(m_ops.size()) {
         m_ops = reduceLiveranges(m_ops, m_ctx->m_exported_storage);

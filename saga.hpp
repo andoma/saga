@@ -478,6 +478,7 @@ enum class ExecResult {
 class Program {
 public:
     virtual ~Program() {}
+    virtual void finalize() = 0;
     virtual ExecResult run(long batches = 1,
                            StopCheck stop_check = nullptr) = 0;
     virtual void dump(FILE *output, bool detailed = false) const = 0;
