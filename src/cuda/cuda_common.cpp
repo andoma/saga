@@ -250,8 +250,8 @@ CudaProgram::detect_anomaly(
         t->detect_anomaly(&m_aux->anomaly);
         cudaStreamSynchronize(m_ctx->m_stream);
         if(m_aux->anomaly) {
-            fprintf(stderr, "\n\n *** Anomaly in tensor T%d (%s)\n",
-                    t->storage_id(), what);
+            fprintf(stderr, "\n\n *** Anomaly in tensor %s (%s)\n",
+                    t->storage_name().c_str(), what);
 
             op.dump(stderr, 1);
 
@@ -266,13 +266,17 @@ CudaProgram::detect_anomaly(
 
             printf("Pre invalidate: ");
             for(auto &t : op.m_pre_invalidate) {
-                printf("T%d ", t->m_id);
+                for(const auto &id : t->m_idmap) {
+                    printf("T%d ", id.second);
+                }
             }
             printf("\n");
 
             printf("Post invalidate: ");
             for(auto &t : op.m_post_invalidate) {
-                printf("T%d ", t->m_id);
+                for(const auto &id : t->m_idmap) {
+                    printf("T%d ", id.second);
+                }
             }
             printf("\n");
 
@@ -504,7 +508,7 @@ CudaOperation::dump(FILE *output, bool full) const
         fprintf(output, "OP: %s %s\n", name().c_str(), info().c_str());
         for(auto const &t : m_pre_invalidate) {
             if(t)
-                fprintf(output, "\tE: T%d\n", t->m_id);
+                fprintf(output, "\tE: %s\n", t->name().c_str());
         }
         for(auto const &t : inputs) {
             if(t)
@@ -516,7 +520,7 @@ CudaOperation::dump(FILE *output, bool full) const
         }
         for(auto const &t : m_post_invalidate) {
             if(t)
-                fprintf(output, "\tE: T%d\n", t->m_id);
+                fprintf(output, "\tE: %s\n", t->name().c_str());
         }
     } else {
         fprintf(output, "%s\n", str().c_str());
@@ -915,18 +919,21 @@ CudaProgram::dumpGraphFromOps(const char *path, const CudaOps &ops)
     }
 
     for(auto const &s : storage) {
-        int id = s->m_id;
-        fprintf(fp, "node [shape=box,label=\"T%d\"]; T%d;\n", id, id);
+        const auto name = s->name();
+        fprintf(fp, "node [shape=box,label=\"%s\"]; %s;\n", name.c_str(),
+                name.c_str());
     }
     fprintf(fp, "\n");
 
     i = 0;
     for(auto &op : ops) {
         for(auto const &t : op->getInputs()) {
-            fprintf(fp, "T%d->O%d;\n", t->m_storage->m_id, i);
+            const auto name = t->storage_name();
+            fprintf(fp, "%s->O%d;\n", name.c_str(), i);
         }
         for(auto const &t : op->getOutputs()) {
-            fprintf(fp, "O%d->T%d;\n", i, t->m_storage->m_id);
+            const auto name = t->storage_name();
+            fprintf(fp, "O%d->%s;\n", i, name.c_str());
         }
         i++;
     }

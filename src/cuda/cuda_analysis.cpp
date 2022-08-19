@@ -214,22 +214,27 @@ struct LiveAnalysis {
 
         for(const auto &op : ops) {
             for(const auto &t : op->getInputs()) {
-                const int id = t->storage_id();
-                lowest_id = std::min(lowest_id, id);
-                highest_id = std::max(highest_id, id);
+                auto ids = t->storage_id();
+                for(const auto &id : ids) {
+                    lowest_id = std::min(lowest_id, id);
+                    highest_id = std::max(highest_id, id);
+                }
             }
 
             for(const auto &t : op->getOutputs()) {
-                const int id = t->storage_id();
-                lowest_id = std::min(lowest_id, id);
-                highest_id = std::max(highest_id, id);
+                auto ids = t->storage_id();
+                for(const auto &id : ids) {
+                    lowest_id = std::min(lowest_id, id);
+                    highest_id = std::max(highest_id, id);
+                }
             }
         }
 
         for(const auto &s : exported) {
-            const int id = s->m_id;
-            lowest_id = std::min(lowest_id, id);
-            highest_id = std::max(highest_id, id);
+            for(const auto &it : s->m_idmap) {
+                lowest_id = std::min(lowest_id, it.second);
+                highest_id = std::max(highest_id, it.second);
+            }
         }
 
         m_ln_id_base = lowest_id;
@@ -244,40 +249,34 @@ struct LiveAnalysis {
         m_exported_gen = (uint32_t *)calloc(m_ln_words, sizeof(uint32_t));
 
         for(const auto &s : exported) {
-            const int id = s->m_id - m_ln_id_base;
-            bitset(m_exported_gen, id);
+            for(const auto &it : s->m_idmap) {
+                const int id = it.second - m_ln_id_base;
+                bitset(m_exported_gen, id);
+            }
         }
-
-        uint32_t *partials_init =
-            (uint32_t *)calloc(m_ln_words, sizeof(uint32_t));
 
         for(const auto &op : ops) {
             auto ln = std::make_unique<Liveness>(m_ln_words);
 
             for(const auto &t : op->getInputs()) {
-                const int id = t->storage_id() - m_ln_id_base;
-                bitset(ln->m_gen, id);
-                m_memory_usage[id] = t->memoryUsage();
-                m_storage[id] = t->m_storage;
+                for(const auto &id0 : t->storage_id()) {
+                    const int id = id0 - m_ln_id_base;
+                    bitset(ln->m_gen, id);
+                    m_memory_usage[id] = t->memoryUsage();
+                    m_storage[id] = t->m_storage;
+                }
             }
 
             for(const auto &t : op->getOutputs()) {
-                const int id = t->storage_id() - m_ln_id_base;
-                bitset(ln->m_def, id);
-                m_memory_usage[id] = t->memoryUsage();
-                m_storage[id] = t->m_storage;
-
-                if(t->m_partial) {
-                    if(bitchk(partials_init, id)) {
-                        bitset(ln->m_gen, id);
-                    } else {
-                        bitset(partials_init, id);
-                    }
+                for(const auto &id0 : t->storage_id()) {
+                    const int id = id0 - m_ln_id_base;
+                    bitset(ln->m_def, id);
+                    m_memory_usage[id] = t->memoryUsage();
+                    m_storage[id] = t->m_storage;
                 }
             }
             m_lns.push_back(std::move(ln));
         }
-        free(partials_init);
         update();
     }
 
@@ -474,21 +473,27 @@ struct LiveAnalysis {
         Bestfit bf;
         const size_t align = 16;
 
-        std::unordered_map<int, size_t> positions;
-        std::unordered_set<int> inuse;
+        std::unordered_map<std::shared_ptr<CudaTensorStorage>,
+                           std::pair<int, size_t>>
+            use;
 
         for(size_t i = 0; i < m_ops.size(); i++) {
             for(int j = 0; j < m_ln_size; j++) {
                 if(bitchk(m_lns[i]->m_out, j) && !bitchk(m_lns[i]->m_in, j)) {
                     const size_t size = (m_memory_usage[j] + align - 1) / align;
 
-                    if(anomaly_detect) {
-                        m_ops[i]->m_pre_invalidate.push_back(m_storage[j]);
-                    }
+                    auto s = m_storage[j];
+                    auto &p = use[s];
 
-                    assert(inuse.find(j) == inuse.end());
-                    inuse.insert(j);
-                    positions[j] = align * bf.alloc(size);
+                    if(p.first == 0) {
+                        // Activated
+                        assert(p.second == 0);
+                        if(anomaly_detect) {
+                            m_ops[i]->m_pre_invalidate.push_back(s);
+                        }
+                        p.second = align * bf.alloc(size);
+                    }
+                    p.first++;
                 }
             }
 
@@ -496,22 +501,27 @@ struct LiveAnalysis {
                 if(bitchk(m_lns[i]->m_in, j) && !bitchk(m_lns[i]->m_out, j)) {
                     const size_t size = (m_memory_usage[j] + align - 1) / align;
 
-                    if(anomaly_detect) {
-                        m_ops[i]->m_post_invalidate.push_back(m_storage[j]);
-                    }
+                    auto s = m_storage[j];
+                    auto &p = use[s];
 
-                    assert(inuse.find(j) != inuse.end());
-                    inuse.erase(j);
-                    bf.free(positions[j] / align, size);
+                    p.first--;
+
+                    if(p.first == 0) {
+                        // Deactivated
+                        if(anomaly_detect) {
+                            m_ops[i]->m_post_invalidate.push_back(s);
+                        }
+                        bf.free(p.second / align, size);
+                    }
                 }
             }
         }
 
         auto r = std::make_unique<CudaMemoryLayout>();
 
-        r->table_.reserve(positions.size());
-        for(const auto &p : positions) {
-            r->table_.push_back(std::make_pair(m_storage[p.first], p.second));
+        r->table_.reserve(use.size());
+        for(const auto &p : use) {
+            r->table_.push_back(std::make_pair(p.first, p.second.second));
         }
         r->size_ = bf.m_peak * align;
         return r;

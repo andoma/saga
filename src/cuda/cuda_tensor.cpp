@@ -41,8 +41,8 @@ CudaTensorStorage::CudaTensorStorage(Tensor::DataType data_type, size_t size,
   , m_ctx(ctx)
   , m_size(size)
   , m_element_size(Tensor::DataTypeSize(data_type))
-  , m_id(++ctx->m_tensor_storage_id_gen)
 {
+    m_idmap[0] = ++ctx->m_tensor_storage_id_gen;
 }
 
 CudaTensorStorage::~CudaTensorStorage()
@@ -50,6 +50,18 @@ CudaTensorStorage::~CudaTensorStorage()
     if(m_mem)
         assert(m_mem == m_data);
     chkCuda(cudaFree(m_mem));
+}
+
+std::string
+CudaTensorStorage::name() const
+{
+    std::stringstream ss;
+    const char *prefix = "T";
+    for(const auto &it : m_idmap) {
+        ss << prefix << it.second;
+        prefix = ";";
+    }
+    return ss.str();
 }
 
 void
@@ -169,7 +181,6 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size,
   : Tensor(data_type, size, name)
   , m_type(cudnnDataType_from_dataType(data_type))
   , m_offset(0)
-  , m_partial(false)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     assert(size.size() >= 0 && size.size() <= 4);
@@ -190,7 +201,6 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
   : Tensor(storage->m_data_type, size, name)
   , m_type(cudnnDataType_from_dataType(storage->m_data_type))
   , m_offset(0)
-  , m_partial(false)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     assert(size.size() >= 0 && size.size() <= 4);
@@ -208,7 +218,6 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensor> alias, const Dims &size,
   , m_type(cudnnDataType_from_dataType(alias->m_storage->m_data_type))
   , m_offset(alias->m_offset)
   , m_storage(alias->m_storage)
-  , m_partial(true)
 {
     const int max_rank = 8;
     int dimsA[max_rank];
@@ -230,6 +239,8 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensor> alias, const Dims &size,
     for(size_t i = 0; i < size.size() && i < offset_element.size(); i++) {
         m_offset += offset_element[i] * stridesA[i];
     }
+
+    m_storage->m_idmap[m_offset] = ++m_storage->m_ctx->m_tensor_storage_id_gen;
 }
 
 CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
@@ -239,7 +250,6 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
   , m_type(cudnnDataType_from_dataType(storage->m_data_type))
   , m_offset(offset)
   , m_storage(storage)
-  , m_partial(true)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(),
@@ -251,7 +261,6 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size, const int *strides,
                        const std::optional<const std::string> &name)
   : Tensor(data_type, size, name)
   , m_type(cudnnDataType_from_dataType(data_type))
-  , m_partial(false)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, size.size(),
@@ -274,7 +283,6 @@ CudaTensor::CudaTensor(const CudaTensor &o,
   : Tensor(o.data_type_, o.dims_, name)
   , m_type(cudnnDataType_from_dataType(data_type_))
   , m_offset(0)
-  , m_partial(false)
 {
     const int max_rank = 8;
     int dimsA[max_rank];
@@ -299,7 +307,6 @@ CudaTensor::CudaTensor(DataType data_type, const CudaTensor &o,
   : Tensor(data_type, o.dims_, name)
   , m_type(cudnnDataType_from_dataType(data_type))
   , m_offset(0)
-  , m_partial(false)
 {
     const int max_rank = 8;
     int dimsA[max_rank];
@@ -375,13 +382,48 @@ void *
 CudaTensor::deviceMem() const
 {
     return m_storage->deviceMem(m_offset);
-};
+}
+
+std::vector<int>
+CudaTensor::storage_id() const
+{
+    std::vector<int> r;
+    size_t our_size = dims_.elements() * m_storage->m_element_size;
+
+    // Crude check, do we cover the entire storage?
+    if(our_size == m_storage->m_size) {
+        // Yes, make sure we point to offset 0
+        assert(m_offset == 0);
+
+        for(const auto &it : m_storage->m_idmap) {
+            r.push_back(it.second);
+        }
+        return r;
+    }
+
+    int id = m_storage->m_idmap[m_offset];
+
+    assert(id != 0);
+    return {id};
+}
+
+std::string
+CudaTensor::storage_name() const
+{
+    std::stringstream ss;
+    const char *prefix = "T";
+    for(const auto id : storage_id()) {
+        ss << prefix << id;
+        prefix = ";";
+    }
+    return ss.str();
+}
 
 std::string
 CudaTensor::shortname() const
 {
     std::stringstream ss;
-    ss << "T" << m_storage->m_id;
+    ss << storage_name();
     if(name_) {
         ss << "\"" << *name_ << "\"";
     }
@@ -451,7 +493,7 @@ std::string
 CudaTensor::info() const
 {
     std::stringstream ss;
-    ss << "T" << m_storage->m_id;
+    ss << storage_name();
     if(name_)
         ss << "\"" << *name_ << "\"";
 
@@ -503,10 +545,6 @@ CudaTensor::info() const
 
     if(m_offset) {
         ss << " + " << m_offset;
-    }
-
-    if(m_partial) {
-        ss << " <partial>";
     }
 
     if(m_storage->m_nonfinite_is_valid) {

@@ -47,13 +47,16 @@ public:
     const std::shared_ptr<CudaContext> m_ctx;
     const size_t m_size;
     const size_t m_element_size;
-    const int m_id;
+
+    std::map<int64_t, int> m_idmap;
 
     void *m_mem = nullptr;
 
     bool m_nonfinite_is_valid{false};
 
     void invalidate();
+
+    std::string name() const;
 };
 
 class CudaTensorStorageDoubleBuffered : public CudaTensorStorage {
@@ -136,7 +139,9 @@ public:
 
     void copyFromLocked(Tensor &t, int dst_broadcast_dimension = -1);
 
-    int storage_id() const { return m_storage->m_id; }
+    std::vector<int> storage_id() const;
+
+    std::string storage_name() const;
 
     std::string shortname() const;
 
@@ -155,7 +160,6 @@ public:
     std::shared_ptr<CudaTensorStorage> m_storage;
     cudnnTensorDescriptor_t m_desc;
     std::shared_ptr<CudaTensor> m_grad;
-    bool m_partial{false};
 
     void *m_optimizer_aux{nullptr};
 };
