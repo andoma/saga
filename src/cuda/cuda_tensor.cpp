@@ -531,6 +531,29 @@ CudaTensor::cpacked() const
     return strides[1] == 1;
 }
 
+cudnnTensorFormat_t
+CudaTensor::format() const
+{
+    const int max_rank = 8;
+    int dims[max_rank];
+    int strides[max_rank];
+    int rank;
+    cudnnDataType_t data_type;
+
+    chkCUDNN(cudnnGetTensorNdDescriptor(m_desc, max_rank, &data_type, &rank,
+                                        dims, strides));
+
+    if(rank < 4)
+        return CUDNN_TENSOR_NCHW;
+
+    if(rank == 4) {
+        if(strides[1] == 1 && strides[2] != 1 && strides[3] != 1)
+            return CUDNN_TENSOR_NHWC;
+        return CUDNN_TENSOR_NCHW;
+    }
+    abort();
+}
+
 void
 CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
 {

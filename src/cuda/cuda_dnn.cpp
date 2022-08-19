@@ -328,8 +328,9 @@ struct CudnnConvolutionDesc {
         auto algo_key = cudnn_conv_hash_key(x, w, y, pad, stride);
 
         cudnnStatus_t s;
-        s = cudnnSetFilter4dDescriptor(filter_desc_, x.m_type,
-                                       p.tensorFormat(x), w.dims_[0],
+
+        auto wfmt = y.format();
+        s = cudnnSetFilter4dDescriptor(filter_desc_, x.m_type, wfmt, w.dims_[0],
                                        w.dims_[1], w.dims_[2], w.dims_[3]);
         if(s)
             return cudnnGetErrorString(s);
@@ -667,7 +668,7 @@ conv_setup(CudaProgram &p, const Node &n)
     }
 
     auto y = p.lower_tensor(n.outputs_.get("y"));
-    auto w = p.lower_tensor(n.inputs_.get("w"));
+    auto w = p.lower_tensor(n.inputs_.get("w"), y->format());
     auto b = p.lower_tensor(n.inputs_.get("b"), 2);
 
     auto desc = std::make_shared<CudnnConvolutionDesc>();

@@ -132,6 +132,8 @@ public:
 
     bool cpacked() const;
 
+    cudnnTensorFormat_t format() const;
+
     void copyFromLocked(Tensor &t, int dst_broadcast_dimension = -1);
 
     int storage_id() const { return m_storage->m_id; }

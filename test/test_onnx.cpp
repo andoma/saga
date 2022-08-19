@@ -17,18 +17,20 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
     char input_path[PATH_MAX];
     char output_path[PATH_MAX];
 
-    auto p = ctx->createProgram(
-        g, ProgramType::INFERENCE,
-        {.batch_size = 1, .tensor_layout = TensorLayout::NHWC});
+    printf("Test: %s (Internal Tensor Layout: %s)\n", base_path,
+           layout == TensorLayout::NCHW ? "NCHW" : "NHWC");
 
-    if(verbose)
-        p->dump(stdout);
+    auto p = ctx->createProgram(g, ProgramType::INFERENCE,
+                                {.batch_size = 1, .tensor_layout = layout});
 
     auto input = ctx->resolveTensor(*g.inputs_.begin());
     auto output = ctx->resolveTensor(*g.outputs_.begin());
 
-    printf("Test: %s (Internal Tensor Layout: %s)\n", base_path,
-           layout == TensorLayout::NCHW ? "NCHW" : "NHWC");
+    p->finalize();
+
+    if(verbose > 1)
+        p->dump(stdout, verbose > 2);
+
     printf("  INPUT: %s\n", input->info().c_str());
     printf("  OUTPUT: %s\n", output->info().c_str());
 
