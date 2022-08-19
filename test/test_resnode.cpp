@@ -224,9 +224,9 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
                                  .tensor_layout = TensorLayout::Auto});
 
     auto y = ctx->resolveTensor(n->y());
-    auto dx = check_dx ? ctx->resolveTensorGradient(x) : nullptr;
+    auto dx = check_dx ? ctx->resolveTensor(x->grad()) : nullptr;
 
-    fill_tensor(ctx->resolveTensorGradient(n->y()), grad);
+    fill_tensor(ctx->resolveTensor(n->y()->grad()), grad);
 
     if(p->run(1) != ExecResult::OK) {
         printf("Execution failed\n");

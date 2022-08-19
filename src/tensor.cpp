@@ -1003,11 +1003,12 @@ Tensor::namePostfix(const std::string &postfix) const
 
 //------------------------------------------------------------------------
 
-class EmptyTensor : public DifferentiableTensor {
+class EmptyTensor : public Tensor,
+                    public std::enable_shared_from_this<EmptyTensor> {
 public:
     EmptyTensor(DataType data_type, const Dims &size,
                 const std::optional<const std::string> &name = std::nullopt)
-      : DifferentiableTensor(data_type, size, name)
+      : Tensor(data_type, size, name)
     {
     }
 
@@ -1016,11 +1017,20 @@ public:
         if(m_gradient || !create)
             return m_gradient;
 
-        m_gradient = std::make_shared<DifferentiableTensor>(
-            data_type_, dims_, namePostfix("grad"));
+        m_gradient = std::make_shared<EmptyTensor>(data_type_, dims_,
+                                                   namePostfix("grad"));
         m_gradient->m_value = shared_from_this();
         return m_gradient;
     }
+
+    virtual std::shared_ptr<Tensor> value() const override
+    {
+        return m_value.lock();
+    }
+
+    std::shared_ptr<EmptyTensor> m_gradient;
+
+    std::weak_ptr<EmptyTensor> m_value;
 };
 
 std::shared_ptr<Tensor>
@@ -1061,12 +1071,12 @@ public:
     mutable std::default_random_engine generator_;
 };
 
-class GenTensor : public Tensor {
+class GenTensor : public EmptyTensor {
 public:
     GenTensor(DataType data_type, const Dims &size,
               const std::optional<std::string> &name, double mean,
               double stddev)
-      : Tensor(data_type, size, name), mean_(mean), stddev_(stddev)
+      : EmptyTensor(data_type, size, name), mean_(mean), stddev_(stddev)
     {
     }
 
@@ -1251,11 +1261,11 @@ computeCPUStrides(const Dims &dims)
     return strides;
 }
 
-class CPUTensor : public DifferentiableTensor {
+class CPUTensor : public EmptyTensor {
 public:
     CPUTensor(DataType data_type, const Dims &size,
               const std::optional<std::string> &name)
-      : DifferentiableTensor(data_type, size, name)
+      : EmptyTensor(data_type, size, name)
       , strides_(computeCPUStrides(size))
       , storage_(std::make_shared<HostTensorStorage>(data_type, size, strides_))
       , offset_(0)
@@ -1264,7 +1274,7 @@ public:
 
     CPUTensor(DataType data_type, const Dims &size, const Dims &strides,
               const std::optional<std::string> &name)
-      : DifferentiableTensor(data_type, size, name)
+      : EmptyTensor(data_type, size, name)
       , strides_(strides)
       , storage_(std::make_shared<HostTensorStorage>(data_type, size, strides_))
       , offset_(0)
@@ -1274,7 +1284,7 @@ public:
     CPUTensor(const Dims &size, const Dims &strides,
               std::shared_ptr<TensorStorage> storage, int64_t offset,
               const std::optional<std::string> &name)
-      : DifferentiableTensor(storage->m_data_type, size, name)
+      : EmptyTensor(storage->m_data_type, size, name)
       , strides_(strides)
       , storage_(storage)
       , offset_(offset)

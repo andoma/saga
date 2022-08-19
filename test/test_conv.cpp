@@ -141,10 +141,10 @@ conv_main(int argc, char **argv)
                                  .tensor_layout = TensorLayout::Auto});
 
     auto loss = ctx->resolveTensor(n->outputs_["loss"]);
-    auto grad = ctx->resolveTensorGradient(out);
+    auto grad = ctx->resolveTensor(out->grad());
     mid = ctx->resolveTensor(mid);
     out = ctx->resolveTensor(out);
-    last = ctx->resolveTensorGradient(last);
+    last = ctx->resolveTensor(last->grad());
 
     if(verbose)
         p->dump(stdout, verbose > 1);

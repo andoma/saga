@@ -500,9 +500,6 @@ public:
     virtual std::shared_ptr<Tensor> resolveTensor(
         std::shared_ptr<Tensor> t) = 0;
 
-    virtual std::shared_ptr<Tensor> resolveTensorGradient(
-        std::shared_ptr<Tensor> t) = 0;
-
     virtual std::string info() const = 0;
 
     virtual void print() const = 0;

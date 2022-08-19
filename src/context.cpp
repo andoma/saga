@@ -19,12 +19,6 @@ public:
         return nullptr;
     }
 
-    std::shared_ptr<Tensor> resolveTensorGradient(
-        std::shared_ptr<Tensor> t) override
-    {
-        return nullptr;
-    }
-
     void print() const override{};
 
     std::string info() const override { return "null-context"; }

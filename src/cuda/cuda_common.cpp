@@ -121,21 +121,6 @@ CudaContext::resolveTensor(std::shared_ptr<Tensor> src)
     return nullptr;
 }
 
-std::shared_ptr<Tensor>
-CudaContext::resolveTensorGradient(std::shared_ptr<Tensor> src)
-{
-    if(src == nullptr)
-        return nullptr;
-
-    auto it = m_tensors.find(src);
-    if(it != m_tensors.end()) {
-        auto t = it->second->makeSharedGrad();
-        m_exported_storage.push_back(t->m_storage);
-        return t;
-    }
-    return nullptr;
-}
-
 cudnnTensorFormat_t
 CudaProgram::tensorFormat(Tensor::DataType data_type)
 {
@@ -225,6 +210,37 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
     t->copyFromLocked(*src, 0);
     m_ctx->m_tensors[src] = t;
     return t;
+}
+
+std::shared_ptr<CudaTensor>
+CudaProgram::lower_grad(std::shared_ptr<Tensor> src, size_t minimum_rank)
+{
+    if(src == nullptr)
+        return nullptr;
+    src = src->grad();
+    assert(src.get());
+    return lower_tensor(src, minimum_rank);
+}
+
+std::shared_ptr<CudaTensor>
+CudaProgram::lower_grad(std::shared_ptr<Tensor> src, cudnnTensorFormat_t format)
+{
+    if(src == nullptr)
+        return nullptr;
+    src = src->grad();
+    assert(src.get());
+    return lower_tensor(src, format);
+}
+
+std::shared_ptr<CudaTensor>
+CudaProgram::lower_grad(std::shared_ptr<Tensor> src,
+                        const CudaTensor &blueprint)
+{
+    if(src == nullptr)
+        return nullptr;
+    src = src->grad();
+    assert(src.get());
+    return lower_tensor(src, blueprint);
 }
 
 void
@@ -725,14 +741,8 @@ CudaProgram::addPrePostOp(std::shared_ptr<Tensor> &high,
 void
 CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
 {
-    // Do values first and gradients in a second pass to make sure lowering
-    // is correct
-
     for(const auto &bt : bts) {
         auto src = bt.first;
-        if(src->value())
-            continue;  // This was a gradient
-
         auto dims = src->dims_.batch(m_pc.batch_size);
 
         auto fmt = tensorFormat(*src);
@@ -744,26 +754,6 @@ CudaProgram::setupBatchedTensors(const BatchedTensors &bts)
         t->copyFromLocked(*src);
         m_ctx->m_tensors[src] = t;
         addPrePostOp(src, t, s, bt.second);
-    }
-
-    // Do gradients
-    for(const auto &bt : bts) {
-        auto src = bt.first;
-        auto value = src->value();
-        if(!value)
-            continue;
-
-        auto dims = src->dims_.batch(m_pc.batch_size);
-
-        auto fmt = tensorFormat(*src);
-        auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(
-            src->data_type_, dims, fmt, m_ctx);
-        auto g = std::make_shared<CudaTensor>(s, dims, fmt);
-        m_flips.push_back(s);
-
-        auto t = lower_tensor(value);
-        t->m_grad = g;
-        addPrePostOp(src, g, s, bt.second);
     }
 }
 

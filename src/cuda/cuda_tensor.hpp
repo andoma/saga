@@ -129,10 +129,6 @@ public:
 
     void *deviceMem() const;
 
-    std::shared_ptr<CudaTensor> makeSharedGrad();
-
-    std::shared_ptr<CudaTensor> makePrivateGrad();
-
     bool cpacked() const;
 
     cudnnTensorFormat_t format() const;
@@ -159,7 +155,6 @@ public:
     int64_t m_offset;
     std::shared_ptr<CudaTensorStorage> m_storage;
     cudnnTensorDescriptor_t m_desc;
-    std::shared_ptr<CudaTensor> m_grad;
 
     void *m_optimizer_aux{nullptr};
 };

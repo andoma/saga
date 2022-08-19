@@ -363,21 +363,6 @@ CudaTensor::slice(const Dims &offset, const Dims &size)
                                         namePostfix("slice"));
 }
 
-std::shared_ptr<CudaTensor>
-CudaTensor::makeSharedGrad()
-{
-    if(!m_grad)
-        m_grad = std::make_shared<CudaTensor>(*this, namePostfix("grad"));
-
-    return m_grad;
-}
-
-std::shared_ptr<CudaTensor>
-CudaTensor::makePrivateGrad()
-{
-    return std::make_shared<CudaTensor>(*this, namePostfix("private_grad"));
-}
-
 void *
 CudaTensor::deviceMem() const
 {

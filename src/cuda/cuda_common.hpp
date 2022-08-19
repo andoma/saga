@@ -90,9 +90,6 @@ public:
 
     std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
 
-    std::shared_ptr<Tensor> resolveTensorGradient(
-        std::shared_ptr<Tensor> t) override;
-
     void print() const override;
 
     std::string info() const override;
@@ -225,6 +222,15 @@ public:
 
     std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
                                              const CudaTensor &blueprint);
+
+    std::shared_ptr<CudaTensor> lower_grad(std::shared_ptr<Tensor> src,
+                                           size_t minimum_rank = 0);
+
+    std::shared_ptr<CudaTensor> lower_grad(std::shared_ptr<Tensor> src,
+                                           cudnnTensorFormat_t format);
+
+    std::shared_ptr<CudaTensor> lower_grad(std::shared_ptr<Tensor> src,
+                                           const CudaTensor &blueprint);
 
     void fwd(const std::shared_ptr<CudaOperation> &op);
     void bwd(const std::shared_ptr<CudaOperation> &op);
