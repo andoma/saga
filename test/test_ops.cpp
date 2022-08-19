@@ -658,3 +658,65 @@ ops_main(int argc, char **argv)
 }
 
 SAGA_CLI_CMD("ops", "ops [OPTIONS ...]", "Run test of operations", ops_main);
+
+static const TensorData concat_x0 = {{2, 2}, {1, 2, 3, 4}};
+static const TensorData concat_x1 = {{2, 2}, {5, 6, 7, 8}};
+static const TensorData concat_x2 = {{2, 2}, {11, 12, 13, 14}};
+static const TensorData concat_x3 = {{2, 2}, {15, 16, 17, 18}};
+
+extern int
+concat_main(int argc, char **argv)
+{
+    int opt;
+    auto dt = Tensor::DataType::FLOAT;
+
+    while((opt = getopt(argc, argv, "hv")) != -1) {
+        switch(opt) {
+        case 'h':
+            dt = Tensor::DataType::HALF;
+            break;
+        case 'v':
+            g_verbose++;
+            break;
+        }
+    }
+
+    argc -= optind;
+    argv += optind;
+
+    auto ctx = createContext();
+
+    Graph g;
+
+    auto x0 = load_tensor(dt, concat_x0);
+    auto x1 = load_tensor(dt, concat_x1);
+    auto x2 = load_tensor(dt, concat_x2);
+    auto x3 = load_tensor(dt, concat_x3);
+
+    auto n0 = g.addNode("relu", x0);
+    auto n1 = g.addNode("relu", x1);
+    auto n2 = g.addNode("relu", x2);
+    auto n3 = g.addNode("relu", x3);
+
+    auto n = g.addNode(
+        "concat",
+        {{"x0", n0->y()}, {"x1", n1->y()}, {"x2", n2->y()}, {"x3", n3->y()}},
+        {{"axis", 0}});
+
+    n = g.addNode("relu", n->y());
+
+    auto p = ctx->createProgram(g, ProgramType::INFERENCE, {});
+
+    auto y = ctx->resolveTensor(n->y());
+
+    p->run();
+
+    if(g_verbose > 1)
+        p->dump(stdout, g_verbose > 2);
+
+    y->print("Y");
+    return 0;
+}
+
+SAGA_CLI_CMD("concat", "concat [OPTIONS ...]", "Run test of concat",
+             concat_main);
