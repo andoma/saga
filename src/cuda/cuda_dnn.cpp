@@ -1761,6 +1761,8 @@ dropout_setup(CudaProgram &p, const Node &n)
     return NULL;
 }
 
+REGISTER_CUDA_OP("dropout", dropout_setup);
+
 static std::vector<std::shared_ptr<Node>>
 dropout_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
 {
@@ -1783,8 +1785,6 @@ dropout_transform_node(CudaProgram &p, std::shared_ptr<Node> n)
     }
     return {};
 }
-
-REGISTER_CUDA_OP("dropout", dropout_setup);
 
 static Nodes
 dropout_transform(CudaProgram &p, const Nodes &nodes)
