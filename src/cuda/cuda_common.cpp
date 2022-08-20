@@ -168,7 +168,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src, size_t minimum_rank)
     auto t = std::make_shared<CudaTensor>(
         src->data_type_, dims, tensorFormat(*src), m_ctx, src->name_);
 
-    t->copyFromLocked(*src, 0);
+    m_ctx->m_deferred_copy[t] = src;
     m_ctx->m_tensors[src] = t;
     return t;
 }
@@ -186,7 +186,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
     }
 
     auto t = std::make_shared<CudaTensor>(src->data_type_, blueprint);
-    t->copyFromLocked(*src, 0);
+    m_ctx->m_deferred_copy[t] = src;
     m_ctx->m_tensors[src] = t;
     return t;
 }
@@ -207,7 +207,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
                                           src->dims_.batch(m_pc.batch_size),
                                           tensor_format, m_ctx, src->name_);
 
-    t->copyFromLocked(*src, 0);
+    m_ctx->m_deferred_copy[t] = src;
     m_ctx->m_tensors[src] = t;
     return t;
 }
@@ -830,6 +830,11 @@ CudaProgram::finalize()
         return;
     }
     m_finalized = true;
+
+    for(const auto &[to, from] : m_ctx->m_deferred_copy) {
+        to->copyFromLocked(*from, 0);
+    }
+    m_ctx->m_deferred_copy.clear();
 
     m_ops.insert(m_ops.end(), m_fwd_operations.begin(), m_fwd_operations.end());
     m_ops.insert(m_ops.end(), m_bwd_operations.begin(), m_bwd_operations.end());

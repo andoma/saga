@@ -98,6 +98,7 @@ public:
     {
         m_exported_storage.clear();
         m_tensors.clear();
+        m_deferred_copy.clear();
         m_tensor_storage_id_gen = 0;
         m_program_index_generator = 0;
     }
@@ -128,6 +129,9 @@ public:
 
     std::unordered_map<std::shared_ptr<Tensor>, std::shared_ptr<CudaTensor>>
         m_tensors;
+
+    std::unordered_map<std::shared_ptr<CudaTensor>, std::shared_ptr<Tensor>>
+        m_deferred_copy;
 
     std::map<std::string, int> m_algo_hash;
 };

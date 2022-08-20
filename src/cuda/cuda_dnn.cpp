@@ -68,6 +68,13 @@ struct CudnnAdam : public CudaOperation {
     {
         assert(weights->dims_ == gradient->dims_);
 
+        auto it = p.m_ctx->m_deferred_copy.find(weights);
+        if(it != p.m_ctx->m_deferred_copy.end()) {
+            weights->copyFromLocked(*it->second, 0);
+            p.m_ctx->m_deferred_copy.erase(it);
+        }
+        gradient->m_storage->alloc();
+
         if(weights->m_optimizer_aux)
             return;
 
