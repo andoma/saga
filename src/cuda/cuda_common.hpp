@@ -231,9 +231,6 @@ public:
     std::shared_ptr<CudaTensor> lower_grad(std::shared_ptr<Tensor> src,
                                            cudnnTensorFormat_t format);
 
-    std::shared_ptr<CudaTensor> lower_grad(std::shared_ptr<Tensor> src,
-                                           const CudaTensor &blueprint);
-
     void fwd(const std::shared_ptr<CudaOperation> &op);
     void bwd(const std::shared_ptr<CudaOperation> &op);
     void upd(const std::shared_ptr<CudaOperation> &op);

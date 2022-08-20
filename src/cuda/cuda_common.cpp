@@ -232,17 +232,6 @@ CudaProgram::lower_grad(std::shared_ptr<Tensor> src, cudnnTensorFormat_t format)
     return lower_tensor(src, format);
 }
 
-std::shared_ptr<CudaTensor>
-CudaProgram::lower_grad(std::shared_ptr<Tensor> src,
-                        const CudaTensor &blueprint)
-{
-    if(src == nullptr)
-        return nullptr;
-    src = src->grad();
-    assert(src.get());
-    return lower_tensor(src, blueprint);
-}
-
 void
 CudaProgram::setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml)
 {
