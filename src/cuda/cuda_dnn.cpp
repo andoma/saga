@@ -81,6 +81,7 @@ struct CudnnAdam : public CudaOperation {
             break;
 
         case Tensor::DataType::HALF:
+            p.m_mp_enabled = true;
 
             // Allocate 3x floats for each weight (m and v and float32 copy)
             chkCuda(cudaMallocManaged(&weights->m_optimizer_aux,
@@ -130,7 +131,6 @@ struct CudnnAdam : public CudaOperation {
                        learning_rate_, p.m_aux, p.m_ctx->m_stream);
             break;
         case Tensor::DataType::HALF:
-            p.m_mp_enabled = true;
             adam_mixed(m_elements, 1.0f / p.m_mp_scaling,
                        (__half *)weights_->deviceMem(),
                        (const __half *)gradient_->deviceMem(),

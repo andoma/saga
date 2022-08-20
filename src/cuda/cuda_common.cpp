@@ -336,11 +336,15 @@ CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
 }
 
 static void
-updateMemUsage(UI &ui)
+updateGpuStats(UI &ui)
 {
     size_t memfree = 0, memtotal = 0;
     cudaMemGetInfo(&memfree, &memtotal);
-    ui.updateMemUsage(memtotal - memfree, memtotal);
+    size_t used = memtotal - memfree;
+
+    ui.updateCell(0, 2, UI::Align::RIGHT, "GPU-Mem:");
+    ui.updateCell(0, 3, UI::Align::LEFT, "%zd / %zd", used >> 20,
+                  memtotal >> 20);
 }
 
 void
@@ -348,12 +352,12 @@ CudaProgram::prep(long batches)
 {
     finalize();
 
+    if(m_pc.ui) {
+        m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Run");
+    }
     run_batched_tensor_callbacks(m_pc.pre_ops, 0, m_pre_batched_tensors);
 
     flipDoubleBufferedTensors();
-
-    if(m_pc.ui)
-        m_pc.ui->updateBatchInfo(m_pc.batch_size, batches);
 
     cudaStreamSynchronize(m_ctx->m_stream);
 
@@ -363,6 +367,11 @@ CudaProgram::prep(long batches)
 ExecResult
 CudaProgram::step(long batch, long batches)
 {
+    if(m_pc.ui) {
+        m_pc.ui->updateCell(m_ui_row, 5, UI::Align::LEFT, "%ld / %ld", batch,
+                            batches);
+    }
+
     setupTensorStorage(m_memory_layout);
     if(!runOps(m_ops, batch, m_pc.anomaly_detect)) {
         return ExecResult::ERROR;
@@ -377,11 +386,10 @@ CudaProgram::step(long batch, long batches)
                                      m_pre_batched_tensors);
     }
     flipDoubleBufferedTensors();
-
     if(m_pc.ui) {
-        m_pc.ui->updateProgress(m_index, m_total_samples);
+        m_pc.ui->updateCell(m_ui_row, 7, UI::Align::LEFT, "%d",
+                            m_total_samples);
     }
-
     m_total_samples += m_pc.batch_size;
 
     cudaStreamSynchronize(m_ctx->m_stream);
@@ -398,8 +406,10 @@ CudaProgram::step(long batch, long batches)
         m_aux->range = 0;
         m_aux->inf = 0;
         m_aux->nan = 0;
+
         if(m_pc.ui) {
-            m_pc.ui->updateMpScaling(m_index, m_mp_scaling);
+            m_pc.ui->updateCell(m_ui_row, 9, UI::Align::LEFT, "%.1e",
+                                m_mp_scaling);
         }
     }
     return ExecResult::OK;
@@ -408,6 +418,9 @@ CudaProgram::step(long batch, long batches)
 void
 CudaProgram::post(long batches)
 {
+    if(m_pc.ui) {
+        m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Pause");
+    }
     run_batched_tensor_callbacks(m_pc.post_ops, batches - 1,
                                  m_post_batched_tensors);
 }
@@ -424,9 +437,6 @@ CudaProgram::run(long batches, StopCheck stop_check)
     prep(batches);
 
     for(long i = 0; i < batches; i++) {
-        if(m_pc.ui)
-            m_pc.ui->updateCurrentBatch(i);
-
         ExecResult r = step(i, batches);
         if(r != ExecResult::OK)
             return r;
@@ -436,7 +446,7 @@ CudaProgram::run(long batches, StopCheck stop_check)
         }
 
         if(m_pc.ui)
-            updateMemUsage(*m_pc.ui);
+            updateGpuStats(*m_pc.ui);
     }
 
     post(batches);
@@ -465,9 +475,6 @@ CudaContext::multiRun(const std::vector<std::shared_ptr<Program>> &programs,
     auto ui = cp->m_pc.ui;
 
     for(long i = 0; i < batches; i++) {
-        if(ui)
-            ui->updateCurrentBatch(i);
-
         for(const auto &p : programs) {
             CudaProgram *cp = (CudaProgram *)p.get();
             ExecResult r = cp->step(i, batches);
@@ -479,7 +486,7 @@ CudaContext::multiRun(const std::vector<std::shared_ptr<Program>> &programs,
             }
         }
         if(ui)
-            updateMemUsage(*ui);
+            updateGpuStats(*ui);
     }
 
     for(const auto &p : programs) {
@@ -769,9 +776,12 @@ CudaContext::createProgram(const Graph &g, ProgramType pt,
     if(user_name)
         p->m_name = *user_name;
 
-    if(pc.ui)
-        pc.ui->updateName(p->m_index, p->m_name);
-
+    if(pc.ui) {
+        pc.ui->updateCell(p->m_ui_row, 0, UI::Align::LEFT, "%s",
+                          p->m_name.c_str());
+        pc.ui->updateCell(p->m_ui_row, 4, UI::Align::RIGHT, "Batch:");
+        pc.ui->updateCell(p->m_ui_row, 6, UI::Align::RIGHT, "Sample:");
+    }
     p->setupBatchedTensors(pc.batched_tensors);
 
     auto nodes = applyTransforms(CUDA_TRANSFORM_ALL, *p, g.nodes_);
@@ -784,9 +794,10 @@ CudaContext::createProgram(const Graph &g, ProgramType pt,
     int cnt = 0;
     int tot = nodes.size();
     for(const auto &n : nodes) {
-        printf("\033[KInitializing %s : %d%%\r", p->m_name.c_str(),
-               (int)(100.0f * cnt / tot));
-        fflush(stdout);
+        if(pc.ui) {
+            pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "%d%%",
+                              (int)(100.0f * cnt / tot));
+        }
 
         const char *err = find_operation(*n)->setup(*p, *n);
         if(err) {
@@ -799,7 +810,10 @@ CudaContext::createProgram(const Graph &g, ProgramType pt,
         }
         cnt++;
     }
-    printf("\033[KInitializing %s : Done\n", p->m_name.c_str());
+
+    if(pc.ui) {
+        pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "");
+    }
 
     if(pc.anomaly_detect) {
         // Any tensors written by the bwd operations may contain
@@ -848,6 +862,10 @@ CudaProgram::finalize()
     m_ctx->m_tensor_mem.alloc();
 
     m_ctx->m_workspace.alloc();
+
+    if(m_mp_enabled && m_pc.ui) {
+        m_pc.ui->updateCell(m_ui_row, 8, UI::Align::RIGHT, "MPS:");
+    }
 }
 
 void

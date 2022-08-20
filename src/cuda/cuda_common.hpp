@@ -148,6 +148,7 @@ public:
                 const ProgramConfig &pc)
       : m_ctx(ctx)
       , m_index(ctx->m_program_index_generator++)
+      , m_ui_row(m_index + 1)
       , m_pt(pt)
       , m_pc(pc)
       , m_mp_scaling(pc.batch_size)
@@ -169,6 +170,7 @@ public:
 
     const std::shared_ptr<CudaContext> m_ctx;
     const int m_index;
+    const int m_ui_row;
     const ProgramType m_pt;
     const ProgramConfig m_pc;
 

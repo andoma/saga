@@ -185,6 +185,8 @@ static int
 runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
         bool check_dx)
 {
+    ctx->reset();
+
     int batch_size = 2;
 
     const TensorData *expected_y =
@@ -227,6 +229,10 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
     auto dx = check_dx ? ctx->resolveTensor(x->grad()) : nullptr;
 
     fill_tensor(ctx->resolveTensor(n->y()->grad()), grad);
+
+    p->finalize();
+
+    p->dump(stdout, true);
 
     if(p->run(1) != ExecResult::OK) {
         printf("Execution failed\n");

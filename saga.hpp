@@ -402,17 +402,17 @@ public:
 struct UI {
     virtual ~UI() {}
 
-    virtual void updateBatchInfo(int batch_size, int total_batches) = 0;
-    virtual void updateMemUsage(size_t use, size_t total) = 0;
-    virtual void updateCurrentBatch(int current_batch) = 0;
-    virtual void updateName(int program_index, const std::string &name) = 0;
-    virtual void updateProgress(int program_index, int64_t total_samples) = 0;
-    virtual void updateLoss(int program_index, double loss) = 0;
-    virtual void updateMpScaling(int program_index, double scaling) = 0;
-    virtual void updateExtra(int program_index, const std::string &extra) = 0;
+    enum class Align {
+        LEFT,
+        CENTER,
+        RIGHT,
+    };
+
+    virtual void updateCell(size_t row, size_t column, Align a, const char *fmt,
+                            ...) = 0;
 };
 
-std::shared_ptr<UI> make_statbar();
+std::shared_ptr<UI> make_tui();
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------

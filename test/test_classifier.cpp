@@ -559,12 +559,18 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
+    auto ui = saga::make_tui();
+
     auto post_ops = [&](long batch, ProgramType pt, auto tas) {
+        long num_samples = (1 + batch) * batch_size;
+
         if(pt == ProgramType::TRAINING) {
             auto &loss = *tas[LOSS];
             for(int i = 0; i < batch_size; i++) {
                 loss_sum += loss.get({i});
             }
+
+            ui->updateCell(2, 3, UI::Align::LEFT, "%f", loss_sum / num_samples);
         } else {
             auto &output = *tas[OUTPUT];
             const size_t base = batch * batch_size;
@@ -572,10 +578,12 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                 if(output.get({i}) == get_label(base + i))
                     correct++;
             }
+
+            float percentage = 100.0 * correct / num_samples;
+            ui->updateCell(1, 3, UI::Align::LEFT, "%.2f%%", percentage);
         }
     };
 
-    auto ui = saga::make_statbar();
     const ProgramConfig pc{.batch_size = batch_size,
                            .learning_rate = learning_rate,
                            .tensor_layout = tensor_layout,
@@ -602,6 +610,13 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         exit(0);
     }
 
+    if(training) {
+        ui->updateCell(training->getProgramIndex() + 1, 2, UI::Align::RIGHT,
+                       "Loss:");
+    }
+    ui->updateCell(testing->getProgramIndex() + 1, 2, UI::Align::RIGHT,
+                   "Recall:");
+
     auto stop_check = [&]() { return !g_run; };
 
     while(g_run) {
@@ -614,9 +629,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
             // Train
             epoch_begin(batch_size, false);
-            ui->updateLoss(training->getProgramIndex(),
-                           loss_sum / train_inputs);
-
             loss_sum = 0;
             if(training->run(train_inputs / batch_size, stop_check) !=
                ExecResult::OK)
@@ -628,13 +640,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         correct = 0;
         if(testing->run(test_inputs / batch_size, stop_check) != ExecResult::OK)
             break;
-
         float percentage = 100.0 * correct / test_inputs;
-
-        char str[100];
-        snprintf(str, sizeof(str), "Recall: %f", percentage);
-        ui->updateExtra(testing->getProgramIndex(), str);
-
         if(!g_run || percentage > 99)
             break;
     }
