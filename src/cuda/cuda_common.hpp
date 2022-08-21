@@ -84,9 +84,9 @@ public:
 
     int init();
 
-    std::shared_ptr<Program> createProgram(
-        const Graph &g, ProgramType pt, const ProgramConfig &pc,
-        std::optional<std::string> name) override;
+    std::shared_ptr<Program> createMultiProgram(
+        const std::vector<ProgramSource> &sources, ProgramType pt,
+        const ProgramConfig &pc) override;
 
     std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
 
@@ -102,10 +102,6 @@ public:
         m_tensor_storage_id_gen = 0;
         m_program_index_generator = 0;
     }
-
-    ExecResult multiRun(const std::vector<std::shared_ptr<Program>> &programs,
-                        long batches = 1,
-                        StopCheck stop_check = nullptr) override;
 
     CudaTmpMem m_workspace;
     CudaTmpMem m_tensor_mem;
@@ -136,15 +132,21 @@ public:
     std::map<std::string, int> m_algo_hash;
 };
 
-struct CudaBatchAccessOp {
-    std::shared_ptr<Tensor> m_high;
-    std::shared_ptr<CudaTensor> m_low;
-    std::shared_ptr<CudaTensorStorageDoubleBuffered> m_storage;
-};
-
-typedef std::vector<CudaBatchAccessOp> CudaBatchAccessOps;
-
 typedef std::vector<std::shared_ptr<CudaOperation>> CudaOps;
+
+struct CudaProgramUnit {
+    Nodes m_transformed;
+
+    int m_batch_size;
+
+    CudaOps m_fwd_operations;
+    CudaOps m_bwd_operations;
+    CudaOps m_upd_operations;
+
+    void fwd(const std::shared_ptr<CudaOperation> &op);
+    void bwd(const std::shared_ptr<CudaOperation> &op);
+    void upd(const std::shared_ptr<CudaOperation> &op);
+};
 
 class CudaProgram : public Program {
 public:
@@ -155,7 +157,6 @@ public:
       , m_ui_row(m_index + 1)
       , m_pt(pt)
       , m_pc(pc)
-      , m_mp_scaling(pc.batch_size)
     {
         chkCuda(cudaMallocManaged((void **)&m_aux, 4096, cudaMemAttachGlobal));
         chkCuda(cudaMemset(m_aux, 0, 4096));
@@ -163,7 +164,8 @@ public:
 
     ~CudaProgram() { chkCuda(cudaFree(m_aux)); }
 
-    ExecResult run(long batches, StopCheck stop_check) override;
+    ExecResult run(long batches, float learning_rate,
+                   StopCheck stop_check) override;
 
     void prep(long batches);
     ExecResult step(long batch, long batches);
@@ -176,37 +178,39 @@ public:
     const int m_index;
     const int m_ui_row;
     const ProgramType m_pt;
+
     const ProgramConfig m_pc;
 
     bool m_debug = false;
-
     bool m_finalized = false;
 
     std::string m_name;
 
     CudaOps m_ops;
 
-    CudaOps m_fwd_operations;
-    CudaOps m_bwd_operations;
-    CudaOps m_upd_operations;
-
-    CudaBatchAccessOps m_pre_batched_tensors;
-    CudaBatchAccessOps m_post_batched_tensors;
+    std::vector<CudaProgramUnit> m_units;
 
     std::vector<std::shared_ptr<CudaTensorStorageDoubleBuffered>> m_flips;
 
     std::shared_ptr<CudaMemoryLayout> m_memory_layout;
 
     CudaAux *m_aux;
-    float m_mp_scaling;
+    float m_mp_scaling{1};
     bool m_mp_enabled = false;
 
     int64_t m_total_samples{0};
 
     void finalize();
 
+    std::unordered_map<
+        std::shared_ptr<Tensor>,
+        std::pair<std::shared_ptr<CudaTensorStorageDoubleBuffered>, Phase>>
+        m_batched_tensors;
+
+    void addBatchedTensors(const ProgramSource &ps);
+
     void run_batched_tensor_callbacks(const TensorBatchCallback &cb, long batch,
-                                      const CudaBatchAccessOps &list);
+                                      Phase phase);
 
     std::shared_ptr<CudaTensor> resolveTensor_locked(std::shared_ptr<Tensor> t);
 
@@ -220,31 +224,24 @@ public:
         return tensorFormat(t.data_type_);
     }
 
-    std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
+    std::shared_ptr<CudaTensor> lower_tensor(const CudaProgramUnit &pu,
+                                             std::shared_ptr<Tensor> src,
                                              size_t minimum_rank = 0);
-
-    std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
-                                             cudnnTensorFormat_t format);
 
     std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
                                              const CudaTensor &blueprint);
 
-    std::shared_ptr<CudaTensor> lower_grad(std::shared_ptr<Tensor> src,
+    std::shared_ptr<CudaTensor> lower_tensor(const CudaProgramUnit &pu,
+                                             std::shared_ptr<Tensor> src,
+                                             cudnnTensorFormat_t format);
+
+    std::shared_ptr<CudaTensor> lower_grad(const CudaProgramUnit &pu,
+                                           std::shared_ptr<Tensor> src,
                                            size_t minimum_rank = 0);
 
-    std::shared_ptr<CudaTensor> lower_grad(std::shared_ptr<Tensor> src,
+    std::shared_ptr<CudaTensor> lower_grad(const CudaProgramUnit &pu,
+                                           std::shared_ptr<Tensor> src,
                                            cudnnTensorFormat_t format);
-
-    void fwd(const std::shared_ptr<CudaOperation> &op);
-    void bwd(const std::shared_ptr<CudaOperation> &op);
-    void upd(const std::shared_ptr<CudaOperation> &op);
-
-    void setupBatchedTensors(const BatchedTensors &bts);
-
-    void addPrePostOp(std::shared_ptr<Tensor> &high,
-                      std::shared_ptr<CudaTensor> &low,
-                      std::shared_ptr<CudaTensorStorageDoubleBuffered> &s,
-                      Phase phase);
 
     void flipDoubleBufferedTensors();
 
@@ -305,7 +302,9 @@ protected:
 #define CPPJOIN(a, b) CPPGLUE(a, b)
 
 void CudaRegisterOpFactory(const char *name,
-                           const char *(*setup)(CudaProgram &p, const Node &n));
+                           const char *(*setup)(CudaProgram &p,
+                                                CudaProgramUnit &pu,
+                                                const Node &n));
 
 #define REGISTER_CUDA_OP(name, setup)                                      \
     static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) \
@@ -313,14 +312,9 @@ void CudaRegisterOpFactory(const char *name,
         CudaRegisterOpFactory(name, setup);                                \
     }
 
-enum CudaTransformType {
-    CUDA_TRANSFORM_ALL,
-    CUDA_TRANSFORM_TRAINING,
-    CUDA_TRANSFORM_INFERENCE,
-};
-
-void CudaRegisterTransform(CudaTransformType type,
-                           Nodes (*op)(CudaProgram &p, const Nodes &nodes));
+void CudaRegisterTransform(ProgramType type,
+                           Nodes (*op)(CudaProgram &p, CudaProgramUnit &pu,
+                                       const Nodes &nodes));
 
 #define REGISTER_CUDA_TRANSFORM(prio, type, op)           \
     static void __attribute__((constructor(1000 + prio))) \

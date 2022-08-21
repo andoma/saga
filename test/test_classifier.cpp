@@ -584,19 +584,18 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
-    const ProgramConfig pc{.batch_size = batch_size,
-                           .learning_rate = learning_rate,
-                           .tensor_layout = tensor_layout,
-                           .ui = ui,
-                           .pre_ops = pre_ops,
+    const ProgramConfig pc{.pre_ops = pre_ops,
                            .post_ops = post_ops,
-                           .batched_tensors = bt};
+                           .ui = ui,
+                           .tensor_layout = tensor_layout};
 
-    auto testing = ctx->createProgram(g, ProgramType::INFERENCE, pc, "Test");
+    const ProgramSource ps{
+        .graph = g, .batched_tensors = bt, .batch_size = batch_size};
+
+    auto testing = ctx->createProgram(ps, ProgramType::INFERENCE, pc);
 
     auto training =
-        train ? ctx->createProgram(g, ProgramType::TRAINING, pc, "Train")
-              : nullptr;
+        train ? ctx->createProgram(ps, ProgramType::TRAINING, pc) : nullptr;
 
     if(verbose > 1) {
         testing->dump(stdout, verbose > 2);
@@ -630,15 +629,16 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             // Train
             epoch_begin(batch_size, false);
             loss_sum = 0;
-            if(training->run(train_inputs / batch_size, stop_check) !=
-               ExecResult::OK)
+            if(training->run(train_inputs / batch_size, learning_rate,
+                             stop_check) != ExecResult::OK)
                 break;
         }
 
         // Test
         epoch_begin(batch_size, true);
         correct = 0;
-        if(testing->run(test_inputs / batch_size, stop_check) != ExecResult::OK)
+        if(testing->run(test_inputs / batch_size, learning_rate, stop_check) !=
+           ExecResult::OK)
             break;
         float percentage = 100.0 * correct / test_inputs;
         if(!g_run || percentage > 99)

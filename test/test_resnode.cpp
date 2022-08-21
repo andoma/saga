@@ -220,10 +220,9 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
     }
     n = g.addNode("relu", n->y());
 
-    auto p = ctx->createProgram(g, ProgramType::TRAINING,
-                                {.batch_size = batch_size,
-                                 .learning_rate = 1e-3,
-                                 .tensor_layout = TensorLayout::Auto});
+    auto p = ctx->createProgram({.graph = g, .batch_size = batch_size},
+                                ProgramType::TRAINING,
+                                {.tensor_layout = TensorLayout::Auto});
 
     auto y = ctx->resolveTensor(n->y());
     auto dx = check_dx ? ctx->resolveTensor(x->grad()) : nullptr;

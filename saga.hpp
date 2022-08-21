@@ -418,9 +418,27 @@ std::shared_ptr<UI> make_tui();
 //------------------------------------------------------------------------
 
 enum class ProgramType {
-    INFERENCE,
-    TRAINING,
+    INFERENCE = 0x1,
+    TRAINING = 0x2,
 };
+
+inline constexpr ProgramType
+operator|(ProgramType a, ProgramType b)
+{
+    return static_cast<ProgramType>(static_cast<int>(a) | static_cast<int>(b));
+}
+
+inline constexpr ProgramType
+operator&(ProgramType a, ProgramType b)
+{
+    return static_cast<ProgramType>(static_cast<int>(a) & static_cast<int>(b));
+}
+
+inline constexpr bool
+operator!(ProgramType a)
+{
+    return static_cast<bool>(!static_cast<int>(a));
+}
 
 enum class Phase { PRE = 0x1, POST = 0x2 };
 
@@ -451,17 +469,22 @@ typedef std::function<void(
 
 typedef std::function<bool(void)> StopCheck;
 
-struct ProgramConfig {
-    int batch_size{1};
-    float learning_rate{0};
-    TensorLayout tensor_layout{TensorLayout::Auto};
-    std::shared_ptr<UI> ui;
+struct ProgramSource {
+    const Graph &graph;
 
+    BatchedTensors batched_tensors;
+
+    int batch_size{1};
+};
+
+struct ProgramConfig {
     TensorBatchCallback pre_ops;
 
     TensorBatchCallback post_ops;
 
-    BatchedTensors batched_tensors;
+    std::shared_ptr<UI> ui;
+
+    TensorLayout tensor_layout{TensorLayout::Auto};
 
     // Scan tensors for NAN values
     // Caution: Makes everything slower.
@@ -478,12 +501,18 @@ enum class ExecResult {
 class Program {
 public:
     virtual ~Program() {}
+
     virtual void finalize() = 0;
-    virtual ExecResult run(long batches = 1,
+
+    virtual ExecResult run(long batches = 1, float learning_rate = 1e-4,
                            StopCheck stop_check = nullptr) = 0;
+
     virtual void dump(FILE *output, bool detailed = false) const = 0;
+
     virtual void debug(bool on) = 0;
+
     virtual bool dumpGraph(const char *path) { return false; }
+
     virtual int getProgramIndex() const = 0;
 };
 
@@ -493,9 +522,17 @@ public:
 class Context {
 public:
     virtual ~Context() {}
-    virtual std::shared_ptr<Program> createProgram(
-        const Graph &graph, ProgramType pt, const ProgramConfig &pc,
-        std::optional<std::string> name = std::nullopt) = 0;
+
+    virtual std::shared_ptr<Program> createMultiProgram(
+        const std::vector<ProgramSource> &sources, ProgramType pt,
+        const ProgramConfig &pc) = 0;
+
+    std::shared_ptr<Program> createProgram(const ProgramSource &ps,
+                                           ProgramType pt,
+                                           const ProgramConfig &pc)
+    {
+        return createMultiProgram({ps}, pt, pc);
+    }
 
     virtual std::shared_ptr<Tensor> resolveTensor(
         std::shared_ptr<Tensor> t) = 0;
@@ -505,10 +542,6 @@ public:
     virtual void print() const = 0;
 
     virtual void reset() = 0;
-
-    virtual ExecResult multiRun(
-        const std::vector<std::shared_ptr<Program>> &programs, long batches = 1,
-        StopCheck stop_check = nullptr) = 0;
 };
 
 std::shared_ptr<Context> createContext();

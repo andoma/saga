@@ -6,9 +6,9 @@ namespace saga {
 
 class NullContext : public Context {
 public:
-    std::shared_ptr<Program> createProgram(
-        const Graph &graph, ProgramType pt, const ProgramConfig &pc,
-        std::optional<std::string> name) override
+    std::shared_ptr<Program> createMultiProgram(
+        const std::vector<ProgramSource> &sources, ProgramType pt,
+        const ProgramConfig &pc) override
     {
         fprintf(stderr, "Warning: NullContext can't create program\n");
         return nullptr;
@@ -24,13 +24,6 @@ public:
     std::string info() const override { return "null-context"; }
 
     void reset() override{};
-
-    ExecResult multiRun(const std::vector<std::shared_ptr<Program>> &programs,
-                        long batches = 1,
-                        StopCheck stop_check = nullptr) override
-    {
-        return ExecResult::ERROR;
-    }
 };
 
 static std::map<ContextType, std::shared_ptr<Context> (*)(void)> allfactories;

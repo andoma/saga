@@ -20,8 +20,8 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
     printf("Test: %s (Internal Tensor Layout: %s)\n", base_path,
            layout == TensorLayout::NCHW ? "NCHW" : "NHWC");
 
-    auto p = ctx->createProgram(g, ProgramType::INFERENCE,
-                                {.batch_size = 1, .tensor_layout = layout});
+    auto p = ctx->createProgram({.graph = g}, ProgramType::INFERENCE,
+                                {.tensor_layout = layout});
 
     auto input = ctx->resolveTensor(*g.inputs_.begin());
     auto output = ctx->resolveTensor(*g.outputs_.begin());
@@ -191,9 +191,9 @@ test_tandem_onnx_main(int argc, char **argv)
 
     std::vector<std::shared_ptr<Program>> ps;
     for(auto ctx : ctxs) {
-        auto p = ctx->createProgram(
-            *g, ProgramType::INFERENCE,
-            {.batch_size = 1, .tensor_layout = TensorLayout::Auto});
+        auto p = ctx->createProgram((ProgramSource){.graph = *g},
+                                    ProgramType::INFERENCE,
+                                    {.tensor_layout = TensorLayout::Auto});
 
         auto input = ctx->resolveTensor(*g->inputs_.begin());
         input->copyFrom(*loaded_input);

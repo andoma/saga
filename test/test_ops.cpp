@@ -511,10 +511,8 @@ test_op(std::shared_ptr<Context> ctx, const char *op, const Tensors &inputs,
     auto x = xit->second;
     int batch_size = x->dims_[0];
     auto n = g.addNode(op, inputs, attributes);
-    auto p = ctx->createProgram(g, ProgramType::INFERENCE,
-                                {.batch_size = batch_size,
-                                 .learning_rate = 1e-3,
-                                 .tensor_layout = TensorLayout::Auto});
+    auto p = ctx->createProgram({.graph = g, .batch_size = batch_size},
+                                ProgramType::INFERENCE, {});
 
     auto y = ctx->resolveTensor(n->y());
     p->run();
@@ -705,7 +703,7 @@ concat_main(int argc, char **argv)
 
     n = g.addNode("relu", n->y());
 
-    auto p = ctx->createProgram(g, ProgramType::INFERENCE, {});
+    auto p = ctx->createProgram({.graph = g}, ProgramType::INFERENCE, {});
 
     auto y = ctx->resolveTensor(n->y());
 

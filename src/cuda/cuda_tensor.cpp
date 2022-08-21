@@ -916,8 +916,7 @@ public:
 
 void
 CudaProgram::run_batched_tensor_callbacks(const TensorBatchCallback &cb,
-                                          long batch,
-                                          const CudaBatchAccessOps &list)
+                                          long batch, Phase phase)
 {
     if(!cb)
         return;
@@ -929,10 +928,14 @@ CudaProgram::run_batched_tensor_callbacks(const TensorBatchCallback &cb,
     std::unordered_map<std::shared_ptr<Tensor>, TensorAccess *> amap;
 
     std::vector<std::unique_ptr<CudaTensorBatchAccess>> v;
-    for(auto &op : list) {
+    for(auto &[high, ph] : m_batched_tensors) {
+        if(!(phase & ph.second))
+            continue;
+
+        auto low = m_ctx->m_tensors[high];
         auto ta = std::make_unique<CudaTensorBatchAccess>(
-            op.m_storage.get(), op.m_low->m_desc, op.m_low->m_offset);
-        amap[op.m_high] = ta.get();
+            ph.first.get(), low->m_desc, low->m_offset);
+        amap[high] = ta.get();
         v.push_back(std::move(ta));
     }
     cb(batch, m_pt, amap);
