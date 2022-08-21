@@ -484,6 +484,8 @@ struct ProgramConfig {
 
     std::shared_ptr<UI> ui;
 
+    float learning_rate{1e-4};
+
     TensorLayout tensor_layout{TensorLayout::Auto};
 
     // Scan tensors for NAN values
@@ -504,7 +506,7 @@ public:
 
     virtual void finalize() = 0;
 
-    virtual ExecResult run(long batches = 1, float learning_rate = 1e-4,
+    virtual ExecResult run(long batches = 1,
                            StopCheck stop_check = nullptr) = 0;
 
     virtual void dump(FILE *output, bool detailed = false) const = 0;

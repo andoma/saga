@@ -164,8 +164,7 @@ public:
 
     ~CudaProgram() { chkCuda(cudaFree(m_aux)); }
 
-    ExecResult run(long batches, float learning_rate,
-                   StopCheck stop_check) override;
+    ExecResult run(long batches, StopCheck stop_check) override;
 
     void prep(long batches);
     ExecResult step(long batch, long batches);

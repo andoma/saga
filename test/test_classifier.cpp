@@ -587,7 +587,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     const ProgramConfig pc{.pre_ops = pre_ops,
                            .post_ops = post_ops,
                            .ui = ui,
-                           .tensor_layout = tensor_layout};
+                           .learning_rate = learning_rate,
+                           tensor_layout = tensor_layout};
 
     const ProgramSource ps{
         .graph = g, .batched_tensors = bt, .batch_size = batch_size};
@@ -630,16 +631,15 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             // Train
             epoch_begin(batch_size, false);
             loss_sum = 0;
-            if(training->run(train_inputs / batch_size, learning_rate,
-                             stop_check) != ExecResult::OK)
+            if(training->run(train_inputs / batch_size, stop_check) !=
+               ExecResult::OK)
                 break;
         }
 
         // Test
         epoch_begin(batch_size, true);
         correct = 0;
-        if(testing->run(test_inputs / batch_size, learning_rate, stop_check) !=
-           ExecResult::OK)
+        if(testing->run(test_inputs / batch_size, stop_check) != ExecResult::OK)
             break;
         float percentage = 100.0 * correct / test_inputs;
         if(!g_run || percentage > 99)

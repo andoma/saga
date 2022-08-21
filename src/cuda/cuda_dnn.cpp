@@ -53,7 +53,6 @@ struct CudnnOperation : public CudaOperation {
 //------------------------------------------------------------------------
 struct CudnnAdam : public CudaOperation {
     const std::shared_ptr<CudaTensor> weights_, gradient_;
-    float learning_rate_;
     int iter_;
 
     CudnnAdam(CudaProgram &p, std::shared_ptr<CudaTensor> weights,
@@ -61,7 +60,6 @@ struct CudnnAdam : public CudaOperation {
       : CudaOperation("adam")
       , weights_(weights)
       , gradient_(gradient)
-      , learning_rate_(1e-4)  // REMOVE
       , iter_(0)
       , ctx_(p.m_ctx)
       , m_elements(weights->dims_.elements())
@@ -127,14 +125,14 @@ struct CudnnAdam : public CudaOperation {
             adam_float(m_elements, (float *)weights_->deviceMem(),
                        (const float *)gradient_->deviceMem(),
                        (float *)weights_->m_optimizer_aux, b1t, b2t,
-                       learning_rate_, p.m_aux, p.m_ctx->m_stream);
+                       p.m_pc.learning_rate, p.m_aux, p.m_ctx->m_stream);
             break;
         case Tensor::DataType::HALF:
             adam_mixed(m_elements, 1.0f / p.m_mp_scaling,
                        (__half *)weights_->deviceMem(),
                        (const __half *)gradient_->deviceMem(),
                        (float *)weights_->m_optimizer_aux, b1t, b2t,
-                       learning_rate_, p.m_aux, p.m_ctx->m_stream);
+                       p.m_pc.learning_rate, p.m_aux, p.m_ctx->m_stream);
             break;
         default:
             return "Unsupported tensor datatype";

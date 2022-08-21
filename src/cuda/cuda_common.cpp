@@ -436,7 +436,7 @@ CudaProgram::post(long batches)
 }
 
 ExecResult
-CudaProgram::run(long batches, float learning_rate, StopCheck stop_check)
+CudaProgram::run(long batches, StopCheck stop_check)
 {
     if(batches == 0)
         return ExecResult::OK;
