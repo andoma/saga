@@ -141,11 +141,11 @@ struct CudaProgramUnit {
 
     CudaOps m_fwd_operations;
     CudaOps m_bwd_operations;
-    CudaOps m_upd_operations;
+    CudaOps m_tail_operations;
 
     void fwd(const std::shared_ptr<CudaOperation> &op);
     void bwd(const std::shared_ptr<CudaOperation> &op);
-    void upd(const std::shared_ptr<CudaOperation> &op);
+    void tail(const std::shared_ptr<CudaOperation> &op);
 };
 
 class CudaProgram : public Program {
@@ -243,6 +243,12 @@ public:
                                            std::shared_ptr<Tensor> src,
                                            cudnnTensorFormat_t format);
 
+    float upd(const std::shared_ptr<CudaTensor> &weights,
+              const std::shared_ptr<CudaTensor> &gradient);
+
+    std::map<std::shared_ptr<CudaTensor>, std::shared_ptr<CudaTensor>>
+        m_updates;
+
     void flipDoubleBufferedTensors();
 
     void setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml);
@@ -260,6 +266,11 @@ public:
     bool dumpGraph(const char *path) override;
 
     int getProgramIndex() const override { return m_index; }
+
+    // XXX temp
+    std::shared_ptr<CudaOperation> optimize(
+        std::shared_ptr<CudaTensor> weights,
+        std::shared_ptr<CudaTensor> gradient);
 };
 
 class CudaOperation {

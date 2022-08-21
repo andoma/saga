@@ -68,15 +68,7 @@ struct CudnnAdam : public CudaOperation {
     {
         assert(weights->dims_ == gradient->dims_);
 
-        auto it = p.m_ctx->m_deferred_copy.find(weights);
-        if(it != p.m_ctx->m_deferred_copy.end()) {
-            weights->copyFromLocked(*it->second, 0);
-            p.m_ctx->m_deferred_copy.erase(it);
-        }
-        gradient->m_storage->alloc();
-
-        if(weights->m_optimizer_aux)
-            return;
+        assert(!weights->m_optimizer_aux);
 
         switch(weights->data_type_) {
         case Tensor::DataType::FLOAT:
@@ -152,6 +144,13 @@ struct CudnnAdam : public CudaOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const size_t m_elements;
 };
+
+std::shared_ptr<CudaOperation>
+CudaProgram::optimize(std::shared_ptr<CudaTensor> weights,
+                      std::shared_ptr<CudaTensor> gradient)
+{
+    return std::make_shared<CudnnAdam>(*this, weights, gradient);
+}
 
 //------------------------------------------------------------------------
 
@@ -522,21 +521,21 @@ struct CudnnConvolutionFwd : public CudnnOperation {
 struct CudnnConvolutionBwdBias : public CudnnOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudaTensor> dy_, db_;
+    const float m_beta;
 
     CudnnConvolutionBwdBias(std::shared_ptr<CudaContext> ctx,
                             std::shared_ptr<CudaTensor> dy,
-                            std::shared_ptr<CudaTensor> db)
-      : CudnnOperation("convbwdbias"), ctx_(ctx), dy_(dy), db_(db)
+                            std::shared_ptr<CudaTensor> db, float beta)
+      : CudnnOperation("convbwdbias"), ctx_(ctx), dy_(dy), db_(db), m_beta(beta)
     {
     }
 
     cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
-        float beta = 0.0f;
 
         return cudnnConvolutionBackwardBias(ctx_->m_cudnn, &alpha, dy_->desc(),
-                                            dy_->deviceMem(), &beta,
+                                            dy_->deviceMem(), &m_beta,
                                             db_->desc(), db_->deviceMem());
     }
 
@@ -555,30 +554,31 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudnnConvolutionDesc> desc_;
     const std::shared_ptr<CudaTensor> x_, dy_, dw_;
+    const float m_beta;
 
     CudnnConvolutionBwdFilter(std::shared_ptr<CudaContext> ctx,
                               std::shared_ptr<CudnnConvolutionDesc> desc,
                               std::shared_ptr<CudaTensor> x,
                               std::shared_ptr<CudaTensor> dy,
-                              std::shared_ptr<CudaTensor> dw)
+                              std::shared_ptr<CudaTensor> dw, float beta)
       : CudnnOperation("convbwdfilter")
       , ctx_(ctx)
       , desc_(desc)
       , x_(x)
       , dy_(dy)
       , dw_(dw)
+      , m_beta(beta)
     {
     }
 
     cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
-        float beta = 0.0f;
 
         return cudnnConvolutionBackwardFilter(
             ctx_->m_cudnn, &alpha, x_->desc(), x_->deviceMem(), dy_->desc(),
             dy_->deviceMem(), desc_->conv_desc_, desc_->bwd_filter_algo_,
-            ctx_->m_workspace.ptr(), ctx_->m_workspace.size(), &beta,
+            ctx_->m_workspace.ptr(), ctx_->m_workspace.size(), &m_beta,
             desc_->filter_desc_, dw_->deviceMem());
     }
 
@@ -688,14 +688,13 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         auto dy = p.lower_grad(pu, n.outputs_.get("y"));
         if(b) {
             auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
-            pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
-            pu.upd(std::make_shared<CudnnAdam>(p, b, db));
+            pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db,
+                                                             p.upd(b, db)));
         }
 
         auto dw = p.lower_grad(pu, n.inputs_.get("w"), y->format());
         pu.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, x, dy,
-                                                           dw));
-        pu.upd(std::make_shared<CudnnAdam>(p, w, dw));
+                                                           dw, p.upd(w, dw)));
 
         auto dx = p.lower_grad(pu, n.inputs_.get("x"));
         if(dx) {
@@ -722,15 +721,14 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         auto dy = p.lower_grad(pu, n.outputs_.get("y"));
         if(b) {
             auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
-            pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
-            pu.upd(std::make_shared<CudnnAdam>(p, b, db));
+            pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db,
+                                                             p.upd(b, db)));
         }
 
         // Update weights
         auto dw = p.lower_grad(pu, n.inputs_.get("w"), y->format());
         pu.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, dy, x,
-                                                           dw));
-        pu.upd(std::make_shared<CudnnAdam>(p, w, dw));
+                                                           dw, p.upd(w, dw)));
 
         // Backprop
         auto dx = p.lower_grad(pu, n.inputs_.get("x"));
@@ -1176,11 +1174,12 @@ struct CudaGemm : public CudaOperation {
     const int ldb_;
     const std::shared_ptr<CudaTensor> c_;
     const int ldc_;
+    const float m_beta;
 
     CudaGemm(cublasOperation_t transa, cublasOperation_t transb, int m, int n,
              int k, std::shared_ptr<CudaTensor> a, int lda,
              std::shared_ptr<CudaTensor> b, int ldb,
-             std::shared_ptr<CudaTensor> c, int ldc)
+             std::shared_ptr<CudaTensor> c, int ldc, float beta)
       : CudaOperation("gemm")
       , transa_(transa)
       , transb_(transb)
@@ -1193,13 +1192,14 @@ struct CudaGemm : public CudaOperation {
       , ldb_(ldb)
       , c_(c)
       , ldc_(ldc)
+      , m_beta(beta)
     {
     }
 
     const char *exec(CudaProgram &p, long batch) override
     {
-        float alpha = 1.0f, beta = 0.0f;
-        __half halpha = 1.0f, hbeta = 0.0f;
+        float alpha = 1.0f, beta = m_beta;
+        __half halpha = 1.0f, hbeta = m_beta;
 
         cublasStatus_t s;
         switch(a_->m_type) {
@@ -1252,7 +1252,7 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
     auto fwd = std::make_shared<CudaGemm>(
         transa, transb, num_outputs, batch_size, num_inputs, w,
-        transW ? num_inputs : num_outputs, x, num_inputs, y, num_outputs);
+        transW ? num_inputs : num_outputs, x, num_inputs, y, num_outputs, 0.0f);
 
     pu.fwd(fwd);
 
@@ -1271,10 +1271,9 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     auto dy = p.lower_grad(pu, n.outputs_.get("y"));
     auto dw = p.lower_grad(pu, n.inputs_.get("w"));
 
-    pu.bwd(std::make_shared<CudaGemm>(CUBLAS_OP_N, CUBLAS_OP_T, num_inputs,
-                                      num_outputs, batch_size, x, num_inputs,
-                                      dy, num_outputs, dw, num_inputs));
-    pu.upd(std::make_shared<CudnnAdam>(p, w, dw));
+    pu.bwd(std::make_shared<CudaGemm>(
+        CUBLAS_OP_N, CUBLAS_OP_T, num_inputs, num_outputs, batch_size, x,
+        num_inputs, dy, num_outputs, dw, num_inputs, p.upd(w, dw)));
 
     if(b) {
         auto ones = p.lower_tensor(
@@ -1283,18 +1282,14 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
         pu.bwd(std::make_shared<CudaGemm>(CUBLAS_OP_N, CUBLAS_OP_T, 1,
                                           num_outputs, batch_size, ones, 1, dy,
-                                          num_outputs, db, 1));
-        pu.upd(std::make_shared<CudnnAdam>(p, b, db));
+                                          num_outputs, db, 1, p.upd(b, db)));
     }
 
     if(dx) {
         const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
-        if(dx_beta)
-            return "dx_beta != 0";
-
         pu.bwd(std::make_shared<CudaGemm>(
             CUBLAS_OP_N, CUBLAS_OP_N, num_inputs, batch_size, num_outputs, w,
-            num_inputs, dy, num_outputs, dx, num_inputs));
+            num_inputs, dy, num_outputs, dx, num_inputs, dx_beta));
     }
     return NULL;
 }
@@ -1914,11 +1909,11 @@ struct CudnnBatchNormBwd : public CudnnOperation {
     const std::shared_ptr<CudaTensor> x_, dy_, dx_, s_, ds_, db_, sm_, sv_;
     const float epsilon_;
     const float dx_beta_;
-
+    const float m_dsb_beta;
     CudnnBatchNormBwd(CudnnBatchNormTrain &fwd, std::shared_ptr<CudaTensor> dy,
-                      std::shared_ptr<CudaTensor> dx,
-                      std::shared_ptr<CudaTensor> ds,
-                      std::shared_ptr<CudaTensor> db, float dx_beta)
+                      std::shared_ptr<CudaTensor> dx, float dx_beta,
+                      std::shared_ptr<CudaTensor> ds, float ds_beta,
+                      std::shared_ptr<CudaTensor> db, float db_beta)
       : CudnnOperation("bnbwd")
       , x_(fwd.x_)
       , dy_(dy)
@@ -1930,16 +1925,18 @@ struct CudnnBatchNormBwd : public CudnnOperation {
       , sv_(fwd.sv_)
       , epsilon_(fwd.epsilon_)
       , dx_beta_(dx_beta)
+      , m_dsb_beta(ds_beta)
     {
+        assert(ds_beta == db_beta);
     }
 
     cudnnStatus_t exec(CudaProgram &p) override
     {
-        float alpha = 1.0f, beta = 0.0f;
+        float alpha = 1.0f;
 
         return cudnnBatchNormalizationBackward(
             p.m_ctx->m_cudnn, CUDNN_BATCHNORM_SPATIAL, &alpha, &dx_beta_,
-            &alpha, &beta, x_->desc(), x_->deviceMem(), dy_->desc(),
+            &alpha, &m_dsb_beta, x_->desc(), x_->deviceMem(), dy_->desc(),
             dy_->deviceMem(), dx_->desc(), dx_->deviceMem(), s_->desc(),
             s_->deviceMem(), ds_->deviceMem(), db_->deviceMem(), epsilon_,
             sm_->deviceMem(), sv_->deviceMem());
@@ -1992,10 +1989,8 @@ batchnorm_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     auto ds = p.lower_grad(pu, n.inputs_.get("s"), 2);
     auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
 
-    pu.bwd(std::make_shared<CudnnBatchNormBwd>(*f, dy, dx, ds, db, dx_beta));
-
-    pu.upd(std::make_shared<CudnnAdam>(p, s, ds));
-    pu.upd(std::make_shared<CudnnAdam>(p, b, db));
+    pu.bwd(std::make_shared<CudnnBatchNormBwd>(*f, dy, dx, dx_beta, ds,
+                                               p.upd(s, ds), db, p.upd(b, db)));
     return NULL;
 }
 
@@ -2267,14 +2262,18 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
 struct CudnnBatchNormActBwd : public CudnnOperation {
     const std::shared_ptr<CudnnBatchNormActTrain> fwd_;
     std::shared_ptr<CudaTensor> dy_, dx_, dz_, ds_, db_;
-    cudnnBatchNormOps_t ops_;
     const float dx_beta_;
+    const float m_dsb_beta;
+    cudnnBatchNormOps_t ops_;
 
-    CudnnBatchNormActBwd(
-        CudaProgram &p, std::shared_ptr<CudnnBatchNormActTrain> fwd,
-        std::shared_ptr<CudaTensor> dy, std::shared_ptr<CudaTensor> dx,
-        std::shared_ptr<CudaTensor> dz, std::shared_ptr<CudaTensor> ds,
-        std::shared_ptr<CudaTensor> db, cudnnBatchNormOps_t ops, float dx_beta)
+    CudnnBatchNormActBwd(CudaProgram &p,
+                         std::shared_ptr<CudnnBatchNormActTrain> fwd,
+                         std::shared_ptr<CudaTensor> dy,
+                         std::shared_ptr<CudaTensor> dx, float dx_beta,
+                         std::shared_ptr<CudaTensor> dz,
+                         std::shared_ptr<CudaTensor> ds, float ds_beta,
+                         std::shared_ptr<CudaTensor> db, float db_beta,
+                         cudnnBatchNormOps_t ops)
       : CudnnOperation(std::string(bnopsstr(ops)) + "_bwd.persistent")
       , fwd_(fwd)
       , dy_(dy)
@@ -2282,9 +2281,11 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
       , dz_(dz)
       , ds_(ds)
       , db_(db)
-      , ops_(ops)
       , dx_beta_(dx_beta)
+      , m_dsb_beta(ds_beta)
+      , ops_(ops)
     {
+        assert(ds_beta == db_beta);
         size_t workspace;
         chkCUDNN(cudnnGetBatchNormalizationBackwardExWorkspaceSize(
             p.m_ctx->m_cudnn, fwd->mode_, fwd->ops_, fwd->x_->desc(),
@@ -2295,18 +2296,19 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
 
     cudnnStatus_t exec(CudaProgram &p) override
     {
-        float alpha = 1.0f, beta = 0.0f;
+        float alpha = 1.0f;
 
         auto s = cudnnBatchNormalizationBackwardEx(
             p.m_ctx->m_cudnn, fwd_->mode_, ops_, &alpha, &dx_beta_, &alpha,
-            &beta, fwd_->x_->desc(), fwd_->x_->deviceMem(), fwd_->y_->desc(),
-            fwd_->y_->deviceMem(), dy_->desc(), dy_->deviceMem(),
-            dz_ ? dz_->desc() : NULL, dz_ ? dz_->deviceMem() : NULL,
-            dx_->desc(), dx_->deviceMem(), fwd_->s_->desc(),
-            fwd_->s_->deviceMem(), fwd_->b_->deviceMem(), ds_->deviceMem(),
-            db_->deviceMem(), fwd_->epsilon_, fwd_->sm_->deviceMem(),
-            fwd_->sv_->deviceMem(), fwd_->desc_, p.m_ctx->m_workspace.ptr(),
-            p.m_ctx->m_workspace.size(), fwd_->reserve_, fwd_->reserve_size_);
+            &m_dsb_beta, fwd_->x_->desc(), fwd_->x_->deviceMem(),
+            fwd_->y_->desc(), fwd_->y_->deviceMem(), dy_->desc(),
+            dy_->deviceMem(), dz_ ? dz_->desc() : NULL,
+            dz_ ? dz_->deviceMem() : NULL, dx_->desc(), dx_->deviceMem(),
+            fwd_->s_->desc(), fwd_->s_->deviceMem(), fwd_->b_->deviceMem(),
+            ds_->deviceMem(), db_->deviceMem(), fwd_->epsilon_,
+            fwd_->sm_->deviceMem(), fwd_->sv_->deviceMem(), fwd_->desc_,
+            p.m_ctx->m_workspace.ptr(), p.m_ctx->m_workspace.size(),
+            fwd_->reserve_, fwd_->reserve_size_);
 
         if(!p.m_pc.anomaly_detect)
             return s;
@@ -2404,11 +2406,8 @@ batchnorm_persistent_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         return "dx1.beta is non-zero";
     }
 
-    pu.bwd(std::make_shared<CudnnBatchNormActBwd>(p, f, dy, dx0, dx1, ds, db,
-                                                  ops, 0.0f));
-
-    pu.upd(std::make_shared<CudnnAdam>(p, s, ds));
-    pu.upd(std::make_shared<CudnnAdam>(p, b, db));
+    pu.bwd(std::make_shared<CudnnBatchNormActBwd>(
+        p, f, dy, dx0, 0.0f, dx1, ds, p.upd(s, ds), db, p.upd(b, db), ops));
     return NULL;
 }
 
@@ -2830,14 +2829,7 @@ stats_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     auto x = it->second;
 
     auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-
-    auto op = std::make_shared<CudaStats>(x, y);
-
-    if(p.m_pt == ProgramType::TRAINING) {
-        pu.upd(op);
-    } else {
-        pu.fwd(op);
-    }
+    pu.tail(std::make_shared<CudaStats>(x, y));
     return NULL;
 }
 

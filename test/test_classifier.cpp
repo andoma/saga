@@ -600,8 +600,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     if(verbose > 1) {
         testing->dump(stdout, verbose > 2);
 
-        if(training)
+        if(training) {
             training->dump(stdout, verbose > 2);
+        }
     }
 
     if(graphdump && training) {

@@ -101,9 +101,23 @@ CudaProgramUnit::bwd(const std::shared_ptr<CudaOperation> &op)
 }
 
 void
-CudaProgramUnit::upd(const std::shared_ptr<CudaOperation> &op)
+CudaProgramUnit::tail(const std::shared_ptr<CudaOperation> &op)
 {
-    m_upd_operations.push_back(op);
+    m_tail_operations.push_back(op);
+}
+
+float
+CudaProgram::upd(const std::shared_ptr<CudaTensor> &weights,
+                 const std::shared_ptr<CudaTensor> &gradient)
+{
+    auto &p = m_updates[weights];
+    if(p) {
+        assert(p.get() == gradient.get());
+        return 1.0f;
+    } else {
+        p = gradient;
+        return 0;
+    }
 }
 
 std::shared_ptr<Tensor>
@@ -769,12 +783,16 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
         if(pt == ProgramType::INFERENCE) {
             // For inference type programs, these should be empty
             assert(pu.m_bwd_operations.empty());
-            assert(pu.m_upd_operations.empty());
         }
     }
 
     if(pc.ui) {
         pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "");
+    }
+
+    if(pt == ProgramType::INFERENCE) {
+        // For inference type programs, these should be empty
+        assert(p->m_updates.empty());
     }
 
     return p;
@@ -798,13 +816,16 @@ CudaProgram::finalize()
                      pu.m_fwd_operations.end());
         m_ops.insert(m_ops.end(), pu.m_bwd_operations.begin(),
                      pu.m_bwd_operations.end());
-        m_ops.insert(m_ops.end(), pu.m_upd_operations.begin(),
-                     pu.m_upd_operations.end());
 
         pu.m_fwd_operations.clear();
         pu.m_bwd_operations.clear();
-        pu.m_upd_operations.clear();
     }
+
+    for(auto &it : m_updates) {
+        m_ops.push_back(optimize(it.first, it.second));
+    }
+
+    m_updates.clear();
 
     if(m_ops.size()) {
         m_ops = reduceLiveranges(m_ops, m_ctx->m_exported_storage);
