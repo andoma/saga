@@ -54,6 +54,9 @@ CudaContext::init()
     char pciid[32];
     cudaDeviceGetPCIBusId(pciid, sizeof(pciid), m_deviceId);
 
+    cudaDeviceGetAttribute(&m_num_sm, cudaDevAttrMultiProcessorCount,
+                           m_deviceId);
+
     m_tensor_cores = prop.major >= 7;
 
     chkCUDNN(cudnnCreate(&m_cudnn));

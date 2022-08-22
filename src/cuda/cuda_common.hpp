@@ -113,6 +113,7 @@ public:
     nvmlDevice_t m_nvmldev = NULL;
 #endif
     int m_deviceId;
+    int m_num_sm;
     bool m_tensor_cores = false;
 
     int m_tensor_storage_id_gen = 0;
