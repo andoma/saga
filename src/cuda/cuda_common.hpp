@@ -199,6 +199,7 @@ public:
     bool m_mp_enabled = false;
 
     int64_t m_total_samples{0};
+    int64_t m_epoch_start{0};
 
     void finalize();
 

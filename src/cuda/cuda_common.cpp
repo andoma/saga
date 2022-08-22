@@ -372,18 +372,14 @@ CudaProgram::prep(long batches)
 
     cudaStreamSynchronize(m_ctx->m_stream);
 
+    setupTensorStorage(m_memory_layout);
     m_total_samples = 0;
+    m_epoch_start = Now();
 }
 
 ExecResult
 CudaProgram::step(long batch, long batches)
 {
-    if(m_pc.ui) {
-        m_pc.ui->updateCell(m_ui_row, 5, UI::Align::LEFT, "%ld / %ld", batch,
-                            batches);
-    }
-
-    setupTensorStorage(m_memory_layout);
     if(!runOps(m_ops, batch, m_pc.anomaly_detect)) {
         return ExecResult::ERROR;
     }
@@ -397,10 +393,6 @@ CudaProgram::step(long batch, long batches)
     }
 
     flipDoubleBufferedTensors();
-    if(m_pc.ui) {
-        m_pc.ui->updateCell(m_ui_row, 7, UI::Align::LEFT, "%d",
-                            m_total_samples);
-    }
 
     for(const auto &u : m_units) {
         m_total_samples += u.m_batch_size;
@@ -420,12 +412,20 @@ CudaProgram::step(long batch, long batches)
         m_aux->range = 0;
         m_aux->inf = 0;
         m_aux->nan = 0;
+    }
 
-        if(m_pc.ui) {
+    if(m_pc.ui) {
+        float sps = m_total_samples / (1e-6 * (Now() - m_epoch_start));
+
+        m_pc.ui->updateCell(m_ui_row, 7, UI::Align::LEFT, "%d (%.1f/s)",
+                            m_total_samples, sps);
+        m_pc.ui->updateCell(m_ui_row, 5, UI::Align::LEFT, "%ld / %ld", batch,
+                            batches);
+        if(m_mp_enabled)
             m_pc.ui->updateCell(m_ui_row, 9, UI::Align::LEFT, "%.1e",
                                 m_mp_scaling);
-        }
     }
+
     return ExecResult::OK;
 }
 
