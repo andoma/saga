@@ -47,13 +47,17 @@ void convert_float_half(const void *src, void *dst, int elements, float scale,
 void convert_half_float(const void *src, void *dst, int elements, float scale,
                         cudaStream_t stream);
 
-void adam_float(int n, float *weights, const float *dweights, float *t,
-                float b1t, float b2t, float lr, CudaAux *aux,
-                cudaStream_t stream);
+#define ADAM_EPSILON 1e-8
+#define ADAM_B1      0.9
+#define ADAM_B2      0.999
 
-void adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
-                float *t, float b1t, float b2t, float lr, CudaAux *aux,
-                cudaStream_t stream);
+void adam_float(int n, float *weights, const float *gradients, float *mvec,
+                float *vvec, float b1t, float b2t, float lr, CudaAux *aux,
+                cudaStream_t stream, int num_sm);
+
+void adam_mixed(int n, float alpha, __half *weights, const __half *gradients,
+                float *mvec, float *vvec, float *cvec, float b1t, float b2t,
+                float lr, CudaAux *aux, cudaStream_t stream, int num_sm);
 
 // Compute min, max, sum and sum-of-squares and store in output[4]
 void tensor_stats_float(int n, const float *src, float *output,

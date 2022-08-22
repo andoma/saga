@@ -197,19 +197,14 @@ convert_half_float(const void *src, void *dst, int elements, float scale,
 // Adam weight update
 //------------------------------------------------------------------------
 
-#define ADAM_EPSILON 1e-8
-#define ADAM_B1      0.9
-#define ADAM_B2      0.999
-
 __global__ static void
-adam_kernel(int n, float *weights, const float *dweights, float *t0, float b1t,
-            float b2t, float lr, CudaAux *aux)
+adam_kernel(int n, float *weights, const float *gradient, float *mvec,
+            float *vvec, float b1t, float b2t, float lr, CudaAux *aux)
 {
     for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
         i += blockDim.x * gridDim.x) {
-        float *t = t0 + i * 2;
+        const float dw = gradient[i];
 
-        const float dw = dweights[i];
         if(!isfinite(dw)) {
             if(isnan(dw)) {
                 aux->nan = 1;
@@ -223,22 +218,23 @@ adam_kernel(int n, float *weights, const float *dweights, float *t0, float b1t,
         const float b2 = ADAM_B2;
         const float e = ADAM_EPSILON;
 
-        const float m = t[0] = b1 * t[0] + (1.0f - b1) * dw;
-        const float v = t[1] = b2 * t[1] + (1.0f - b2) * dw * dw;
+        const float m = mvec[i] = b1 * mvec[i] + (1.0f - b1) * dw;
+        const float v = vvec[i] = b2 * vvec[i] + (1.0f - b2) * dw * dw;
         const float m_hat = m * b1t;
         const float v_hat = v * b2t;
-
-        weights[i] -= lr * m_hat / (sqrtf(v_hat) + e);
+        weights[i] -= lr * m_hat * __frsqrt_rn(v_hat + e);
     }
 }
 
 __global__ static void
-adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
-               float *t0, float b1t, float b2t, float lr, CudaAux *aux)
+adam_kernel_mp(int n, float alpha, __half *weights, const __half *gradients,
+               float *mvec, float *vvec, float *cvec, float b1t, float b2t,
+               float lr, CudaAux *aux)
 {
     for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
         i += blockDim.x * gridDim.x) {
-        const uint16_t u16 = ((const uint16_t *)dweights)[i];
+        const uint16_t u16 = ((const uint16_t *)gradients)[i];
+
         if((u16 & 0x7800) == 0x7800) {
             aux->range = 1;
             if((u16 & 0x7c00) == 0x7c00) {
@@ -251,42 +247,41 @@ adam_kernel_mp(int n, float alpha, __half *weights, const __half *dweights,
             }
         }
 
-        float *t = t0 + i * 3;
-
-        const float dw = (float)dweights[i] * alpha;
+        const float dw = (float)gradients[i] * alpha;
         const float b1 = ADAM_B1;
         const float b2 = ADAM_B2;
         const float e = ADAM_EPSILON;
 
-        const float m = b1 * t[0] + (1.0f - b1) * dw;
-        const float v = b2 * t[1] + (1.0f - b2) * dw * dw;
+        const float m = b1 * mvec[i] + (1.0f - b1) * dw;
+        const float v = b2 * vvec[i] + (1.0f - b2) * dw * dw;
         const float m_hat = m * b1t;
         const float v_hat = v * b2t;
 
-        const float w = t[2] - lr * m_hat / (sqrtf(v_hat) + e);
+        const float w = cvec[i] - lr * m_hat * __frsqrt_rn(v_hat + e);
 
-        t[0] = m;
-        t[1] = v;
-        t[2] = w;
+        mvec[i] = m;
+        vvec[i] = v;
+        cvec[i] = w;
         weights[i] = w;
     }
 }
 
 void
-adam_float(int n, float *weights, const float *dweights, float *t, float b1t,
-           float b2t, float lr, CudaAux *aux, cudaStream_t stream)
+adam_float(int n, float *weights, const float *gradients, float *mvec,
+           float *vvec, float b1t, float b2t, float lr, CudaAux *aux,
+           cudaStream_t stream, int num_sm)
 {
-    adam_kernel<<<(n + 255) / 256, 256, 0, stream>>>(n, weights, dweights, t,
-                                                     b1t, b2t, lr, aux);
+    adam_kernel<<<(n + 255) / 256, 256, 0, stream>>>(
+        n, weights, gradients, mvec, vvec, b1t, b2t, lr, aux);
 }
 
 void
-adam_mixed(int n, float alpha, __half *weights, const __half *dweights,
-           float *t, float b1t, float b2t, float lr, CudaAux *aux,
-           cudaStream_t stream)
+adam_mixed(int n, float alpha, __half *weights, const __half *gradients,
+           float *mvec, float *vvec, float *cvec, float b1t, float b2t,
+           float lr, CudaAux *aux, cudaStream_t stream, int num_sm)
 {
     adam_kernel_mp<<<(n + 255) / 256, 256, 0, stream>>>(
-        n, alpha, weights, dweights, t, b1t, b2t, lr, aux);
+        n, alpha, weights, gradients, mvec, vvec, cvec, b1t, b2t, lr, aux);
 }
 
 __inline__ __device__ float4

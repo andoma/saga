@@ -27,7 +27,6 @@ public:
     const Tensor::DataType m_data_type;
     const size_t m_element_size;
 
-protected:
     void *m_data = nullptr;
 };
 

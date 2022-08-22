@@ -49,6 +49,7 @@ SRCS-lib-$(HAVE_CUDA) += \
 	src/cuda/cuda_common.cpp \
 	src/cuda/cuda_analysis.cpp \
 	src/cuda/cuda_dnn.cpp \
+	src/cuda/cuda_optimizer.cpp \
 	src/cuda/cuda_tensor.cpp \
 	src/cuda/cuda_kernels.cu \
 

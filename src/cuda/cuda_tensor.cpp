@@ -35,6 +35,17 @@
 
 namespace saga {
 
+CudaTensorStorageMemory::CudaTensorStorageMemory(size_t size)
+{
+    chkCuda(cudaMallocManaged(&m_mem, size, cudaMemAttachGlobal));
+    chkCuda(cudaMemset(m_mem, 0, size));
+}
+
+CudaTensorStorageMemory::~CudaTensorStorageMemory()
+{
+    chkCuda(cudaFree(m_mem));
+}
+
 CudaTensorStorage::CudaTensorStorage(Tensor::DataType data_type, size_t size,
                                      const std::shared_ptr<CudaContext> &ctx)
   : TensorStorage(data_type)
@@ -43,13 +54,6 @@ CudaTensorStorage::CudaTensorStorage(Tensor::DataType data_type, size_t size,
   , m_element_size(Tensor::DataTypeSize(data_type))
 {
     m_idmap[0] = ++ctx->m_tensor_storage_id_gen;
-}
-
-CudaTensorStorage::~CudaTensorStorage()
-{
-    if(m_mem)
-        assert(m_mem == m_data);
-    chkCuda(cudaFree(m_mem));
 }
 
 std::string
@@ -67,17 +71,17 @@ CudaTensorStorage::name() const
 void
 CudaTensorStorage::alloc()
 {
-    if(m_mem)
+    if(m_memory)
         return;
-    chkCuda(cudaMallocManaged(&m_mem, m_size, cudaMemAttachGlobal));
-    chkCuda(cudaMemset(m_mem, 0, m_size));
-    m_data = m_mem;
+
+    m_memory = std::make_shared<CudaTensorStorageMemory>(m_size);
+    m_data = m_memory->m_mem;
 }
 
 void
 CudaTensorStorage::setTmpMem(void *p)
 {
-    if(m_mem)
+    if(m_memory)
         return;
     m_data = p;
 }
@@ -326,11 +330,7 @@ CudaTensor::CudaTensor(DataType data_type, const CudaTensor &o,
                                                     o.m_storage->m_ctx);
 }
 
-CudaTensor::~CudaTensor()
-{
-    chkCUDNN(cudnnDestroyTensorDescriptor(m_desc));
-    chkCuda(cudaFree(m_optimizer_aux));
-}
+CudaTensor::~CudaTensor() { chkCUDNN(cudnnDestroyTensorDescriptor(m_desc)); }
 
 std::unique_ptr<TensorAccess>
 CudaTensor::access()
@@ -524,7 +524,7 @@ CudaTensor::info() const
     }
     ss << "}@cuda:" << m_storage->deviceMem(0);
 
-    if(m_storage->m_mem) {
+    if(m_storage->m_memory) {
         ss << "<static>";
     }
 

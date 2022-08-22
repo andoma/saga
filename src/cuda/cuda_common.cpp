@@ -796,6 +796,9 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
     if(pt == ProgramType::INFERENCE) {
         // For inference type programs, these should be empty
         assert(p->m_updates.empty());
+    } else if(pt == ProgramType::TRAINING) {
+        p->m_opt = p->create_optimizers();
+        p->m_updates.clear();
     }
 
     return p;
@@ -824,11 +827,8 @@ CudaProgram::finalize()
         pu.m_bwd_operations.clear();
     }
 
-    for(auto &it : m_updates) {
-        m_ops.push_back(optimize(it.first, it.second));
-    }
-
-    m_updates.clear();
+    m_ops.insert(m_ops.end(), m_opt.begin(), m_opt.end());
+    m_opt.clear();
 
     if(m_ops.size()) {
         m_ops = reduceLiveranges(m_ops, m_ctx->m_exported_storage);

@@ -133,7 +133,8 @@ public:
     std::map<std::string, int> m_algo_hash;
 };
 
-typedef std::vector<std::shared_ptr<CudaOperation>> CudaOps;
+using CudaOp = std::shared_ptr<CudaOperation>;
+using CudaOps = std::vector<CudaOp>;
 
 struct CudaProgramUnit {
     Nodes m_transformed;
@@ -187,6 +188,7 @@ public:
     std::string m_name;
 
     CudaOps m_ops;
+    CudaOps m_opt;
 
     std::vector<CudaProgramUnit> m_units;
 
@@ -268,10 +270,9 @@ public:
 
     int getProgramIndex() const override { return m_index; }
 
-    // XXX temp
-    std::shared_ptr<CudaOperation> optimize(
-        std::shared_ptr<CudaTensor> weights,
-        std::shared_ptr<CudaTensor> gradient);
+    CudaOps create_optimizers();
+
+    CudaOp create_optimizer(Tensor::DataType dt);
 };
 
 class CudaOperation {

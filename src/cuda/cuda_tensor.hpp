@@ -32,12 +32,17 @@
 
 namespace saga {
 
+struct CudaTensorStorageMemory {
+    CudaTensorStorageMemory(size_t size);
+    ~CudaTensorStorageMemory();
+
+    void *m_mem{nullptr};
+};
+
 class CudaTensorStorage : public TensorStorage {
 public:
     CudaTensorStorage(Tensor::DataType data_type, size_t size,
                       const std::shared_ptr<CudaContext> &ctx);
-
-    virtual ~CudaTensorStorage();
 
     void alloc();
     void setTmpMem(void *p);
@@ -50,7 +55,7 @@ public:
 
     std::map<int64_t, int> m_idmap;
 
-    void *m_mem = nullptr;
+    std::shared_ptr<CudaTensorStorageMemory> m_memory;
 
     bool m_nonfinite_is_valid{false};
 
@@ -155,8 +160,6 @@ public:
     int64_t m_offset;
     std::shared_ptr<CudaTensorStorage> m_storage;
     cudnnTensorDescriptor_t m_desc;
-
-    void *m_optimizer_aux{nullptr};
 };
 
 }  // namespace saga
