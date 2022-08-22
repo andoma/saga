@@ -539,6 +539,8 @@ struct CudnnConvolutionBwdBias : public CudnnOperation {
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
     {
+        if(m_beta)
+            return {dy_, db_};
         return {dy_};
     }
 
@@ -582,6 +584,8 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
     {
+        if(m_beta)
+            return {x_, dy_, dw_};
         return {x_, dy_};
     }
 
@@ -1222,6 +1226,8 @@ struct CudaGemm : public CudaOperation {
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
     {
+        if(m_beta)
+            return {a_, b_, c_};
         return {a_, b_};
     }
 
@@ -1945,6 +1951,10 @@ struct CudnnBatchNormBwd : public CudnnOperation {
         auto r = std::vector{x_, dy_, s_, sm_, sv_};
         if(dx_beta_)
             r.push_back(dx_);
+        if(m_dsb_beta) {
+            r.push_back(ds_);
+            r.push_back(db_);
+        }
         return r;
     }
 
@@ -2325,6 +2335,10 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
                              fwd_->b_, fwd_->sm_, fwd_->sv_};
         if(dx_beta_)
             r.push_back(dx_);
+        if(m_dsb_beta) {
+            r.push_back(ds_);
+            r.push_back(db_);
+        }
         return r;
     }
 
