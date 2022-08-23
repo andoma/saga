@@ -1466,7 +1466,7 @@ struct CudaMSEFwd : public CudaOperation {
         } else if(x_->m_type == CUDNN_DATA_HALF &&
                   y_->m_type == CUDNN_DATA_HALF) {
             cudaMemcpyAsync(y_->deviceMem(), x_->deviceMem(),
-                            m_elements * sizeof(int16_t), cudaMemcpyHostToHost,
+                            m_elements * sizeof(int16_t), cudaMemcpyDefault,
                             p.m_ctx->m_stream);
         } else {
             return "Unsupported tensor datatype";
