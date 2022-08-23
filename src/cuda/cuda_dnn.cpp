@@ -1449,12 +1449,12 @@ catclassifier_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 REGISTER_CUDA_OP("catclassifier", catclassifier_setup);
 
 //------------------------------------------------------------------------
-struct CudaMSEFwd : public CudaOperation {
+struct CudaLossFwd : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
     const size_t m_elements;
 
-    CudaMSEFwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y)
-      : CudaOperation("msefwd"), x_(x), y_(y), m_elements(x->dims_.elements())
+    CudaLossFwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y)
+      : CudaOperation("lossfwd"), x_(x), y_(y), m_elements(x->dims_.elements())
     {
     }
 
@@ -1465,6 +1465,7 @@ struct CudaMSEFwd : public CudaOperation {
                                1.0f, p.m_ctx->m_stream);
         } else if(x_->m_type == CUDNN_DATA_HALF &&
                   y_->m_type == CUDNN_DATA_HALF) {
+            // FIXME: Use aliased tensor instead
             cudaMemcpyAsync(y_->deviceMem(), x_->deviceMem(),
                             m_elements * sizeof(int16_t), cudaMemcpyDefault,
                             p.m_ctx->m_stream);
@@ -1485,12 +1486,13 @@ struct CudaMSEFwd : public CudaOperation {
     }
 };
 
-struct CudaMSEBwd : public CudaOperation {
-    const std::shared_ptr<CudaTensor> x_, dx_, dy_, loss_;
+struct CudaLossBwd : public CudaOperation {
+    const std::shared_ptr<CudaTensor> x_, dx_, dy_, mmss_;
 
-    CudaMSEBwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> dx,
-               std::shared_ptr<CudaTensor> dy, std::shared_ptr<CudaTensor> loss)
-      : CudaOperation("msebwd"), x_(x), dx_(dx), dy_(dy), loss_(loss)
+    CudaLossBwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> dx,
+                std::shared_ptr<CudaTensor> dy,
+                std::shared_ptr<CudaTensor> mmss)
+      : CudaOperation("lossbwd"), x_(x), dx_(dx), dy_(dy), mmss_(mmss)
     {
     }
 
@@ -1506,19 +1508,17 @@ struct CudaMSEBwd : public CudaOperation {
         const float scale = 1.0f / n;
 
         if(x_->m_type == CUDNN_DATA_HALF && dy_->m_type == CUDNN_DATA_FLOAT) {
-            mse_bwd_half_float(n, (const __half *)x_->deviceMem(),
-                               (__half *)dx_->deviceMem(),
-                               (const float *)dy_->deviceMem(),
-                               loss_ ? (float *)loss_->deviceMem() : NULL, c,
-                               scale * p.m_mp_scaling, p.m_ctx->m_stream);
+            loss_bwd_half_float(
+                n, (const __half *)x_->deviceMem(), (__half *)dx_->deviceMem(),
+                (const float *)dy_->deviceMem(), (float *)mmss_->deviceMem(), c,
+                scale * p.m_mp_scaling, p.m_ctx->m_stream);
 
         } else if(x_->m_type == CUDNN_DATA_HALF &&
                   dy_->m_type == CUDNN_DATA_HALF) {
-            mse_bwd_half_half(n, (const __half *)x_->deviceMem(),
-                              (__half *)dx_->deviceMem(),
-                              (const half *)dy_->deviceMem(),
-                              loss_ ? (float *)loss_->deviceMem() : NULL, c,
-                              scale * p.m_mp_scaling, p.m_ctx->m_stream);
+            loss_bwd_half_half(
+                n, (const __half *)x_->deviceMem(), (__half *)dx_->deviceMem(),
+                (const half *)dy_->deviceMem(), (float *)mmss_->deviceMem(), c,
+                scale * p.m_mp_scaling, p.m_ctx->m_stream);
         } else {
             return "Unsupported tensor datatype";
         }
@@ -1532,17 +1532,17 @@ struct CudaMSEBwd : public CudaOperation {
 
     std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
     {
-        return {dx_, loss_};
+        return {dx_, mmss_};
     }
 };
 
 static const char *
-mse_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
+loss_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     auto x = p.lower_tensor(pu, n.inputs_.get("x"));
     auto y = p.lower_tensor(pu, n.outputs_.get("y"));
 
-    auto op = std::make_shared<CudaMSEFwd>(x, y);
+    auto op = std::make_shared<CudaLossFwd>(x, y);
 
     pu.fwd(op);
 
@@ -1554,13 +1554,13 @@ mse_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         return NULL;
     auto dy = p.lower_grad(pu, n.outputs_.get("y"));
 
-    auto loss = p.lower_tensor(pu, n.outputs_.get("loss"));
-
-    pu.bwd(std::make_shared<CudaMSEBwd>(x, dx, dy, loss));
+    auto mmss = p.lower_tensor(pu, n.outputs_.get("mmss"));
+    assert(mmss);
+    pu.bwd(std::make_shared<CudaLossBwd>(x, dx, dy, mmss));
     return NULL;
 }
 
-REGISTER_CUDA_OP("mse", mse_setup);
+REGISTER_CUDA_OP("loss", loss_setup);
 
 //------------------------------------------------------------------------
 

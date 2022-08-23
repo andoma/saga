@@ -96,49 +96,6 @@ catclassifier_bwd_half_i32(int n, const __half *x, __half *dx, const int32_t *y,
 }
 
 //------------------------------------------------------------------------
-// MSE
-//------------------------------------------------------------------------
-
-template <typename T, typename L>
-__global__ static void
-mse_bwd(int n, const T *x, T *dx, const L *dy, float *loss,
-        unsigned int channels, float scale)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if(i >= n)
-        return;
-
-    x += channels * i;
-    dy += channels * i;
-    dx += channels * i;
-
-    float sum = 0;
-    for(unsigned int j = 0; j < channels; j++) {
-        float yy = dy[j];
-        float xx = x[j];
-        float d = xx - yy;
-        sum += d * d;
-        dx[j] = d * scale;
-    }
-    loss[i] = sum / channels;
-}
-
-void
-mse_bwd_half_float(int n, const __half *x, __half *dx, const float *dy,
-                   float *loss, unsigned int c, float scale,
-                   cudaStream_t stream)
-{
-    mse_bwd<<<(n + 255) / 256, 256, 0, stream>>>(n, x, dx, dy, loss, c, scale);
-}
-
-void
-mse_bwd_half_half(int n, const __half *x, __half *dx, const __half *dy,
-                  float *loss, unsigned int c, float scale, cudaStream_t stream)
-{
-    mse_bwd<<<(n + 255) / 256, 256, 0, stream>>>(n, x, dx, dy, loss, c, scale);
-}
-
-//------------------------------------------------------------------------
 // Datatype conversion
 //------------------------------------------------------------------------
 
@@ -284,6 +241,10 @@ adam_mixed(int n, float alpha, __half *weights, const __half *gradients,
         n, alpha, weights, gradients, mvec, vvec, cvec, b1t, b2t, lr, aux);
 }
 
+//------------------------------------------------------------------------
+// Stats reduction
+//------------------------------------------------------------------------
+
 __inline__ __device__ float4
 warpReduceStats(float4 val)
 {
@@ -384,10 +345,22 @@ compute_mean_stddev(float *v, float elements)
     v[3] = var;
 }
 
+__global__ static void
+init_ssmm(float *v, int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i >= n)
+        return;
+    v[i * 4 + 0] = INFINITY;
+    v[i * 4 + 1] = -INFINITY;
+    v[i * 4 + 2] = 0.0f;
+    v[i * 4 + 3] = 0.0f;
+}
+
 void
 tensor_stats_float(int n, const float *src, float *output, cudaStream_t stream)
 {
-    cudaMemsetAsync(output, 0, sizeof(float) * 4, stream);
+    init_ssmm<<<1, 1, 0, stream>>>(output, 1);
     deviceReduceStats<<<(n + 255) / 256, 256, 0, stream>>>(src, output, n);
     compute_mean_stddev<<<1, 1, 0, stream>>>(output, n);
 }
@@ -395,9 +368,85 @@ tensor_stats_float(int n, const float *src, float *output, cudaStream_t stream)
 void
 tensor_stats_half(int n, const __half *src, float *output, cudaStream_t stream)
 {
-    cudaMemsetAsync(output, 0, sizeof(float) * 4, stream);
+    init_ssmm<<<1, 1, 0, stream>>>(output, 1);
     deviceReduceStats<<<(n + 255) / 256, 256, 0, stream>>>(src, output, n);
     compute_mean_stddev<<<1, 1, 0, stream>>>(output, n);
+}
+
+//------------------------------------------------------------------------
+// Combined Pointwise loss and backprop gradient
+//------------------------------------------------------------------------
+
+template <typename T, typename L>
+__global__ static void
+deviceLossReduction(const T *A, const L *B, T *g, float scale, float *out,
+                    int N)
+{
+    float min = INFINITY;
+    float max = -INFINITY;
+    float sum = 0;
+    float sumsum = 0;
+
+    for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < N;
+        i += blockDim.x * gridDim.x) {
+        float a = A[i];
+        float b = B[i];
+        float v = a - b;
+        g[i] = v * scale;
+
+        min = fminf(min, v);
+        max = fmaxf(max, v);
+        sum += v;
+        sumsum += v * v;
+    }
+
+    float4 re4{sum, sum, sum, sumsum};
+
+    re4 = blockReduceStats(re4);
+    if(threadIdx.x == 0) {
+        atomicMinFloat(out + 0, re4.x);
+        atomicMaxFloat(out + 1, re4.y);
+        atomicAdd(out + 2, re4.z);
+        atomicAdd(out + 3, re4.w);
+    }
+}
+
+__global__ static void
+scale_ssmm(float *v, int n, float scale)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i >= n)
+        return;
+    v[i * 4 + 2] *= scale;
+    v[i * 4 + 3] *= scale;
+}
+
+void
+loss_bwd_half_float(int n, const __half *x, __half *dx, const float *dy,
+                    float *loss, unsigned int c, float scale,
+                    cudaStream_t stream)
+{
+    init_ssmm<<<(n + 31) / 32, 32, 0, stream>>>(loss, n);
+    for(int i = 0; i < n; i++) {
+        size_t o = c * i;
+        deviceLossReduction<<<(c + 255) / 256, 256, 0, stream>>>(
+            x + o, dy + o, dx + o, scale, loss + i * 4, c);
+    }
+    scale_ssmm<<<(n + 31) / 32, 32, 0, stream>>>(loss, n, 1.0f / c);
+}
+
+void
+loss_bwd_half_half(int n, const __half *x, __half *dx, const __half *dy,
+                   float *loss, unsigned int c, float scale,
+                   cudaStream_t stream)
+{
+    init_ssmm<<<(n + 31) / 32, 32, 0, stream>>>(loss, n);
+    for(int i = 0; i < n; i++) {
+        size_t o = c * i;
+        deviceLossReduction<<<(c + 255) / 256, 256, 0, stream>>>(
+            x + o, dy + o, dx + o, scale, loss + i * 4, c);
+    }
+    scale_ssmm<<<(n + 31) / 32, 32, 0, stream>>>(loss, n, 1.0f / c);
 }
 
 //------------------------------------------------------------------------

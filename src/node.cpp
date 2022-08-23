@@ -355,7 +355,7 @@ catclassifier_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 //------------------------------------------------------------------------
 
 static std::shared_ptr<Tensor>
-mse_y(const Node &n, const std::optional<const std::string> &name)
+loss_y(const Node &n, const std::optional<const std::string> &name)
 {
     auto o = n.inputs_.get("x");
     if(o == nullptr)
@@ -368,10 +368,11 @@ mse_y(const Node &n, const std::optional<const std::string> &name)
 }
 
 static std::vector<std::shared_ptr<Node>>
-mse_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+loss_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 {
-    n->outputs_["loss"] =
-        makeTensor(Tensor::DataType::FLOAT, Dims({1, 1}), "mse");
+    auto x = n->inputs_.get("x");
+    n->outputs_["mmss"] =
+        makeTensor(Tensor::DataType::FLOAT, Dims({x->dims_[0], 4}), "");
     return {n};
 }
 
@@ -495,7 +496,7 @@ static const struct {
     {"stats", stats_y},
     {"sum", sum_y},
     {"convert", convert_y},
-    {"mse", mse_y, mse_setup},
+    {"loss", loss_y, loss_setup},
     {"window", window_y},
 };
 
