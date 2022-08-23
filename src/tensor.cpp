@@ -30,6 +30,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/mman.h>
+#include <limits.h>
 
 #include <random>
 #include <sstream>
@@ -1457,7 +1458,10 @@ Tensor::save(const char *path)
         return false;
     }
 
-    int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    char tmppath[PATH_MAX];
+    snprintf(tmppath, sizeof(tmppath), "%s.tmp", path);
+
+    int fd = open(tmppath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
     if(fd == -1) {
         fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
         return false;
@@ -1468,6 +1472,7 @@ Tensor::save(const char *path)
     if(write(fd, &tdh, sizeof(tdh)) != sizeof(tdh)) {
         fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
         close(fd);
+        unlink(tmppath);
         return false;
     }
 
@@ -1480,6 +1485,7 @@ Tensor::save(const char *path)
        (int)(sizeof(int) * tdh.rank)) {
         fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
         close(fd);
+        unlink(tmppath);
         return false;
     }
 
@@ -1494,9 +1500,17 @@ Tensor::save(const char *path)
     if(write(fd, ta->data(), size) != (int)size) {
         fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
         close(fd);
+        unlink(tmppath);
         return false;
     }
     close(fd);
+
+    if(rename(tmppath, path) == -1) {
+        fprintf(stderr, "Unable to rename %s -> %s -- %s\n", tmppath, path,
+                strerror(errno));
+        unlink(tmppath);
+        return false;
+    }
     return true;
 }
 
