@@ -486,6 +486,9 @@ struct ProgramConfig {
 
     float learning_rate{1e-4};
 
+    // L2 regularization term
+    float l2_lambda{0};
+
     TensorLayout tensor_layout{TensorLayout::Auto};
 
     // Scan tensors for NAN values

@@ -179,7 +179,8 @@ struct AdamF32 : public Optimizer {
         float *mem = (float *)m_mem->m_mem;
         adam_float(m_elements, mem, mem + m_elements, mem + m_elements * 2,
                    mem + m_elements * 3, b1t, b2t, p.m_pc.learning_rate,
-                   p.m_aux, p.m_ctx->m_stream, p.m_ctx->m_num_sm);
+                   p.m_pc.l2_lambda, p.m_aux, p.m_ctx->m_stream,
+                   p.m_ctx->m_num_sm);
         return NULL;
     }
 };
@@ -213,7 +214,8 @@ struct AdamMixed : public Optimizer {
 
         adam_mixed(m_elements, 1.0f / p.m_mp_scaling, m_weights, m_gradients,
                    m_mvec, m_vvec, m_cvec, b1t, b2t, p.m_pc.learning_rate,
-                   p.m_aux, p.m_ctx->m_stream, p.m_ctx->m_num_sm);
+                   p.m_pc.l2_lambda, p.m_aux, p.m_ctx->m_stream,
+                   p.m_ctx->m_num_sm);
         return NULL;
     }
 

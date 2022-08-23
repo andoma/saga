@@ -154,9 +154,12 @@ convert_half_float(const void *src, void *dst, int elements, float scale,
 // Adam weight update
 //------------------------------------------------------------------------
 
+#define ADAM_EPSILON 1e-8
+
 __global__ static void
 adam_kernel(int n, float *weights, const float *gradient, float *mvec,
-            float *vvec, float b1t, float b2t, float lr, CudaAux *aux)
+            float *vvec, float b1t, float b2t, float lr, float lambda,
+            CudaAux *aux)
 {
     for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
         i += blockDim.x * gridDim.x) {
@@ -179,14 +182,16 @@ adam_kernel(int n, float *weights, const float *gradient, float *mvec,
         const float v = vvec[i] = b2 * vvec[i] + (1.0f - b2) * dw * dw;
         const float m_hat = m * b1t;
         const float v_hat = v * b2t;
-        weights[i] -= lr * m_hat * __frsqrt_rn(v_hat + e);
+        float w = weights[i];
+        w = w - lr * m_hat * __frsqrt_rn(v_hat + e) - lr * lambda * w;
+        weights[i] = w;
     }
 }
 
 __global__ static void
 adam_kernel_mp(int n, float alpha, __half *weights, const __half *gradients,
                float *mvec, float *vvec, float *cvec, float b1t, float b2t,
-               float lr, CudaAux *aux)
+               float lr, float lambda, CudaAux *aux)
 {
     for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
         i += blockDim.x * gridDim.x) {
@@ -214,7 +219,8 @@ adam_kernel_mp(int n, float alpha, __half *weights, const __half *gradients,
         const float m_hat = m * b1t;
         const float v_hat = v * b2t;
 
-        const float w = cvec[i] - lr * m_hat * __frsqrt_rn(v_hat + e);
+        float w = cvec[i];  // Load fp32 copy
+        w = w - lr * m_hat * __frsqrt_rn(v_hat + e) - lr * lambda * w;
 
         mvec[i] = m;
         vvec[i] = v;
@@ -225,20 +231,22 @@ adam_kernel_mp(int n, float alpha, __half *weights, const __half *gradients,
 
 void
 adam_float(int n, float *weights, const float *gradients, float *mvec,
-           float *vvec, float b1t, float b2t, float lr, CudaAux *aux,
-           cudaStream_t stream, int num_sm)
+           float *vvec, float b1t, float b2t, float lr, float lambda,
+           CudaAux *aux, cudaStream_t stream, int num_sm)
 {
     adam_kernel<<<(n + 255) / 256, 256, 0, stream>>>(
-        n, weights, gradients, mvec, vvec, b1t, b2t, lr, aux);
+        n, weights, gradients, mvec, vvec, b1t, b2t, lr, lambda, aux);
 }
 
 void
 adam_mixed(int n, float alpha, __half *weights, const __half *gradients,
            float *mvec, float *vvec, float *cvec, float b1t, float b2t,
-           float lr, CudaAux *aux, cudaStream_t stream, int num_sm)
+           float lr, float lambda, CudaAux *aux, cudaStream_t stream,
+           int num_sm)
 {
     adam_kernel_mp<<<(n + 255) / 256, 256, 0, stream>>>(
-        n, alpha, weights, gradients, mvec, vvec, cvec, b1t, b2t, lr, aux);
+        n, alpha, weights, gradients, mvec, vvec, cvec, b1t, b2t, lr, lambda,
+        aux);
 }
 
 //------------------------------------------------------------------------
