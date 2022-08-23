@@ -363,7 +363,7 @@ CudaProgram::prep(long batches)
     finalize();
 
     if(m_pc.ui) {
-        m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Run");
+        m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Running");
     }
 
     run_batched_tensor_callbacks(m_pc.pre_ops, 0, Phase::PRE);
@@ -433,7 +433,7 @@ void
 CudaProgram::post(long batches)
 {
     if(m_pc.ui) {
-        m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Pause");
+        m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Paused");
     }
     run_batched_tensor_callbacks(m_pc.post_ops, batches - 1, Phase::POST);
 }
@@ -757,7 +757,7 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
     for(auto &pu : p->m_units) {
         for(const auto &n : pu.m_transformed) {
             if(pc.ui) {
-                pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "%d%%",
+                pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "Init:%d%%",
                                   (int)(100.0f * cnt / total_nodes));
             }
 
@@ -790,7 +790,7 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
     }
 
     if(pc.ui) {
-        pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "");
+        pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "Paused");
     }
 
     if(pt == ProgramType::INFERENCE) {
