@@ -446,10 +446,10 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     int augmentation_angle = 0;
     int augmentation_zoom = 0;
     const char *graphdump = NULL;
-
+    bool no_ui = false;
     std::shared_ptr<std::vector<std::shared_ptr<Tensor>>> stats;
 
-    while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:")) != -1) {
+    while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:U")) != -1) {
         switch(opt) {
         case 'n':
             train = false;
@@ -492,6 +492,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             break;
         case 'G':
             graphdump = optarg;
+            break;
+        case 'U':
+            no_ui = true;
             break;
         }
     }
@@ -559,7 +562,10 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     };
 
-    auto ui = saga::make_tui();
+    std::shared_ptr<UI> ui;
+
+    if(!no_ui)
+        ui = saga::make_tui();
 
     auto post_ops = [&](long batch, ProgramType pt, auto tas) {
         long num_samples = (1 + batch) * batch_size;
@@ -570,7 +576,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                 loss_sum += loss.get({i});
             }
 
-            ui->updateCell(2, 3, UI::Align::LEFT, "%f", loss_sum / num_samples);
+            if(ui)
+                ui->updateCell(2, 3, UI::Align::LEFT, "%f",
+                               loss_sum / num_samples);
         } else {
             auto &output = *tas[OUTPUT];
             const size_t base = batch * batch_size;
@@ -580,7 +588,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             }
 
             float percentage = 100.0 * correct / num_samples;
-            ui->updateCell(1, 3, UI::Align::LEFT, "%.2f%%", percentage);
+            if(ui)
+                ui->updateCell(1, 3, UI::Align::LEFT, "%.2f%%", percentage);
         }
     };
 
@@ -613,13 +622,14 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         exit(0);
     }
 
-    if(training) {
-        ui->updateCell(training->getProgramIndex() + 1, 2, UI::Align::RIGHT,
-                       "Loss:");
+    if(ui) {
+        if(training) {
+            ui->updateCell(training->getProgramIndex() + 1, 2, UI::Align::RIGHT,
+                           "Loss:");
+        }
+        ui->updateCell(testing->getProgramIndex() + 1, 2, UI::Align::RIGHT,
+                       "Recall:");
     }
-    ui->updateCell(testing->getProgramIndex() + 1, 2, UI::Align::RIGHT,
-                   "Recall:");
-
     auto stop_check = [&]() { return !g_run; };
 
     while(g_run) {
