@@ -588,7 +588,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                            .post_ops = post_ops,
                            .ui = ui,
                            .learning_rate = learning_rate,
-                           tensor_layout = tensor_layout};
+                           .l2_lambda = 0.01,
+                           .tensor_layout = tensor_layout};
 
     const ProgramSource ps{
         .graph = g, .batched_tensors = bt, .batch_size = batch_size};
@@ -602,6 +603,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         testing->dump(stdout, verbose > 2);
 
         if(training) {
+            training->finalize();
             training->dump(stdout, verbose > 2);
         }
     }
