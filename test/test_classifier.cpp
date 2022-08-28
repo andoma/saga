@@ -4,6 +4,10 @@
 #include <unistd.h>
 #include <signal.h>
 
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
 #include "saga.hpp"
 
 using namespace saga;
@@ -18,12 +22,15 @@ stop(int x)
     g_run = 0;
 }
 
-static int64_t __attribute__((unused)) get_ts(void)
-{
-    struct timespec tv;
-    clock_gettime(CLOCK_MONOTONIC, &tv);
-    return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
-}
+struct Barrier {
+    Barrier(size_t count) { pthread_barrier_init(&m_barrier, NULL, count); }
+
+    ~Barrier() { pthread_barrier_destroy(&m_barrier); }
+
+    void wait(void) { pthread_barrier_wait(&m_barrier); }
+
+    pthread_barrier_t m_barrier;
+};
 
 static void
 addStats(Graph &g, std::shared_ptr<Tensor> src, Stats *out, bool gradient)
@@ -499,16 +506,11 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         }
     }
 
-    signal(SIGINT, stop);
-
     printf("Test classifer: DataType:%s BatchSize:%d\n",
            dt == Tensor::DataType::HALF ? "fp16" : "fp32", batch_size);
 
     argc -= optind;
     argv += optind;
-
-    train_inputs = (train_inputs / batch_size) * batch_size;
-    test_inputs = (test_inputs / batch_size) * batch_size;
 
     Graph g;
 
@@ -535,9 +537,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     if(verbose)
         g.print();
 
-    double loss_sum = 0;
-    int correct = 0;
-
     const auto LABELS = n->outputs_["y"]->grad();
     const auto LOSS = n->outputs_["loss"];
     const auto INPUT = x;
@@ -549,118 +548,157 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                       {OUTPUT, Phase::POST}};
 
     auto ui = no_ui ? saga::make_nui() : saga::make_tui();
-
     auto engine = createEngine(ui);
+    auto contexts = engine->createContexts(true);
 
-    auto contexts = engine->createContexts();
+    const int train_batches = train_inputs / batch_size / contexts.size();
+    const int test_batches = test_inputs / batch_size / contexts.size();
 
-    auto ctx = contexts[0];
+    std::vector<std::thread> threads;
 
-    auto pre_ops = [&](long batch, ProgramType pt, auto tas) {
-        load_inputs(*tas[INPUT], batch);
-
-        if(pt == ProgramType::TRAINING) {
-            auto &labels = *tas[LABELS];
-            const size_t offset = batch * batch_size;
-            for(int i = 0; i < batch_size; i++) {
-                labels.set({i}, get_label(offset + i));
-            }
-        }
-    };
-
-    auto post_ops = [&](long batch, ProgramType pt, auto tas) {
-        long num_samples = (1 + batch) * batch_size;
-
-        if(pt == ProgramType::TRAINING) {
-            auto &loss = *tas[LOSS];
-            for(int i = 0; i < batch_size; i++) {
-                loss_sum += loss.get({i});
-            }
-
-            if(ui)
-                ui->updateCell(2, 3, UI::Align::LEFT, "%f",
-                               loss_sum / num_samples);
-        } else {
-            auto &output = *tas[OUTPUT];
-            const size_t base = batch * batch_size;
-            for(int i = 0; i < batch_size; i++) {
-                if(output.get({i}) == get_label(base + i))
-                    correct++;
-            }
-
-            float percentage = 100.0 * correct / num_samples;
-            if(ui)
-                ui->updateCell(1, 3, UI::Align::LEFT, "%.2f%%", percentage);
-        }
-    };
-
-    const ProgramConfig pc{.pre_ops = pre_ops,
-                           .post_ops = post_ops,
-                           .ui = ui,
-                           .learning_rate = learning_rate,
-                           .l2_lambda = 0.01,
-                           .tensor_layout = tensor_layout};
-
-    const ProgramSource ps{
-        .graph = g, .batched_tensors = bt, .batch_size = batch_size};
-
-    auto testing = ctx->createProgram(ps, ProgramType::INFERENCE, pc);
-
-    auto training =
-        train ? ctx->createProgram(ps, ProgramType::TRAINING, pc) : nullptr;
-
-    if(verbose > 1) {
-        testing->dump(stdout, verbose > 2);
-
-        if(training) {
-            training->finalize();
-            training->dump(stdout, verbose > 2);
-        }
-    }
-
-    if(graphdump && training) {
-        training->dumpGraph(graphdump);
-        exit(0);
-    }
-
-    if(ui) {
-        if(training) {
-            ui->updateCell(training->getProgramIndex() + 1, 2, UI::Align::RIGHT,
-                           "Loss:");
-        }
-        ui->updateCell(testing->getProgramIndex() + 1, 2, UI::Align::RIGHT,
-                       "Recall:");
-    }
+    signal(SIGINT, stop);
     auto stop_check = [&]() { return !g_run; };
 
-    while(g_run) {
-        if(train) {
+    Barrier barrier(contexts.size());
+
+    for(size_t thread_index = 0; thread_index < contexts.size();
+        thread_index++) {
+        threads.push_back(std::thread([=, &barrier] {
+            double loss_sum = 0;
+            int correct = 0;
+
+            auto &ctx = contexts[thread_index];
+
+            auto pre_ops = [&](long batch, const Program &p, auto tas) {
+                load_inputs(*tas[INPUT], batch);
+                if(p.getType() == ProgramType::TRAINING) {
+                    auto &labels = *tas[LABELS];
+                    const size_t offset = batch * batch_size;
+                    for(int i = 0; i < batch_size; i++) {
+                        labels.set({i}, get_label(offset + i));
+                    }
+                }
+            };
+
+            auto post_ops = [&](long batch, const Program &p, auto tas) {
+                long num_samples = (1 + batch) * batch_size;
+
+                if(p.getType() == ProgramType::TRAINING) {
+                    auto &loss = *tas[LOSS];
+                    for(int i = 0; i < batch_size; i++) {
+                        loss_sum += loss.get({i});
+                    }
+
+                    ui->updateCell(p.getUiRowId(), 3, UI::Align::LEFT, "%f",
+                                   loss_sum / num_samples);
+                } else {
+                    auto &output = *tas[OUTPUT];
+                    const size_t base = batch * batch_size;
+                    for(int i = 0; i < batch_size; i++) {
+                        if(output.get({i}) == get_label(base + i))
+                            correct++;
+                    }
+                }
+            };
+
+            const ProgramConfig pc{.pre_ops = pre_ops,
+                                   .post_ops = post_ops,
+                                   .ui = ui,
+                                   .learning_rate = learning_rate,
+                                   .l2_lambda = 0.01,
+                                   .tensor_layout = tensor_layout};
+
+            const ProgramSource ps{
+                .graph = g, .batched_tensors = bt, .batch_size = batch_size};
+
+            auto testing = ctx->createProgram(ps, ProgramType::INFERENCE, pc);
+
+            auto training =
+                train ? ctx->createProgram(ps, ProgramType::TRAINING, pc)
+                      : nullptr;
+
+            if(verbose > 1) {
+                testing->dump(stdout, verbose > 2);
+
+                if(training) {
+                    training->finalize();
+                    training->dump(stdout, verbose > 2);
+                }
+            }
+
+            if(graphdump && training) {
+                training->dumpGraph(graphdump);
+                exit(0);
+            }
+
+            if(ui) {
+                if(training) {
+                    ui->updateCell(training->getUiRowId(), 2, UI::Align::RIGHT,
+                                   "Loss:");
+                }
+                ui->updateCell(testing->getUiRowId(), 2, UI::Align::RIGHT,
+                               "Recall:");
+            }
+
+            const long train_batch_offset = train_batches * thread_index;
+            const long test_batch_offset = test_batches * thread_index;
+
+            while(1) {
+                if(train) {
 #if 0
-            if(theta)
-                fill_theta(theta.get(), batch_size, augmentation_angle,
-                           augmentation_zoom);
+                    if(theta)
+                        fill_theta(theta.get(), batch_size, augmentation_angle,
+                                   augmentation_zoom);
 #endif
+                    // Train
 
-            // Train
-            epoch_begin(batch_size, false);
-            loss_sum = 0;
-            if(training->run(train_inputs / batch_size, stop_check) !=
-               ExecResult::OK)
-                break;
-        }
+                    barrier.wait();
+                    if(!g_run)
+                        break;
+                    if(thread_index == 0)
+                        epoch_begin(batch_size, false);
+                    barrier.wait();
+                    loss_sum = 0;
+                    if(training->run(train_batches, stop_check,
+                                     train_batch_offset) != ExecResult::OK) {
+                        g_run = 0;
+                    }
+                }
 
-        // Test
-        epoch_begin(batch_size, true);
-        correct = 0;
-        if(testing->run(test_inputs / batch_size, stop_check) != ExecResult::OK)
-            break;
-        float percentage = 100.0 * correct / test_inputs;
-        if(!g_run || percentage > 99)
-            break;
+                // Test
+                barrier.wait();
+                if(!g_run)
+                    break;
+                if(thread_index == 0)
+                    epoch_begin(batch_size, true);
+                barrier.wait();
+
+                correct = 0;
+                if(testing->run(test_batches, stop_check, test_batch_offset) !=
+                   ExecResult::OK) {
+                    g_run = 0;
+                }
+
+                float percentage =
+                    100.0 * correct / (test_inputs / contexts.size());
+                ui->updateCell(testing->getUiRowId(), 3, UI::Align::LEFT,
+                               "%.2f%%", percentage);
+
+                if(percentage >= 99.0f) {
+                    g_run = 0;
+                }
+            }
+        }));
     }
 
-    if(savepath != NULL)
-        g.saveTensors(savepath, ctx.get());
+    for(auto &t : threads) {
+        t.join();
+    }
+
+    ui->refresh();
+
+    if(savepath != NULL && contexts.size() > 0)
+        g.saveTensors(savepath, contexts[0].get());
 }
 
 }  // namespace saga

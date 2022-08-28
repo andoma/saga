@@ -34,6 +34,7 @@
 
 #include <random>
 #include <sstream>
+#include <mutex>
 
 #include <inttypes.h>
 #include <math.h>
@@ -1004,6 +1005,8 @@ Tensor::namePostfix(const std::string &postfix) const
 
 //------------------------------------------------------------------------
 
+static std::mutex tensor_autograd_mutex;
+
 class EmptyTensor : public Tensor,
                     public std::enable_shared_from_this<EmptyTensor> {
 public:
@@ -1015,6 +1018,8 @@ public:
 
     virtual std::shared_ptr<Tensor> grad(bool create) override
     {
+        std::unique_lock lk{tensor_autograd_mutex};
+
         if(m_gradient || !create)
             return m_gradient;
 
@@ -1026,6 +1031,8 @@ public:
 
     virtual std::shared_ptr<Tensor> value() const override
     {
+        std::unique_lock lk{tensor_autograd_mutex};
+
         return m_value.lock();
     }
 

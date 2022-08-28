@@ -412,6 +412,8 @@ struct UI {
                             ...) = 0;
 
     virtual size_t alloc_row() = 0;
+
+    virtual void refresh() = 0;
 };
 
 std::shared_ptr<UI> make_tui();
@@ -466,8 +468,10 @@ operator!(Phase a)
 
 typedef std::unordered_map<std::shared_ptr<Tensor>, Phase> BatchedTensors;
 
+struct Program;
+
 typedef std::function<void(
-    long batch, ProgramType pt,
+    long batch, const Program &p,
     std::unordered_map<std::shared_ptr<Tensor>, TensorAccess *>)>
     TensorBatchCallback;
 
@@ -513,8 +517,8 @@ public:
 
     virtual void finalize() = 0;
 
-    virtual ExecResult run(long batches = 1,
-                           StopCheck stop_check = nullptr) = 0;
+    virtual ExecResult run(long batches = 1, StopCheck stop_check = nullptr,
+                           long batch_offset = 0) = 0;
 
     virtual void dump(FILE *output, bool detailed = false) const = 0;
 
@@ -522,7 +526,9 @@ public:
 
     virtual bool dumpGraph(const char *path) { return false; }
 
-    virtual int getProgramIndex() const = 0;
+    virtual ProgramType getType() const = 0;
+
+    virtual int getUiRowId() const = 0;
 };
 
 //------------------------------------------------------------------------
@@ -546,9 +552,11 @@ public:
     virtual std::shared_ptr<Tensor> resolveTensor(
         std::shared_ptr<Tensor> t) = 0;
 
-    virtual int get_id() = 0;
+    virtual int getId() = 0;
 
     virtual void reset() = 0;
+
+    virtual void bindToHostThread() = 0;
 };
 
 //------------------------------------------------------------------------

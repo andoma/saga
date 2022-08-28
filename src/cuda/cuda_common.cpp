@@ -65,8 +65,7 @@ CudaContext::init()
     m_ui->updateCell(m_ui_row, 0, UI::Align::LEFT, "%s", prop.name);
     m_ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Dev #%d", m_deviceId);
 
-    chkCuda(cudaStreamCreateWithFlags(&m_stream, cudaStreamNonBlocking));
-
+    chkCuda(cudaStreamCreateWithFlags(&m_stream, 0));
     char pciid[32];
     cudaDeviceGetPCIBusId(pciid, sizeof(pciid), m_deviceId);
 
@@ -98,7 +97,7 @@ CudaEngine::createContexts(bool multi)
     cudaGetDeviceCount(&num_devices);
 
     for(int i = 0; i < num_devices; i++) {
-        auto ctx = std::make_shared<CudaContext>(m_ui, i);
+        auto ctx = std::make_shared<CudaContext>(m_ui, 0);
         ctx->init();
         ret.push_back(ctx);
         if(!multi)
@@ -353,16 +352,16 @@ std::shared_ptr<Program>
 CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
                                 ProgramType pt, const ProgramConfig &pc)
 {
+    cudaSetDevice(m_deviceId);
+
     auto p = std::make_shared<CudaProgram>(shared_from_this(), pt, pc);
 
     p->m_name = pt == ProgramType::INFERENCE ? "Inference" : "Training";
 
-    if(pc.ui) {
-        pc.ui->updateCell(p->m_ui_row, 0, UI::Align::LEFT, "%s",
-                          p->m_name.c_str());
-        pc.ui->updateCell(p->m_ui_row, 4, UI::Align::RIGHT, "Batch:");
-        pc.ui->updateCell(p->m_ui_row, 6, UI::Align::RIGHT, "Sample:");
-    }
+    pc.ui->updateCell(p->m_ui_row, 0, UI::Align::LEFT, "%s@#%d",
+                      p->m_name.c_str(), m_deviceId);
+    pc.ui->updateCell(p->m_ui_row, 4, UI::Align::RIGHT, "Batch:");
+    pc.ui->updateCell(p->m_ui_row, 6, UI::Align::RIGHT, "Sample:");
 
     size_t total_nodes = 0;
     for(const auto &s : sources) {
@@ -379,10 +378,8 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
     size_t cnt = 0;
     for(auto &pu : p->m_units) {
         for(const auto &n : pu.m_transformed) {
-            if(pc.ui) {
-                pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "Init:%d%%",
-                                  (int)(100.0f * cnt / total_nodes));
-            }
+            pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "Init:%d%%",
+                              (int)(100.0f * cnt / total_nodes));
 
             const char *err = find_operation(*n)->setup(*p, pu, *n);
             if(err) {
@@ -412,9 +409,7 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
         }
     }
 
-    if(pc.ui) {
-        pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "Paused");
-    }
+    pc.ui->updateCell(p->m_ui_row, 1, UI::Align::LEFT, "Paused");
 
     if(pt == ProgramType::INFERENCE) {
         // For inference type programs, these should be empty

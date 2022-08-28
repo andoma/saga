@@ -102,7 +102,9 @@ public:
         m_program_index_generator = 0;
     }
 
-    virtual int get_id() override { return m_deviceId; }
+    virtual int getId() override { return m_deviceId; }
+
+    virtual void bindToHostThread() override { cudaSetDevice(m_deviceId); }
 
     const std::shared_ptr<UI> m_ui;
 
@@ -184,11 +186,12 @@ public:
 
     ~CudaProgram() { chkCuda(cudaFree(m_aux)); }
 
-    ExecResult run(long batches, StopCheck stop_check) override;
+    ExecResult run(long batches, StopCheck stop_check,
+                   long batch_offset) override;
 
-    void prep(long batches);
-    ExecResult step(long batch, long batches);
-    void post(long batches);
+    void prep(long batches, long batch_offset);
+    ExecResult step(long batch, long batches, long batch_offset);
+    void post(long batches, long batch_offset);
 
     void dump(FILE *output, bool detailed) const override;
     void debug(bool) override;
@@ -286,7 +289,9 @@ public:
 
     bool dumpGraph(const char *path) override;
 
-    int getProgramIndex() const override { return m_index; }
+    int getUiRowId() const override { return m_ui_row; }
+
+    ProgramType getType() const override { return m_pt; }
 
     CudaOps create_optimizers();
 

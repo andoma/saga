@@ -193,7 +193,8 @@ CudaProgram::setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml)
     void *base = m_ctx->m_tensor_mem.ptr();
     for(const auto &kv : cml->table_) {
         void *ptr = (void *)((char *)base + kv.second);
-        //    printf("Tensor T%d gets %p\n", kv.first->id_, ptr);
+        //        printf("%p: Tensor %s gets %p\n", this,
+        //        kv.first->name().c_str(), ptr);
         kv.first->setTmpMem(ptr);
     }
 }
@@ -205,7 +206,7 @@ CudaProgram::detect_anomaly(
 {
     for(const auto &t : tensors) {
         t->detect_anomaly(&m_aux->anomaly);
-        cudaStreamSynchronize(m_ctx->m_stream);
+        chkCuda(cudaStreamSynchronize(m_ctx->m_stream));
         if(m_aux->anomaly) {
             fprintf(stderr, "\n\n *** Anomaly in tensor %s (%s)\n",
                     t->storage_name().c_str(), what);
@@ -277,19 +278,17 @@ CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
 }
 
 void
-CudaProgram::prep(long batches)
+CudaProgram::prep(long batches, long batch_offset)
 {
     finalize();
 
-    if(m_pc.ui) {
-        m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Running");
-    }
+    m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Running");
 
-    run_batched_tensor_callbacks(m_pc.pre_ops, 0, Phase::PRE);
+    run_batched_tensor_callbacks(m_pc.pre_ops, 0 + batch_offset, Phase::PRE);
 
     flipDoubleBufferedTensors();
 
-    cudaStreamSynchronize(m_ctx->m_stream);
+    chkCuda(cudaStreamSynchronize(m_ctx->m_stream));
 
     setupTensorStorage(m_memory_layout);
     m_total_samples = 0;
@@ -297,18 +296,20 @@ CudaProgram::prep(long batches)
 }
 
 ExecResult
-CudaProgram::step(long batch, long batches)
+CudaProgram::step(long batch, long batches, long batch_offset)
 {
     if(!runOps(m_ops, batch, m_pc.anomaly_detect)) {
         return ExecResult::ERROR;
     }
 
     if(batch > 0) {
-        run_batched_tensor_callbacks(m_pc.post_ops, batch - 1, Phase::POST);
+        run_batched_tensor_callbacks(m_pc.post_ops, batch - 1 + batch_offset,
+                                     Phase::POST);
     }
 
     if(batch < batches - 1) {
-        run_batched_tensor_callbacks(m_pc.pre_ops, batch + 1, Phase::PRE);
+        run_batched_tensor_callbacks(m_pc.pre_ops, batch + 1 + batch_offset,
+                                     Phase::PRE);
     }
 
     flipDoubleBufferedTensors();
@@ -317,7 +318,7 @@ CudaProgram::step(long batch, long batches)
         m_total_samples += u.m_batch_size;
     }
 
-    cudaStreamSynchronize(m_ctx->m_stream);
+    chkCuda(cudaStreamSynchronize(m_ctx->m_stream));
 
     if(m_mp_enabled) {
         if(m_aux->inf || m_aux->nan) {
@@ -333,32 +334,28 @@ CudaProgram::step(long batch, long batches)
         m_aux->nan = 0;
     }
 
-    if(m_pc.ui) {
-        float sps = m_total_samples / (1e-6 * (Now() - m_epoch_start));
+    float sps = m_total_samples / (1e-6 * (Now() - m_epoch_start));
 
-        m_pc.ui->updateCell(m_ui_row, 7, UI::Align::LEFT, "%d (%.1f/s)",
-                            m_total_samples, sps);
-        m_pc.ui->updateCell(m_ui_row, 5, UI::Align::LEFT, "%ld / %ld", batch,
-                            batches);
-        if(m_mp_enabled)
-            m_pc.ui->updateCell(m_ui_row, 9, UI::Align::LEFT, "%.1e",
-                                m_mp_scaling);
-    }
+    m_pc.ui->updateCell(m_ui_row, 7, UI::Align::LEFT, "%d (%.1f/s)",
+                        m_total_samples, sps);
+    m_pc.ui->updateCell(m_ui_row, 5, UI::Align::LEFT, "%ld / %ld", batch,
+                        batches);
+    if(m_mp_enabled)
+        m_pc.ui->updateCell(m_ui_row, 9, UI::Align::LEFT, "%.1e", m_mp_scaling);
 
     return ExecResult::OK;
 }
 
 void
-CudaProgram::post(long batches)
+CudaProgram::post(long batches, long batch_offset)
 {
-    if(m_pc.ui) {
-        m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Paused");
-    }
-    run_batched_tensor_callbacks(m_pc.post_ops, batches - 1, Phase::POST);
+    m_pc.ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Paused");
+    run_batched_tensor_callbacks(m_pc.post_ops, batches - 1 + batch_offset,
+                                 Phase::POST);
 }
 
 ExecResult
-CudaProgram::run(long batches, StopCheck stop_check)
+CudaProgram::run(long batches, StopCheck stop_check, long batch_offset)
 {
     if(batches == 0)
         return ExecResult::OK;
@@ -366,10 +363,10 @@ CudaProgram::run(long batches, StopCheck stop_check)
     if(stop_check && stop_check())
         return ExecResult::STOPPED;
 
-    prep(batches);
+    prep(batches, batch_offset);
 
     for(long i = 0; i < batches; i++) {
-        ExecResult r = step(i, batches);
+        ExecResult r = step(i, batches, batch_offset);
         if(r != ExecResult::OK)
             return r;
 
@@ -380,7 +377,7 @@ CudaProgram::run(long batches, StopCheck stop_check)
         m_ctx->updateGpuStats();
     }
 
-    post(batches);
+    post(batches, batch_offset);
     return ExecResult::OK;
 }
 
@@ -469,7 +466,7 @@ CudaProgram::finalize()
 
     m_ctx->m_workspace.alloc();
 
-    if(m_mp_enabled && m_pc.ui) {
+    if(m_mp_enabled) {
         m_pc.ui->updateCell(m_ui_row, 8, UI::Align::RIGHT, "MPS:");
     }
 }

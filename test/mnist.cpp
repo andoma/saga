@@ -135,16 +135,22 @@ mnist_main(int argc, char **argv)
         },
         [&](TensorAccess &ta, long batch) {
             size_t i = batch * batch_size;
-            if(test)
+            if(test) {
+                assert(i + batch_size <= test_data.size());
                 loadInputTensor(ta, &test_data[i], batch_size, pixels);
-            else
+            } else {
+                assert(i + batch_size <= train_data.size());
                 loadInputTensor(ta, &train_data[i], batch_size, pixels);
+            }
         },
         [&](long index) -> int {
-            if(test)
+            if(test) {
+                assert((size_t)index < test_data.size());
                 return test_data[index].label;
-            else
+            } else {
+                assert((size_t)index < train_data.size());
                 return train_data[index].label;
+            }
         });
     return 0;
 }

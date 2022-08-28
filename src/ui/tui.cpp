@@ -18,9 +18,11 @@ struct TUI : public UI {
 
     size_t alloc_row(void) override;
 
+    void refresh() override;
+
     void maybe_refresh();
 
-    void refresh();
+    void refresh_locked();
 
     std::vector<std::vector<Cell>> m_rows;
     std::vector<size_t> m_col_width;
@@ -32,6 +34,14 @@ struct TUI : public UI {
 
     std::mutex m_mutex;
 };
+
+void
+TUI::refresh()
+{
+    std::unique_lock lock{m_mutex};
+    m_last_refresh = Now();
+    refresh_locked();
+}
 
 size_t
 TUI::alloc_row(void)
@@ -80,11 +90,11 @@ TUI::maybe_refresh()
     if(now < m_last_refresh + 250000)
         return;
     m_last_refresh = now;
-    refresh();
+    refresh_locked();
 }
 
 void
-TUI::refresh()
+TUI::refresh_locked()
 {
     if(m_rewind_rows) {
         printf("\033[%dA", m_rewind_rows);

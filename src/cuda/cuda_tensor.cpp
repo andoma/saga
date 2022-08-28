@@ -937,7 +937,7 @@ CudaProgram::run_batched_tensor_callbacks(const TensorBatchCallback &cb,
         amap[high] = ta.get();
         v.push_back(std::move(ta));
     }
-    cb(batch, m_pt, amap);
+    cb(batch, *this, amap);
 }
 
 void
