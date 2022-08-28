@@ -3,6 +3,7 @@
 #include <cmath>
 #include <map>
 #include <cstdarg>
+#include <mutex>
 
 namespace saga {
 
@@ -15,6 +16,8 @@ struct TUI : public UI {
     void updateCell(size_t row, size_t column, Align a, const char *fmt,
                     ...) override;
 
+    size_t alloc_row(void) override;
+
     void maybe_refresh();
 
     void refresh();
@@ -24,7 +27,18 @@ struct TUI : public UI {
     bool m_need_layout{false};
     int64_t m_last_refresh{0};
     int m_rewind_rows{0};
+
+    size_t m_rowgen{0};
+
+    std::mutex m_mutex;
 };
+
+size_t
+TUI::alloc_row(void)
+{
+    std::unique_lock lock{m_mutex};
+    return m_rowgen++;
+}
 
 void
 TUI::updateCell(size_t row, size_t col, Align a, const char *fmt, ...)
@@ -34,6 +48,8 @@ TUI::updateCell(size_t row, size_t col, Align a, const char *fmt, ...)
     va_start(ap, fmt);
     size_t len = vsnprintf(tmp, sizeof(tmp), fmt, ap);
     va_end(ap);
+
+    std::unique_lock lock{m_mutex};
 
     if(m_rows.size() <= row) {
         m_rows.resize(row + 1);

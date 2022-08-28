@@ -548,7 +548,13 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                       {INPUT, Phase::PRE},
                       {OUTPUT, Phase::POST}};
 
-    auto ctx = createContext();
+    auto ui = no_ui ? saga::make_nui() : saga::make_tui();
+
+    auto engine = createEngine(ui);
+
+    auto contexts = engine->createContexts();
+
+    auto ctx = contexts[0];
 
     auto pre_ops = [&](long batch, ProgramType pt, auto tas) {
         load_inputs(*tas[INPUT], batch);
@@ -561,11 +567,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             }
         }
     };
-
-    std::shared_ptr<UI> ui;
-
-    if(!no_ui)
-        ui = saga::make_tui();
 
     auto post_ops = [&](long batch, ProgramType pt, auto tas) {
         long num_samples = (1 + batch) * batch_size;

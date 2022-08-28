@@ -29,7 +29,7 @@
 
 #include "saga.hpp"
 #include "tensor.hpp"
-#include "context.hpp"
+#include "engine.hpp"
 
 #include "cuda_common.hpp"
 #include "cuda_tensor.hpp"
@@ -37,17 +37,33 @@
 
 namespace saga {
 
+void
+CudaContext::updateGpuStats()
+{
+    size_t memfree = 0, memtotal = 0;
+    cudaMemGetInfo(&memfree, &memtotal);
+    size_t used = memtotal - memfree;
+
+    m_ui->updateCell(m_ui_row, 2, UI::Align::RIGHT, "Mem:");
+    m_ui->updateCell(m_ui_row, 3, UI::Align::LEFT, "%zd / %zd", used >> 20,
+                     memtotal >> 20);
+}
+
 int
 CudaContext::init()
 {
+    m_ui_row = m_ui->alloc_row();
+
 #ifdef HAVE_NVIDIA_ML
     nvmlInit();
 #endif
-
-    cudaGetDevice(&m_deviceId);
+    cudaSetDevice(m_deviceId);
 
     struct cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, m_deviceId);
+
+    m_ui->updateCell(m_ui_row, 0, UI::Align::LEFT, "%s", prop.name);
+    m_ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Dev #%d", m_deviceId);
 
     chkCuda(cudaStreamCreateWithFlags(&m_stream, cudaStreamNonBlocking));
 
@@ -73,22 +89,35 @@ CudaContext::init()
     return 0;
 }
 
-static std::shared_ptr<Context>
-createCudaContext()
+std::vector<std::shared_ptr<Context>>
+CudaEngine::createContexts(bool multi)
 {
-    auto ctx = std::make_shared<CudaContext>();
+    std::vector<std::shared_ptr<Context>> ret;
 
-    if(ctx->init())
-        return nullptr;
+    int num_devices;
+    cudaGetDeviceCount(&num_devices);
 
-    return ctx;
+    for(int i = 0; i < num_devices; i++) {
+        auto ctx = std::make_shared<CudaContext>(m_ui, i);
+        ctx->init();
+        ret.push_back(ctx);
+        if(!multi)
+            break;
+    }
+    return ret;
 }
 
-static void __attribute__((constructor)) registerCudaContext(void)
+static std::shared_ptr<Engine>
+createCudaEngine(const std::shared_ptr<UI> &ui)
+{
+    return std::make_shared<CudaEngine>(ui);
+}
+
+static void __attribute__((constructor)) registerCudaEngine(void)
 {
     if(getenv("SAGA_DISABLE_CUDA"))
         return;
-    registerContextFactory(ContextType::CUDA, &createCudaContext);
+    registerEngineFactory("cuda", &createCudaEngine);
 }
 
 void
@@ -345,18 +374,6 @@ CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
     return true;
 }
 
-static void
-updateGpuStats(UI &ui)
-{
-    size_t memfree = 0, memtotal = 0;
-    cudaMemGetInfo(&memfree, &memtotal);
-    size_t used = memtotal - memfree;
-
-    ui.updateCell(0, 2, UI::Align::RIGHT, "GPU-Mem:");
-    ui.updateCell(0, 3, UI::Align::LEFT, "%zd / %zd", used >> 20,
-                  memtotal >> 20);
-}
-
 void
 CudaProgram::prep(long batches)
 {
@@ -458,8 +475,7 @@ CudaProgram::run(long batches, StopCheck stop_check)
             return ExecResult::STOPPED;
         }
 
-        if(m_pc.ui)
-            updateGpuStats(*m_pc.ui);
+        m_ctx->updateGpuStats();
     }
 
     post(batches);
@@ -848,15 +864,7 @@ CudaProgram::finalize()
     }
 }
 
-void
-CudaContext::print() const
-{
-    size_t memfree = 0, memtotal = 0;
-    cudaMemGetInfo(&memfree, &memtotal);
-    printf("   Free memory: %zd kbyte\n", memfree / 1024);
-    printf("  Total memory: %zd kbyte\n", memtotal / 1024);
-}
-
+#if 0
 std::string
 CudaContext::info() const
 {
@@ -878,6 +886,7 @@ CudaContext::info() const
 
     return str;
 }
+#endif
 
 bool
 CudaProgram::dumpGraphFromOps(const char *path, const CudaOps &ops)

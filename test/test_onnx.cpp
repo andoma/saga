@@ -1,3 +1,4 @@
+#if 0
 #include <string.h>
 #include <limits.h>
 #include <unistd.h>
@@ -238,3 +239,4 @@ test_tandem_onnx_main(int argc, char **argv)
 SAGA_CLI_CMD("tandem-onnx", "tandem-onnx <PATH>",
              "Load onnx model and run on all context types",
              test_tandem_onnx_main);
+#endif

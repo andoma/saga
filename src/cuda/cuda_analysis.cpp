@@ -3,7 +3,6 @@
 #include <assert.h>
 #include "saga.hpp"
 #include "tensor.hpp"
-#include "context.hpp"
 
 #include "cuda_common.hpp"
 #include "cuda_tensor.hpp"

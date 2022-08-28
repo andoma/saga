@@ -19,11 +19,13 @@ CXXFLAGS += -Wno-deprecated-declarations
 # Lib
 
 SRCS-lib += \
+	src/util.cpp \
 	src/tensor.cpp \
 	src/graph.cpp \
 	src/node.cpp \
-	src/context.cpp \
+	src/engine.cpp \
 	src/ui/tui.cpp \
+	src/ui/nui.cpp \
 	src/pub.cpp \
 
 ###########################################

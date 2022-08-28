@@ -80,7 +80,10 @@ private:
 class CudaContext : public Context,
                     public std::enable_shared_from_this<CudaContext> {
 public:
-    CudaContext() : m_workspace(4096) {}
+    CudaContext(const std::shared_ptr<UI> &ui, int deviceId)
+      : m_ui(ui), m_deviceId(deviceId), m_workspace(4096)
+    {
+    }
 
     int init();
 
@@ -89,10 +92,6 @@ public:
         const ProgramConfig &pc) override;
 
     std::shared_ptr<Tensor> resolveTensor(std::shared_ptr<Tensor> t) override;
-
-    void print() const override;
-
-    std::string info() const override;
 
     void reset() override
     {
@@ -103,6 +102,14 @@ public:
         m_program_index_generator = 0;
     }
 
+    virtual int get_id() override { return m_deviceId; }
+
+    const std::shared_ptr<UI> m_ui;
+
+    const int m_deviceId;
+
+    int m_ui_row;
+
     CudaTmpMem m_workspace;
     CudaTmpMem m_tensor_mem;
 
@@ -112,7 +119,6 @@ public:
 #ifdef HAVE_NVIDIA_ML
     nvmlDevice_t m_nvmldev = NULL;
 #endif
-    int m_deviceId;
     int m_num_sm;
     bool m_tensor_cores = false;
 
@@ -131,6 +137,18 @@ public:
         m_deferred_copy;
 
     std::map<std::string, int> m_algo_hash;
+
+    void updateGpuStats();
+};
+
+struct CudaEngine : public Engine {
+    CudaEngine(const std::shared_ptr<UI> &ui) : m_ui(ui) {}
+
+    ~CudaEngine() {}
+
+    std::vector<std::shared_ptr<Context>> createContexts(bool multi) override;
+
+    const std::shared_ptr<UI> m_ui;
 };
 
 using CudaOp = std::shared_ptr<CudaOperation>;
@@ -156,7 +174,7 @@ public:
                 const ProgramConfig &pc)
       : m_ctx(ctx)
       , m_index(ctx->m_program_index_generator++)
-      , m_ui_row(m_index + 1)
+      , m_ui_row(ctx->m_ui->alloc_row())
       , m_pt(pt)
       , m_pc(pc)
     {

@@ -410,9 +410,13 @@ struct UI {
 
     virtual void updateCell(size_t row, size_t column, Align a, const char *fmt,
                             ...) = 0;
+
+    virtual size_t alloc_row() = 0;
 };
 
 std::shared_ptr<UI> make_tui();
+
+std::shared_ptr<UI> make_nui();
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
@@ -542,16 +546,25 @@ public:
     virtual std::shared_ptr<Tensor> resolveTensor(
         std::shared_ptr<Tensor> t) = 0;
 
-    virtual std::string info() const = 0;
-
-    virtual void print() const = 0;
+    virtual int get_id() = 0;
 
     virtual void reset() = 0;
 };
 
-std::shared_ptr<Context> createContext();
+//------------------------------------------------------------------------
+//------------------------------------------------------------------------
 
-std::vector<std::shared_ptr<Context>> createContexts();
+class Engine {
+public:
+    virtual ~Engine() {}
+
+    virtual std::vector<std::shared_ptr<Context>> createContexts(
+        bool multi = false) = 0;
+};
+
+std::shared_ptr<Engine> createEngine(const std::shared_ptr<UI> &ui);
+
+std::shared_ptr<Context> createContext(const std::shared_ptr<UI> &ui = nullptr);
 
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
