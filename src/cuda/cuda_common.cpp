@@ -371,6 +371,9 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
     pc.ui->updateCell(p->m_ui_row, 6, UI::Align::RIGHT, "Sample:");
 
     size_t total_nodes = 0;
+
+    float mp_scaling = 0.0f;
+
     for(const auto &s : sources) {
         p->addBatchedTensors(s);
 
@@ -378,9 +381,12 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
 
         auto &pu = p->m_units[p->m_units.size() - 1];
         pu.m_batch_size = s.batch_size;
+        mp_scaling += s.batch_size;
         pu.m_transformed = applyTransforms(*p, pu, s.graph.nodes_);
         total_nodes += pu.m_transformed.size();
     }
+
+    p->m_mp_scaling = mp_scaling;
 
     size_t cnt = 0;
     for(auto &pu : p->m_units) {
