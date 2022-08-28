@@ -336,9 +336,9 @@ CudaProgram::step(long batch, long batches, long batch_offset)
 
     float sps = m_total_samples / (1e-6 * (Now() - m_epoch_start));
 
-    m_pc.ui->updateCell(m_ui_row, 7, UI::Align::LEFT, "%d (%.1f/s)",
+    m_pc.ui->updateCell(m_ui_row, 7, UI::Align::LEFT, "%ld (%.1f/s)",
                         m_total_samples, sps);
-    m_pc.ui->updateCell(m_ui_row, 5, UI::Align::LEFT, "%ld / %ld", batch,
+    m_pc.ui->updateCell(m_ui_row, 5, UI::Align::LEFT, "%ld / %ld", batch + 1,
                         batches);
     if(m_mp_enabled)
         m_pc.ui->updateCell(m_ui_row, 9, UI::Align::LEFT, "%.1e", m_mp_scaling);

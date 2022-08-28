@@ -409,7 +409,7 @@ struct UI {
     };
 
     virtual void updateCell(size_t row, size_t column, Align a, const char *fmt,
-                            ...) = 0;
+                            ...) __attribute__((format(printf, 5, 6))) = 0;
 
     virtual size_t alloc_row() = 0;
 
