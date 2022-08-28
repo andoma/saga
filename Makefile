@@ -15,6 +15,8 @@ CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O) -Isrc -fPIC
 CXXFLAGS += --std=c++17 -march=native -fno-exceptions
 CXXFLAGS += -Wno-deprecated-declarations
 
+LDFLAGS += -lpthread
+
 ###########################################
 # Lib
 
