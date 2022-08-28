@@ -49,6 +49,7 @@ NVCCFLAGS := --std=c++14 -O2 -g -I. -arch sm_72
 
 SRCS-lib-$(HAVE_CUDA) += \
 	src/cuda/cuda_common.cpp \
+	src/cuda/cuda_program.cpp \
 	src/cuda/cuda_analysis.cpp \
 	src/cuda/cuda_dnn.cpp \
 	src/cuda/cuda_optimizer.cpp \
