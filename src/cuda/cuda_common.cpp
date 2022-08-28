@@ -97,7 +97,7 @@ CudaEngine::createContexts(bool multi)
     cudaGetDeviceCount(&num_devices);
 
     for(int i = 0; i < num_devices; i++) {
-        auto ctx = std::make_shared<CudaContext>(m_ui, 0);
+        auto ctx = std::make_shared<CudaContext>(m_ui, i);
         ctx->init();
         ret.push_back(ctx);
         if(!multi)
