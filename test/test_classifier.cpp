@@ -455,8 +455,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     const char *graphdump = NULL;
     bool no_ui = false;
     std::shared_ptr<std::vector<std::shared_ptr<Tensor>>> stats;
+    bool split = true;
 
-    while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:U")) != -1) {
+    while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:UN")) != -1) {
         switch(opt) {
         case 'n':
             train = false;
@@ -502,6 +503,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             break;
         case 'U':
             no_ui = true;
+            break;
+        case 'N':
+            split = false;
             break;
         }
     }
@@ -551,8 +555,14 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     auto engine = createEngine(ui);
     auto contexts = engine->createContexts(true);
 
-    const int train_batches = train_inputs / batch_size / contexts.size();
-    const int test_batches = test_inputs / batch_size / contexts.size();
+    const size_t train_inputs_per_ctx =
+        train_inputs / (split ? contexts.size() : 1);
+
+    const size_t test_inputs_per_ctx =
+        test_inputs / (split ? contexts.size() : 1);
+
+    const int train_batches = train_inputs_per_ctx / batch_size;
+    const int test_batches = test_inputs_per_ctx / batch_size;
 
     std::vector<std::thread> threads;
 
@@ -640,8 +650,10 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                                "Recall:");
             }
 
-            const long train_batch_offset = train_batches * thread_index;
-            const long test_batch_offset = test_batches * thread_index;
+            const long train_batch_offset =
+                split ? train_batches * thread_index : 0;
+            const long test_batch_offset =
+                split ? test_batches * thread_index : 0;
 
             while(1) {
                 if(train) {
@@ -679,8 +691,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                     g_run = 0;
                 }
 
-                float percentage =
-                    100.0 * correct / (test_inputs / contexts.size());
+                float percentage = 100.0f * correct / test_inputs_per_ctx;
+
                 ui->updateCell(testing->getUiRowId(), 3, UI::Align::LEFT,
                                "%.2f%%", percentage);
 
