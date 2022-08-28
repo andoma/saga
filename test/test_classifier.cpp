@@ -555,14 +555,12 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     auto engine = createEngine(ui);
     auto contexts = engine->createContexts(true);
 
-    const size_t train_inputs_per_ctx =
-        train_inputs / (split ? contexts.size() : 1);
+    const int s = split ? contexts.size() : 1;
 
-    const size_t test_inputs_per_ctx =
-        test_inputs / (split ? contexts.size() : 1);
+    const size_t train_batches = train_inputs / (batch_size * s);
+    const size_t test_batches = test_inputs / (batch_size * s);
 
-    const int train_batches = train_inputs_per_ctx / batch_size;
-    const int test_batches = test_inputs_per_ctx / batch_size;
+    const size_t test_inputs_per_ctx = test_batches * batch_size;
 
     std::vector<std::thread> threads;
 
