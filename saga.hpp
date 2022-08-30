@@ -490,8 +490,6 @@ struct ProgramConfig {
 
     TensorBatchCallback post_ops;
 
-    std::shared_ptr<UI> ui;
-
     float learning_rate{1e-4};
 
     // L2 regularization term

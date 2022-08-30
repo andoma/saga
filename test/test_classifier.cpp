@@ -611,7 +611,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
             const ProgramConfig pc{.pre_ops = pre_ops,
                                    .post_ops = post_ops,
-                                   .ui = ui,
                                    .learning_rate = learning_rate,
                                    .l2_lambda = 0.01,
                                    .tensor_layout = tensor_layout};
