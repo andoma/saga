@@ -1,4 +1,3 @@
-#if 0
 #include <string.h>
 #include <limits.h>
 #include <unistd.h>
@@ -138,6 +137,7 @@ test_onnx_main(int argc, char **argv)
 
 SAGA_CLI_CMD("onnx", "onnx [OPTIONS ...] [PATH]", "Load onnx model zoo",
              test_onnx_main);
+#if 0
 
 static int
 test_tandem_onnx_main(int argc, char **argv)
