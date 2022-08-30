@@ -361,10 +361,11 @@ loss_y(const Node &n, const std::optional<const std::string> &name)
     if(o == nullptr)
         return nullptr;
 
-    Tensor::DataType dt = n.attributes_.get("fp16", false)
-                              ? Tensor::DataType::HALF
-                              : Tensor::DataType::FLOAT;
-    return makeTensor(dt, o->dims_, name);
+    auto target = n.inputs_.get("target");
+    if(target == nullptr)
+        return nullptr;
+
+    return makeTensor(target->data_type_, target->dims_, name);
 }
 
 static std::vector<std::shared_ptr<Node>>
