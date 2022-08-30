@@ -107,6 +107,14 @@ Graph::addNode(const std::string &type, const std::shared_ptr<Tensor> &t,
 }
 
 std::shared_ptr<Node>
+Graph::addNode(const std::string &type, const std::shared_ptr<Node> &n,
+               const Attributes &attributes,
+               const std::optional<const std::string> &name)
+{
+    return addNode(type, n->y(), attributes, name);
+}
+
+std::shared_ptr<Node>
 Graph::addNode(const std::string &type, Loader loader,
                const Attributes &attributes)
 {
