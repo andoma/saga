@@ -16,7 +16,7 @@ struct TUI : public UI {
     void updateCell(size_t row, size_t column, Align a, const char *fmt,
                     ...) override;
 
-    size_t alloc_row(void) override;
+    size_t alloc_row(size_t count) override;
 
     void refresh() override;
 
@@ -44,10 +44,13 @@ TUI::refresh()
 }
 
 size_t
-TUI::alloc_row(void)
+TUI::alloc_row(size_t count)
 {
     std::unique_lock lock{m_mutex};
-    return m_rowgen++;
+
+    const size_t r = m_rowgen;
+    m_rowgen += count;
+    return r;
 }
 
 void

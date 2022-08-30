@@ -8,7 +8,7 @@ struct NUI : public UI {
     {
     }
 
-    size_t alloc_row(void) override { return 0; }
+    size_t alloc_row(size_t count) override { return 0; }
 
     void refresh(void) override{};
 };
