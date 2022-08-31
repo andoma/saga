@@ -697,6 +697,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
                 if(percentage >= 99.0f) {
                     g_run = 0;
+                    ui->refresh();
                 }
             }
         }));
@@ -705,8 +706,6 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     for(auto &t : threads) {
         t.join();
     }
-
-    ui->refresh();
 
     if(savepath != NULL && contexts.size() > 0)
         g.saveTensors(savepath, contexts[0].get());
