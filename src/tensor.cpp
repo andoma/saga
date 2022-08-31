@@ -1055,6 +1055,7 @@ public:
     GenTensorAccess(size_t rank, double mean, double stddev)
       : rank_(rank), distribution_(mean, stddev)
     {
+        generator_.seed(Now());
     }
 
     Dims strides() { return Dims(rank_, 0); }
