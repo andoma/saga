@@ -504,7 +504,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
             printf("]");
             lf = "\n";
         }
-        printf(" % 1.6f", ta->get(c));
+        printf(" % 6.3g", ta->get(c));
 
         for(ssize_t j = rank - 1; j >= 0; j--) {
             ++c[j];
