@@ -12,6 +12,10 @@
 #include <nvml.h>
 #endif
 
+#ifdef HAVE_NCCL
+#include <nccl.h>
+#endif
+
 #include "cuda_aux.hpp"
 
 #define chkCUDNN(expression)                                              \
@@ -77,6 +81,8 @@ private:
     size_t m_requested = 0;
 };
 
+struct CudaEngine;
+
 class CudaContext : public Context,
                     public std::enable_shared_from_this<CudaContext> {
 public:
@@ -140,10 +146,13 @@ public:
 
     std::map<std::string, int> m_algo_hash;
 
+    std::shared_ptr<CudaEngine> m_engine;
+
     void updateGpuStats();
 };
 
-struct CudaEngine : public Engine {
+struct CudaEngine : public Engine,
+                    public std::enable_shared_from_this<CudaEngine> {
     CudaEngine(const std::shared_ptr<UI> &ui) : m_ui(ui) {}
 
     ~CudaEngine() {}
@@ -151,6 +160,11 @@ struct CudaEngine : public Engine {
     std::vector<std::shared_ptr<Context>> createContexts(bool multi) override;
 
     const std::shared_ptr<UI> m_ui;
+
+#ifdef HAVE_NCCL
+    std::vector<ncclComm_t> m_nccl_comms;
+#endif
+
 };
 
 using CudaOp = std::shared_ptr<CudaOperation>;

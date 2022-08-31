@@ -1,3 +1,5 @@
+#include <mutex>
+#include <unistd.h>
 /*
  * Copyright (c) 2019, Andreas Smas
  * All rights reserved.
@@ -132,6 +134,114 @@ struct AdamMixed : public Optimizer {
     float *m_vvec;
 };
 
+
+struct DistributedAdamF32 : public Optimizer {
+    DistributedAdamF32(CudaProgram &p, std::vector<std::shared_ptr<CudaTensor>> inputs,
+                       std::vector<std::shared_ptr<CudaTensor>> outputs,
+                       const std::shared_ptr<CudaTensorStorageMemory> &mem,
+                       const size_t elements)
+      : Optimizer(p, inputs, outputs, mem, elements, "dist-adam-f32")
+    {
+    }
+
+    const char *exec(CudaProgram &p, long batch) override
+    {
+        float *mem = (float *)m_mem->m_mem;
+        float *weights = (float *)m_mem->m_mem;
+        float *gradients = (float *)m_mem->m_mem + m_elements;
+
+        size_t elements = m_elements / 2;
+        size_t offset = elements * p.m_ctx->m_deviceId;
+
+        ncclReduceScatter(gradients, gradients + offset, elements,
+                          ncclFloat32, ncclSum,
+                          p.m_ctx->m_engine->m_nccl_comms[p.m_ctx->m_deviceId],
+                          p.m_ctx->m_stream);
+
+        const int i = ++m_iter;
+        const float b1t = 1.0 / (1.0 - pow(ADAM_B1, i));
+        const float b2t = 1.0 / (1.0 - pow(ADAM_B2, i));
+
+        // clang-format off
+        adam_float(elements,
+                   mem + offset,
+                   mem + offset + m_elements,
+                   mem + offset + m_elements * 2,
+                   mem + offset + m_elements * 3,
+                   b1t, b2t, p.m_pc.learning_rate,
+                   p.m_pc.l2_lambda, p.m_aux, p.m_ctx->m_stream,
+                   p.m_ctx->m_num_sm);
+        // clang-format on
+
+        ncclAllGather(weights + offset, weights, elements,
+                      ncclFloat32, p.m_ctx->m_engine->m_nccl_comms[p.m_ctx->m_deviceId],
+                      p.m_ctx->m_stream);
+
+        return NULL;
+    }
+};
+
+struct DistributedAdamMixed : public Optimizer {
+    DistributedAdamMixed(CudaProgram &p, std::vector<std::shared_ptr<CudaTensor>> inputs,
+              std::vector<std::shared_ptr<CudaTensor>> outputs,
+              const std::shared_ptr<CudaTensorStorageMemory> &mem,
+              const size_t elements)
+      : Optimizer(p, inputs, outputs, mem, elements, "dist-adam-mixed")
+    {
+        __half *hmem = (__half *)m_mem->m_mem;
+        float *fmem = (float *)m_mem->m_mem;
+
+        m_weights = hmem;
+        m_gradients = hmem + m_elements;
+        m_mvec = fmem + m_elements * 1;
+        m_vvec = fmem + m_elements * 2;
+        m_cvec = fmem + m_elements * 3;
+
+        for(size_t i = 0; i < elements; i++) {
+            m_cvec[i] = m_weights[i];
+        }
+    }
+
+    const char *exec(CudaProgram &p, long batch) override
+    {
+        const int i = ++m_iter;
+        const float b1t = 1.0 / (1.0 - pow(ADAM_B1, i));
+        const float b2t = 1.0 / (1.0 - pow(ADAM_B2, i));
+
+        size_t elements = m_elements / 2;
+        size_t offset = elements * p.m_ctx->m_deviceId;
+
+        ncclReduceScatter(m_gradients, m_gradients + offset, elements,
+                          ncclFloat16, ncclSum,
+                          p.m_ctx->m_engine->m_nccl_comms[p.m_ctx->m_deviceId],
+                          p.m_ctx->m_stream);
+
+        adam_mixed(elements, 1.0f / p.m_mp_scaling,
+                   m_weights + offset,
+                   m_gradients + offset,
+                   m_mvec + offset,
+                   m_vvec + offset,
+                   m_cvec + offset,
+                   b1t, b2t, p.m_pc.learning_rate,
+                   p.m_pc.l2_lambda, p.m_aux, p.m_ctx->m_stream,
+                   p.m_ctx->m_num_sm);
+
+        ncclAllGather(m_weights + offset, m_weights, elements,
+                      ncclFloat16, p.m_ctx->m_engine->m_nccl_comms[p.m_ctx->m_deviceId],
+                      p.m_ctx->m_stream);
+
+        return NULL;
+    }
+
+    __half *m_weights;
+    __half *m_gradients;
+    float *m_cvec;
+    float *m_mvec;
+    float *m_vvec;
+};
+
+
+
 CudaOp
 CudaProgram::create_optimizer(Tensor::DataType dt)
 {
@@ -220,11 +330,11 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
 
     switch(dt) {
     case Tensor::DataType::FLOAT:
-        return std::make_shared<AdamF32>(*this, inputs, outputs, mem,
+        return std::make_shared<DistributedAdamF32>(*this, inputs, outputs, mem,
                                          total_elements);
     case Tensor::DataType::HALF:
-        return std::make_shared<AdamMixed>(*this, inputs, outputs, mem,
-                                           total_elements);
+        return std::make_shared<DistributedAdamMixed>(*this, inputs, outputs, mem,
+                                                      total_elements);
     default:
         abort();
     }

@@ -9,6 +9,9 @@ O ?= build
 PROG=${O}/saga
 SONAME=libsaga.so.0
 
+CPPFLAGS += -DHAVE_NCCL
+LDFLAGS += -lnccl
+
 PKG_CONFIG ?= pkg-config
 
 CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O) -Isrc -fPIC
