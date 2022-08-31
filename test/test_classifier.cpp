@@ -117,17 +117,19 @@ lecun(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
     addStats(g, n->y(), stats, false);
     addStats(g, n->y(), stats, true);
 
+    bool tw = true;
+
     n = g.addNode("fc", n->y(),
-                  {{"outputs", 1024}, {"bias", true}, {"transW", true}}, "fc1");
+                  {{"outputs", 1024}, {"bias", true}, {"transW", tw}}, "fc1");
 
     n = g.addNode("relu", n->y());
 
     addStats(g, n->y(), stats, false);
     addStats(g, n->y(), stats, true);
 
-    n = g.addNode(
-        "fc", n->y(),
-        {{"outputs", output_classes}, {"bias", true}, {"transW", true}}, "fc2");
+    n = g.addNode("fc", n->y(),
+                  {{"outputs", output_classes}, {"bias", true}, {"transW", tw}},
+                  "fc2");
     return n;
 }
 
