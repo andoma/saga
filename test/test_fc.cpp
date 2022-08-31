@@ -6,17 +6,19 @@
 #include <algorithm>
 
 #include "saga.hpp"
+#include "cli.h"
 
 using namespace saga;
 
-int
-test_fc_main(int argc, char **argv)
+static int
+fc_main(int argc, char **argv)
 {
     int batch_size = 2;
-
     int opt;
 
-    auto dt = Tensor::Type::FLOAT;
+    srand(getpid() ^ time(NULL));
+
+    auto dt = Tensor::DataType::FLOAT;
 
     while((opt = getopt(argc, argv, "b:h")) != -1) {
         switch(opt) {
@@ -24,47 +26,57 @@ test_fc_main(int argc, char **argv)
             batch_size = atoi(optarg);
             break;
         case 'h':
-            dt = Tensor::Type::HALF;
+            dt = Tensor::DataType::HALF;
             break;
         }
     }
 
-    Network net(true);
+    auto ctx = createContext();
 
-    Tensor i1(Size(batch_size, 4, 1, 1), dt);
+    Graph g;
 
-    auto input = net.addLayer(makeInput(&i1, true));
+    auto input = makeTensor(dt, Dims({DimParam::BATCH_SIZE, 4}), "input");
+    auto n = g.addNode("fc", input, {{"outputs", 8}}, "fc");
+    auto output1 = n->y();
+    n = g.addNode("fc", n, {{"outputs", 4}, {"transW", true}}, "fc");
 
-    auto w = std::make_shared<Tensor>(Size(4, 4, 1, 1), dt);
-    w->allocate(CUDNN_TENSOR_NHWC);
-    for(int i = 0; i < 4; i++)
-        for(int j = 0; j < 4; j++) w->set(i, j, 0, 0, i * 10 + j);
-    net.named_tensors_["w"] = w;
+    auto output2 = n->y();
+    auto p = ctx->createProgram({g, .batch_size = batch_size},
+                                ProgramType::INFERENCE, {});
 
-    auto b = std::make_shared<Tensor>(Size(1, 4, 1, 1), dt);
-    b->allocate(CUDNN_TENSOR_NHWC);
-    b->fill(1);
-    net.named_tensors_["b"] = b;
-    for(int j = 0; j < 4; j++) b->set(0, j, 0, 0, j * 70);
+    input = ctx->resolveTensor(input);
+    auto weights = ctx->resolveTensor(n->inputs_["w"]);
+    output1 = ctx->resolveTensor(output1);
+    output2 = ctx->resolveTensor(output2);
 
-    auto l = net.addLayer(makeFullyConnected(4, *input, net, "w", "b"));
+    auto input_ta = input->access();
+    for(size_t i = 0; i < 4; i++) {
+        input_ta->set(Dims{{0, (int)i}}, -0.75f + i * 0.5f);
+        //        input_ta->set(Dims{{1, (int)i}}, i * 10);
+    }
+#if 0
+    auto weights_ta = weights->access();
+    for(size_t i = 0; i < 4; i++) {
+        weights_ta->set(Dims{{(int)i, 0}}, 1.0f - i * 0.1f);
+        weights_ta->set(Dims{{(int)i, 1}}, i * 0.1f);
+    }
+#endif
+    p->finalize();
 
-    for(int n = 0; n < batch_size; n++)
-        for(int c = 0; c < 4; c++) i1.set(n, c, 0, 0, n * 100 + c);
+    p->run();
 
-    net.forward();
-
-    input->output()->dump("input");
-    w->dump("weights");
-    b->dump("bias");
-
-    l->output()->dump("output");
-
-    auto grad = l->gradient();
-    for(int n = 0; n < batch_size; n++)
-        for(int c = 0; c < 4; c++) grad->set(n, c, 0, 0, n * 10 + c);
-
-    net.backprop(0);
-
+    p->dump(stdout, true);
+    printf("\n");
+    input->print("  INPUT");
+    printf("\n");
+    weights->print("WEIGHTS");
+    printf("\n");
+    output1->print("OUTPUT1");
+    printf("\n");
+    output2->print("OUTPUT2");
+    printf("\n");
+    output2->printStats("OUTPUT2");
     return 0;
 }
+
+SAGA_CLI_CMD("fc", "fc [OPTIONS ...]", "Run test of fc", fc_main);

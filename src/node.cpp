@@ -313,16 +313,22 @@ fc_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
     auto w = n->inputs_.get("w");
     auto b = n->inputs_.get("b");
 
+    const bool transW = n->attributes_.get("transW", false);
+
     if(!w) {
         const int outputs = n->attributes_.get("outputs", 1);
-        n->attributes_["transW"] = true;
 
-        n->inputs_["w"] = w = Tensor::find(
-            x->data_type_, {outputs, x->dims_[1]}, 0, sqrt(2.0 / x->dims_[1]),
-            named_tensors, node_tensor_name(n->name_, "w"));
+        Dims d;
+        if(transW) {
+            d = Dims({outputs, x->dims_[1]});
+        } else {
+            d = Dims({x->dims_[1], outputs});
+        }
+
+        n->inputs_["w"] = w =
+            Tensor::find(x->data_type_, d, 0, sqrt(2.0 / x->dims_[1]),
+                         named_tensors, node_tensor_name(n->name_, "w"));
     }
-
-    const bool transW = n->attributes_.get("transW", false);
 
     if(!b && n->attributes_.get("bias", false)) {
         n->inputs_["b"] =

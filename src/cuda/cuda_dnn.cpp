@@ -1136,6 +1136,10 @@ struct CudaGemm : public CudaOperation {
     }
 };
 
+/**
+ * https://docs.nvidia.com/deeplearning/performance/dl-performance-fully-connected/index.html#fullyconnected-layer
+ */
+
 static const char *
 fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
@@ -1145,17 +1149,20 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     auto b = p.lower_tensor(pu, n.inputs_.get("b"), 2);
 
     const bool transW = n.attributes_.get("transW", false);
-
-    const cublasOperation_t transa = transW ? CUBLAS_OP_T : CUBLAS_OP_N;
-    const cublasOperation_t transb = CUBLAS_OP_N;
-
     const int num_inputs = x->dims_[1];
     const int num_outputs = y->dims_[1];
     const int batch_size = x->dims_[0];
 
+    // clang-format off
     auto fwd = std::make_shared<CudaGemm>(
-        transa, transb, num_outputs, batch_size, num_inputs, w,
-        transW ? num_inputs : num_outputs, x, num_inputs, y, num_outputs, 0.0f);
+        transW ? CUBLAS_OP_T : CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        num_outputs, batch_size, num_inputs,
+        w, transW ? num_inputs : num_outputs,
+        x, num_inputs,
+        y, num_outputs,
+        0.0f);
+    // clang-format on
 
     pu.fwd(fwd);
 
@@ -1165,18 +1172,29 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     if(p.m_pt == ProgramType::INFERENCE)
         return NULL;
 
-    if(!transW) {
-        // Fix this
-        return "fully connected with !transW not suppored";
-    }
-
     auto dx = p.lower_grad(pu, n.inputs_.get("x"));
     auto dy = p.lower_grad(pu, n.outputs_.get("y"));
     auto dw = p.lower_grad(pu, n.inputs_.get("w"));
 
-    pu.bwd(std::make_shared<CudaGemm>(
-        CUBLAS_OP_N, CUBLAS_OP_T, num_inputs, num_outputs, batch_size, x,
-        num_inputs, dy, num_outputs, dw, num_inputs, p.upd(w, dw)));
+    // clang-format off
+    if(transW) {
+        pu.bwd(std::make_shared<CudaGemm>(
+                   CUBLAS_OP_N,
+                   CUBLAS_OP_T,
+                   num_inputs, num_outputs, batch_size,
+                   x, num_inputs,
+                   dy, num_outputs,
+                   dw, num_inputs, p.upd(w, dw)));
+    } else {
+        pu.bwd(std::make_shared<CudaGemm>(
+                   CUBLAS_OP_N,
+                   CUBLAS_OP_T,
+                   num_outputs, num_inputs, batch_size,
+                   dy, num_outputs,
+                   x, num_inputs,
+                   dw, num_inputs, p.upd(w, dw)));
+    }
+    // clang-format on
 
     if(b) {
         auto ones = p.lower_tensor(
@@ -1190,10 +1208,19 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
     if(dx) {
         const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
+
+        // clang-format off
         pu.bwd(std::make_shared<CudaGemm>(
-            CUBLAS_OP_N, CUBLAS_OP_N, num_inputs, batch_size, num_outputs, w,
-            num_inputs, dy, num_outputs, dx, num_inputs, dx_beta));
+            transW ? CUBLAS_OP_N : CUBLAS_OP_T,
+            CUBLAS_OP_N,
+            num_inputs, batch_size, num_outputs,
+            w, transW ? num_inputs : num_outputs,
+            dy, num_outputs,
+            dx, num_inputs,
+            dx_beta));
+        // clang-format on
     }
+
     return NULL;
 }
 
