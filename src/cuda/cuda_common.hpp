@@ -12,6 +12,10 @@
 #include <nvml.h>
 #endif
 
+#ifdef HAVE_NCCL
+#include <nccl.h>
+#endif
+
 #include "cuda_aux.hpp"
 
 #define chkCUDNN(expression)                                              \
@@ -77,11 +81,16 @@ private:
     size_t m_requested = 0;
 };
 
+struct CudaEngine;
+
 class CudaContext : public Context,
                     public std::enable_shared_from_this<CudaContext> {
 public:
-    CudaContext(const std::shared_ptr<UI> &ui, int deviceId)
-      : m_ui(ui), m_deviceId(deviceId), m_workspace(4096)
+    CudaContext(const std::shared_ptr<UI> &ui, int deviceId, int nccl_rank)
+      : m_ui(ui)
+      , m_deviceId(deviceId)
+      , m_nccl_rank(nccl_rank)
+      , m_workspace(4096)
     {
     }
 
@@ -109,6 +118,8 @@ public:
     const std::shared_ptr<UI> m_ui;
 
     const int m_deviceId;
+
+    const int m_nccl_rank;
 
     int m_ui_row;
 
@@ -140,10 +151,13 @@ public:
 
     std::map<std::string, int> m_algo_hash;
 
+    std::shared_ptr<CudaEngine> m_engine;
+
     void updateGpuStats();
 };
 
-struct CudaEngine : public Engine {
+struct CudaEngine : public Engine,
+                    public std::enable_shared_from_this<CudaEngine> {
     CudaEngine(const std::shared_ptr<UI> &ui) : m_ui(ui) {}
 
     ~CudaEngine() {}
@@ -151,6 +165,11 @@ struct CudaEngine : public Engine {
     std::vector<std::shared_ptr<Context>> createContexts(bool multi) override;
 
     const std::shared_ptr<UI> m_ui;
+
+#ifdef HAVE_NCCL
+    std::vector<ncclComm_t> m_nccl_comms;
+#endif
+    size_t m_nodes{1};
 };
 
 using CudaOp = std::shared_ptr<CudaOperation>;

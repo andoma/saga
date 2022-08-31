@@ -73,7 +73,11 @@ struct AdamF32 : public Optimizer {
             const std::shared_ptr<CudaTensorStorageMemory> &mem,
             const size_t elements)
       : Optimizer(p, inputs, outputs, mem, elements, "adam-f32")
+      , m_mvec(sizeof(float) * elements / p.m_ctx->m_engine->m_nodes)
+      , m_vvec(sizeof(float) * elements / p.m_ctx->m_engine->m_nodes)
     {
+        m_weights = (float *)m_mem->m_mem;
+        m_gradients = m_weights + elements;
     }
 
     const char *exec(CudaProgram &p, long batch) override
@@ -82,13 +86,44 @@ struct AdamF32 : public Optimizer {
         const float b1t = 1.0 / (1.0 - pow(ADAM_B1, i));
         const float b2t = 1.0 / (1.0 - pow(ADAM_B2, i));
 
-        float *mem = (float *)m_mem->m_mem;
-        adam_float(m_elements, mem, mem + m_elements, mem + m_elements * 2,
-                   mem + m_elements * 3, b1t, b2t, p.m_pc.learning_rate,
-                   p.m_pc.l2_lambda, p.m_aux, p.m_ctx->m_stream,
-                   p.m_ctx->m_num_sm);
+        const auto &engine = *p.m_ctx->m_engine;
+        const int rank = p.m_ctx->m_nccl_rank;
+
+        const size_t local_elements = m_elements / engine.m_nodes;
+        const size_t offset = local_elements * rank;
+
+#ifdef HAVE_NCCL
+        if(engine.m_nodes > 1) {
+            ncclReduceScatter(gradients, gradients + offset, elements,
+                              ncclFloat32, ncclSum, engine.m_nccl_comms[rank],
+                              p.m_ctx->m_stream);
+        }
+#endif
+        // clang-format off
+        adam_float(local_elements,
+                   m_weights + offset,
+                   m_gradients + offset,
+                   (float *)m_mvec.m_mem,
+                   (float *)m_vvec.m_mem,
+                   b1t, b2t,
+                   p.m_pc.learning_rate, p.m_pc.l2_lambda, p.m_aux,
+                   p.m_ctx->m_stream, p.m_ctx->m_num_sm);
+        // clang-format on
+
+#ifdef HAVE_NCCL
+        if(engine.m_nodes > 1) {
+            ncclAllGather(weights + offset, weights, elements, ncclFloat32,
+                          engine.m_nccl_comms[rank], p.m_ctx->m_stream);
+        }
+#endif
         return NULL;
     }
+
+    float *m_weights;
+    float *m_gradients;
+
+    CudaTensorStorageMemory m_mvec;
+    CudaTensorStorageMemory m_vvec;
 };
 
 struct AdamMixed : public Optimizer {
@@ -97,18 +132,24 @@ struct AdamMixed : public Optimizer {
               const std::shared_ptr<CudaTensorStorageMemory> &mem,
               const size_t elements)
       : Optimizer(p, inputs, outputs, mem, elements, "adam-mixed")
+      , m_mvec(sizeof(float) * elements / p.m_ctx->m_engine->m_nodes)
+      , m_vvec(sizeof(float) * elements / p.m_ctx->m_engine->m_nodes)
+      , m_cvec(sizeof(float) * elements / p.m_ctx->m_engine->m_nodes)
     {
-        __half *hmem = (__half *)m_mem->m_mem;
-        float *fmem = (float *)m_mem->m_mem;
+        const auto &engine = *p.m_ctx->m_engine;
+        const int rank = p.m_ctx->m_nccl_rank;
 
+        __half *hmem = (__half *)m_mem->m_mem;
         m_weights = hmem;
         m_gradients = hmem + m_elements;
-        m_mvec = fmem + m_elements * 1;
-        m_vvec = fmem + m_elements * 2;
-        m_cvec = fmem + m_elements * 3;
 
+        const size_t local_elements = m_elements / engine.m_nodes;
+        const size_t offset = local_elements * rank;
+
+        float *cvec = (float *)m_cvec.m_mem;
+        printf("offset=%zd\n", offset);
         for(size_t i = 0; i < elements; i++) {
-            m_cvec[i] = m_weights[i];
+            cvec[i] = m_weights[i + offset];
         }
     }
 
@@ -118,18 +159,49 @@ struct AdamMixed : public Optimizer {
         const float b1t = 1.0 / (1.0 - pow(ADAM_B1, i));
         const float b2t = 1.0 / (1.0 - pow(ADAM_B2, i));
 
-        adam_mixed(m_elements, 1.0f / p.m_mp_scaling, m_weights, m_gradients,
-                   m_mvec, m_vvec, m_cvec, b1t, b2t, p.m_pc.learning_rate,
+        const auto &engine = *p.m_ctx->m_engine;
+        const int rank = p.m_ctx->m_nccl_rank;
+
+        const size_t local_elements = m_elements / engine.m_nodes;
+        const size_t offset = local_elements * rank;
+
+#ifdef HAVE_NCCL
+        if(engine.m_nodes > 1) {
+            ncclReduceScatter(gradients, gradients + offset, elements,
+                              ncclFloat16, ncclSum, engine.m_nccl_comms[rank],
+                              p.m_ctx->m_stream);
+        }
+#endif
+
+        // clang-format off
+        adam_mixed(m_elements,
+                   1.0f / p.m_mp_scaling,
+                   m_weights + offset,
+                   m_gradients + offset,
+                   (float *)m_mvec.m_mem,
+                   (float *)m_vvec.m_mem,
+                   (float *)m_cvec.m_mem,
+                   b1t, b2t, p.m_pc.learning_rate,
                    p.m_pc.l2_lambda, p.m_aux, p.m_ctx->m_stream,
                    p.m_ctx->m_num_sm);
+        // clang-format on
+
+#ifdef HAVE_NCCL
+        if(engine.m_nodes > 1) {
+            ncclAllGather(weights + offset, weights, elements, ncclFloat16,
+                          engine.m_nccl_comms[rank], p.m_ctx->m_stream);
+        }
+#endif
+
         return NULL;
     }
 
     __half *m_weights;
     __half *m_gradients;
-    float *m_cvec;
-    float *m_mvec;
-    float *m_vvec;
+
+    CudaTensorStorageMemory m_mvec;
+    CudaTensorStorageMemory m_vvec;
+    CudaTensorStorageMemory m_cvec;
 };
 
 CudaOp
@@ -160,22 +232,15 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
     if(total_elements == 0)
         return nullptr;
 
-    size_t size;
-    switch(dt) {
-    case Tensor::DataType::FLOAT:
-        size = total_elements * sizeof(float) * 4;
-        break;
-    case Tensor::DataType::HALF:
-        size = total_elements * (sizeof(uint16_t) * 2 + sizeof(float) * 3);
-        break;
-    default:
-        abort();
-    }
+    printf("total elements:%zd\n", total_elements);
 
+    const size_t esize = Tensor::DataTypeSize(dt);
+    const size_t size = total_elements * 2 * esize;
+    printf("size=%zd\n", size);
     auto mem = std::make_shared<CudaTensorStorageMemory>(size);
 
     char *wbase = (char *)mem->m_mem;
-    char *gbase = wbase + Tensor::DataTypeSize(dt) * total_elements;
+    char *gbase = wbase + total_elements * esize;
 
     total_elements = 0;
 
@@ -189,23 +254,14 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
         if(w->data_type_ != dt)
             continue;
 
-        size_t elements = w->dims_.elements();
-        size_t rounded_elements = (elements + align - 1) & ~(align - 1);
+        const size_t elements = w->dims_.elements();
+        const size_t rounded_elements = (elements + align - 1) & ~(align - 1);
 
         w->m_storage->m_memory = mem;
         g->m_storage->m_memory = mem;
-        switch(dt) {
-        case Tensor::DataType::FLOAT:
-            w->m_storage->m_data = wbase + total_elements * sizeof(float);
-            g->m_storage->m_data = gbase + total_elements * sizeof(float);
-            break;
-        case Tensor::DataType::HALF:
-            w->m_storage->m_data = wbase + total_elements * sizeof(__half);
-            g->m_storage->m_data = gbase + total_elements * sizeof(__half);
-            break;
-        default:
-            abort();
-        }
+
+        w->m_storage->m_data = wbase + total_elements * esize;
+        g->m_storage->m_data = gbase + total_elements * esize;
 
         inputs.push_back(g);
         inputs.push_back(w);

@@ -102,14 +102,32 @@ CudaEngine::createContexts(bool multi)
     if(e)
         num_contexts = atoi(e);
 
+    int rank = 0;
+
     for(int i = 0; i < num_contexts; i++) {
-        auto ctx =
-            std::make_shared<CudaContext>(m_ui, std::min(i, num_devices - 1));
+        auto ctx = std::make_shared<CudaContext>(m_ui, rank,
+                                                 std::min(i, num_devices - 1));
         ctx->init();
+        ctx->m_engine = shared_from_this();
         ret.push_back(ctx);
         if(!multi)
             break;
+        rank++;
     }
+
+#ifdef HAVE_NCCL
+    if(num_devices > 1) {
+        m_nccl_comms.resize(num_devices);
+        ncclResult_t r =
+            ncclCommInitAll(m_nccl_comms.data(), num_devices, NULL);
+
+        if(r != ncclSuccess) {
+            fprintf(stderr, "Unable to init NCCL -- %s\n",
+                    ncclGetErrorString(r));
+            exit(1);
+        }
+    }
+#endif
     return ret;
 }
 
