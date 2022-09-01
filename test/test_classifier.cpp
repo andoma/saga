@@ -463,9 +463,14 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     bool no_ui = false;
     std::shared_ptr<std::vector<std::shared_ptr<Tensor>>> stats;
     bool split = true;
+    bool anomaly_detect = false;
+    const char *program_dump_path = NULL;
 
-    while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:UN")) != -1) {
+    while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:UNAp:")) != -1) {
         switch(opt) {
+        case 'A':
+            anomaly_detect = true;
+            break;
         case 'n':
             train = false;
             break;
@@ -513,6 +518,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             break;
         case 'N':
             split = false;
+            break;
+        case 'p':
+            program_dump_path = optarg;
             break;
         }
     }
@@ -580,6 +588,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         thread_index++) {
         threads.push_back(std::thread([=, &barrier] {
             double loss_sum = 0;
+            long loss_sum_cnt = 0;
             int correct = 0;
 
             auto &ctx = contexts[thread_index];
@@ -596,16 +605,15 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             };
 
             auto post_ops = [&](long batch, const Program &p, auto tas) {
-                long num_samples = (1 + batch) * batch_size;
-
                 if(p.getType() == ProgramType::TRAINING) {
                     auto &loss = *tas[LOSS];
                     for(int i = 0; i < batch_size; i++) {
-                        loss_sum += loss.get({i});
+                        float v = loss.get({i});
+                        loss_sum += v;
                     }
-
+                    loss_sum_cnt += batch_size;
                     ui->updateCell(p.getUiRowId(), 3, UI::Align::LEFT, "%f",
-                                   loss_sum / num_samples);
+                                   loss_sum / loss_sum_cnt);
                 } else {
                     auto &output = *tas[OUTPUT];
                     const size_t base = batch * batch_size;
@@ -620,7 +628,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                                    .post_ops = post_ops,
                                    .learning_rate = learning_rate,
                                    .l2_lambda = 0.01,
-                                   .tensor_layout = tensor_layout};
+                                   .tensor_layout = tensor_layout,
+                                   .anomaly_detect = anomaly_detect};
 
             const ProgramSource ps{
                 .graph = g, .batched_tensors = bt, .batch_size = batch_size};
@@ -631,13 +640,26 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                 train ? ctx->createProgram(ps, ProgramType::TRAINING, pc)
                       : nullptr;
 
-            if(verbose > 1) {
-                testing->dump(stdout, verbose > 2);
+            if(training)
+                training->finalize();
 
-                if(training) {
-                    training->finalize();
-                    training->dump(stdout, verbose > 2);
+            testing->finalize();
+
+            if(thread_index == 0) {
+                FILE *fp = stdout;
+
+                if(program_dump_path != NULL)
+                    fp = fopen(program_dump_path, "w");
+
+                if(verbose > 1) {
+                    testing->dump(fp, verbose > 2);
+
+                    if(training) {
+                        training->dump(fp, verbose > 2);
+                    }
                 }
+                if(program_dump_path != NULL)
+                    fclose(fp);
             }
 
             if(graphdump && training) {
@@ -675,6 +697,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                         epoch_begin(batch_size, false);
                     barrier.wait();
                     loss_sum = 0;
+                    loss_sum_cnt = 0;
                     if(training->run(train_batches, stop_check,
                                      train_batch_offset) != ExecResult::OK) {
                         g_run = 0;
