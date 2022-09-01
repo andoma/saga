@@ -703,7 +703,7 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
                                     ptr, true, s->m_ctx->m_stream);
             break;
         default:
-            abort();
+            return;
         }
     } else if(dv.size() == 2) {
         switch(data_type_) {
@@ -718,7 +718,7 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
                                     s->m_ctx->m_stream);
             break;
         default:
-            abort();
+            return;
         }
     } else {
         fprintf(stderr,
