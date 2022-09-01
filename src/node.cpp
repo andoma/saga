@@ -331,9 +331,9 @@ fc_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
     }
 
     if(!b && n->attributes_.get("bias", false)) {
-        n->inputs_["b"] =
-            Tensor::find(x->data_type_, {transW ? w->dims_[0] : w->dims_[1]}, 0,
-                         0, named_tensors, node_tensor_name(n->name_, "b"));
+        n->inputs_["b"] = Tensor::find(
+            x->data_type_, {transW ? w->dims_[0] : w->dims_[1]}, 0, 0,
+            named_tensors, node_tensor_name(n->name_, transW ? "bt" : "b"));
     }
     nodes.push_back(n);
     return nodes;
