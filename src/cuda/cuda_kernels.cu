@@ -457,6 +457,20 @@ loss_bwd_half_half(int n, const __half *x, __half *dx, const __half *dy,
     scale_ssmm<<<(n + 31) / 32, 32, 0, stream>>>(loss, n, 1.0f / c);
 }
 
+void
+loss_bwd_float_float(int n, const float *x, float *dx, const float *dy,
+                     float *loss, unsigned int c, float scale,
+                     cudaStream_t stream)
+{
+    init_ssmm<<<(n + 31) / 32, 32, 0, stream>>>(loss, n);
+    for(int i = 0; i < n; i++) {
+        size_t o = c * i;
+        deviceLossReduction<<<(c + 255) / 256, 256, 0, stream>>>(
+            x + o, dy + o, dx + o, scale, loss + i * 4, c);
+    }
+    scale_ssmm<<<(n + 31) / 32, 32, 0, stream>>>(loss, n, 1.0f / c);
+}
+
 //------------------------------------------------------------------------
 // Leaky RELU
 //------------------------------------------------------------------------

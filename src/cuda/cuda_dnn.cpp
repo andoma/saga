@@ -1495,6 +1495,12 @@ struct CudaLossFwd : public CudaOperation {
             cudaMemcpyAsync(y_->deviceMem(), x_->deviceMem(),
                             m_elements * sizeof(int16_t), cudaMemcpyDefault,
                             p.m_ctx->m_stream);
+        } else if(x_->m_type == CUDNN_DATA_FLOAT &&
+                  y_->m_type == CUDNN_DATA_FLOAT) {
+            // FIXME: Use aliased tensor instead
+            cudaMemcpyAsync(y_->deviceMem(), x_->deviceMem(),
+                            m_elements * sizeof(float), cudaMemcpyDefault,
+                            p.m_ctx->m_stream);
         } else {
             return "Unsupported tensor datatype";
         }
@@ -1548,6 +1554,13 @@ struct CudaLossBwd : public CudaOperation {
                                (const half *)m_target->deviceMem(),
                                (float *)mmss_->deviceMem(), c,
                                scale * p.m_mp_scaling, p.m_ctx->m_stream);
+        } else if(x_->m_type == CUDNN_DATA_FLOAT &&
+                  m_target->m_type == CUDNN_DATA_FLOAT) {
+            loss_bwd_float_float(n, (const float *)x_->deviceMem(),
+                                 (float *)dx_->deviceMem(),
+                                 (const float *)m_target->deviceMem(),
+                                 (float *)mmss_->deviceMem(), c,
+                                 scale * p.m_mp_scaling, p.m_ctx->m_stream);
         } else {
             return "Unsupported tensor datatype";
         }
