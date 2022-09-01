@@ -19,6 +19,7 @@ typedef std::vector<std::shared_ptr<Tensor>> Stats;
 static void
 stop(int x)
 {
+    signal(SIGINT, SIG_DFL);
     g_run = 0;
 }
 
