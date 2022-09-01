@@ -2134,8 +2134,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
     const cudnnBatchNormMode_t mode_;
     cudnnActivationDescriptor_t desc_;
 
-    void *reserve_;
-    size_t reserve_size_;
+    std::shared_ptr<CudaTensor> m_reserve;
 
     CudnnBatchNormActTrain(
         CudaProgram &p, std::shared_ptr<CudaTensor> x,
@@ -2165,21 +2164,31 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         chkCUDNN(cudnnSetActivationDescriptor(desc_, activation_mode,
                                               CUDNN_PROPAGATE_NAN, actalpha));
 
+        size_t reserve_size;
+
         chkCUDNN(cudnnGetBatchNormalizationTrainingExReserveSpaceSize(
-            p.m_ctx->m_cudnn, mode_, ops_, desc_, x_->desc(), &reserve_size_));
-        chkCuda(cudaMalloc(&reserve_, reserve_size_));
+            p.m_ctx->m_cudnn, mode_, ops_, desc_, x_->desc(), &reserve_size));
+
+        if(reserve_size > 0) {
+            assert(reserve_size < INT32_MAX);
+            m_reserve = std::make_shared<CudaTensor>(
+                Tensor::DataType::U8, Dims{{(int)reserve_size, 1, 1, 1}},
+                CUDNN_TENSOR_NCHW, p.m_ctx, "bnr");
+        }
     }
 
     ~CudnnBatchNormActTrain()
     {
         chkCUDNN(cudnnDestroyActivationDescriptor(desc_));
-        chkCuda(cudaFree(reserve_));
     }
 
     cudnnStatus_t exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
+
+        void *reserve = m_reserve ? m_reserve->m_storage->m_data : NULL;
+        size_t reserve_size = m_reserve ? (size_t)m_reserve->dims_[0] : 0;
 
         auto s = cudnnBatchNormalizationForwardTrainingEx(
             ctx_->m_cudnn, mode_, ops_, &alpha, &beta, x_->desc(),
@@ -2188,7 +2197,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
             s_->desc(), s_->deviceMem(), b_->deviceMem(), expavgf_,
             m_->deviceMem(), v_->deviceMem(), epsilon_, sm_->deviceMem(),
             sv_->deviceMem(), desc_, ctx_->m_workspace.ptr(),
-            ctx_->m_workspace.size(), reserve_, reserve_size_);
+            ctx_->m_workspace.size(), reserve, reserve_size);
 
         if(!p.m_pc.anomaly_detect)
             return s;
@@ -2211,7 +2220,10 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
 
     std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
     {
-        return {y_, sm_, sv_, m_, v_};
+        auto r = std::vector{y_, sm_, sv_, m_, v_};
+        if(m_reserve)
+            r.push_back(m_reserve);
+        return r;
     }
 };
 
@@ -2254,6 +2266,11 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
     {
         float alpha = 1.0f;
 
+        void *reserve =
+            fwd_->m_reserve ? fwd_->m_reserve->m_storage->m_data : NULL;
+        size_t reserve_size =
+            fwd_->m_reserve ? (size_t)fwd_->m_reserve->dims_[0] : 0;
+
         auto s = cudnnBatchNormalizationBackwardEx(
             p.m_ctx->m_cudnn, fwd_->mode_, ops_, &alpha, &dx_beta_, &alpha,
             &m_dsb_beta, fwd_->x_->desc(), fwd_->x_->deviceMem(),
@@ -2263,8 +2280,8 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
             fwd_->s_->desc(), fwd_->s_->deviceMem(), fwd_->b_->deviceMem(),
             ds_->deviceMem(), db_->deviceMem(), fwd_->epsilon_,
             fwd_->sm_->deviceMem(), fwd_->sv_->deviceMem(), fwd_->desc_,
-            p.m_ctx->m_workspace.ptr(), p.m_ctx->m_workspace.size(),
-            fwd_->reserve_, fwd_->reserve_size_);
+            p.m_ctx->m_workspace.ptr(), p.m_ctx->m_workspace.size(), reserve,
+            reserve_size);
 
         if(!p.m_pc.anomaly_detect)
             return s;
@@ -2287,6 +2304,8 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
             r.push_back(ds_);
             r.push_back(db_);
         }
+        if(fwd_->m_reserve)
+            r.push_back(fwd_->m_reserve);
         return r;
     }
 
