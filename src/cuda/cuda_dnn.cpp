@@ -1080,8 +1080,9 @@ struct CudaGemm : public CudaOperation {
     CudaGemm(cublasOperation_t transa, cublasOperation_t transb, int m, int n,
              int k, std::shared_ptr<CudaTensor> a, int lda,
              std::shared_ptr<CudaTensor> b, int ldb,
-             std::shared_ptr<CudaTensor> c, int ldc, float beta)
-      : CudaOperation("gemm")
+             std::shared_ptr<CudaTensor> c, int ldc, float beta,
+             const char *name)
+      : CudaOperation(name)
       , transa_(transa)
       , transb_(transb)
       , m_(m)
@@ -1161,7 +1162,7 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         w, transW ? num_inputs : num_outputs,
         x, num_inputs,
         y, num_outputs,
-        0.0f);
+        0.0f, transW ? "fc.fwd.t" : "fc.fwd.n");
     // clang-format on
 
     pu.fwd(fwd);
@@ -1184,7 +1185,8 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
                    num_inputs, num_outputs, batch_size,
                    x, num_inputs,
                    dy, num_outputs,
-                   dw, num_inputs, p.upd(w, dw)));
+                   dw, num_inputs, p.upd(w, dw),
+                   "fc.bwd.weights.t"));
     } else {
         pu.bwd(std::make_shared<CudaGemm>(
                    CUBLAS_OP_N,
@@ -1192,7 +1194,8 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
                    num_outputs, num_inputs, batch_size,
                    dy, num_outputs,
                    x, num_inputs,
-                   dw, num_inputs, p.upd(w, dw)));
+                   dw, num_outputs, p.upd(w, dw),
+                   "fc.bwd.weights.n"));
     }
     // clang-format on
 
@@ -1201,9 +1204,9 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
             pu, Tensor::make(x->data_type_, {batch_size, 1}, 1, 0));
 
         auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
-        pu.bwd(std::make_shared<CudaGemm>(CUBLAS_OP_N, CUBLAS_OP_T, 1,
-                                          num_outputs, batch_size, ones, 1, dy,
-                                          num_outputs, db, 1, p.upd(b, db)));
+        pu.bwd(std::make_shared<CudaGemm>(
+            CUBLAS_OP_N, CUBLAS_OP_T, 1, num_outputs, batch_size, ones, 1, dy,
+            num_outputs, db, 1, p.upd(b, db), "fc.bwd.bias"));
     }
 
     if(dx) {
@@ -1217,7 +1220,8 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
             w, transW ? num_inputs : num_outputs,
             dy, num_outputs,
             dx, num_inputs,
-            dx_beta));
+            dx_beta,
+            transW ? "fc.bwd.data.t" : "fc.bwd.data.n"));
         // clang-format on
     }
 
