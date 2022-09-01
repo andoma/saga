@@ -97,7 +97,8 @@ squeezenet(Graph &g, std::shared_ptr<Node> n, bool with_bn, int output_classes)
 }
 
 static std::shared_ptr<Node>
-lecun(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
+lecun(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats,
+      bool transposed_weights)
 {
     n = g.addNode("conv", n->y(),
                   {{"size", 5}, {"activations", 32}, {"bias", true}}, "conv1");
@@ -117,10 +118,10 @@ lecun(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
     addStats(g, n->y(), stats, false);
     addStats(g, n->y(), stats, true);
 
-    bool tw = true;
-
-    n = g.addNode("fc", n->y(),
-                  {{"outputs", 1024}, {"bias", true}, {"transW", tw}}, "fc1");
+    n = g.addNode(
+        "fc", n->y(),
+        {{"outputs", 1024}, {"bias", true}, {"transW", transposed_weights}},
+        "fc1");
 
     n = g.addNode("relu", n->y());
 
@@ -128,7 +129,9 @@ lecun(Graph &g, std::shared_ptr<Node> n, int output_classes, Stats *stats)
     addStats(g, n->y(), stats, true);
 
     n = g.addNode("fc", n->y(),
-                  {{"outputs", output_classes}, {"bias", true}, {"transW", tw}},
+                  {{"outputs", output_classes},
+                   {"bias", true},
+                   {"transW", transposed_weights}},
                   "fc2");
     return n;
 }
@@ -388,7 +391,9 @@ make_network(Graph &g, std::shared_ptr<Node> n, const std::string &name,
              int output_classes, Stats *stats)
 {
     if(name == "lecun") {
-        return lecun(g, n, output_classes, stats);
+        return lecun(g, n, output_classes, stats, false);
+    } else if(name == "lecun-t") {
+        return lecun(g, n, output_classes, stats, true);
     } else if(name == "test") {
         return test(g, n, false, output_classes);
     } else if(name == "test+bn") {
