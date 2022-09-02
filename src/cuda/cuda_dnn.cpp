@@ -1525,10 +1525,17 @@ struct CudaLossFwd : public CudaOperation {
 struct CudaLossBwd : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, dx_, m_target, mmss_;
 
+    const float m_strength;
+
     CudaLossBwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> dx,
                 std::shared_ptr<CudaTensor> target,
-                std::shared_ptr<CudaTensor> mmss)
-      : CudaOperation("lossbwd"), x_(x), dx_(dx), m_target(target), mmss_(mmss)
+                std::shared_ptr<CudaTensor> mmss, float strength)
+      : CudaOperation("lossbwd")
+      , x_(x)
+      , dx_(dx)
+      , m_target(target)
+      , mmss_(mmss)
+      , m_strength(strength)
     {
     }
 
@@ -1541,7 +1548,7 @@ struct CudaLossBwd : public CudaOperation {
             c *= x_->dims_[i];
         }
 
-        const float scale = 1.0f / n;
+        const float scale = m_strength / n;
 
         if(x_->m_type == CUDNN_DATA_HALF &&
            m_target->m_type == CUDNN_DATA_FLOAT) {
@@ -1604,7 +1611,9 @@ loss_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
     auto mmss = p.lower_tensor(pu, n.outputs_.get("mmss"));
     assert(mmss);
-    pu.bwd(std::make_shared<CudaLossBwd>(x, dx, target, mmss));
+
+    const float strength = n.attributes_.get("strength", 1.0f);
+    pu.bwd(std::make_shared<CudaLossBwd>(x, dx, target, mmss, strength));
     return NULL;
 }
 
