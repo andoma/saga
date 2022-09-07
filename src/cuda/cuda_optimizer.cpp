@@ -147,7 +147,6 @@ struct AdamMixed : public Optimizer {
         const size_t offset = local_elements * rank;
 
         float *cvec = (float *)m_cvec.m_mem;
-        printf("offset=%zd\n", offset);
         for(size_t i = 0; i < elements; i++) {
             cvec[i] = m_weights[i + offset];
         }
@@ -232,11 +231,8 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
     if(total_elements == 0)
         return nullptr;
 
-    printf("total elements:%zd\n", total_elements);
-
     const size_t esize = Tensor::DataTypeSize(dt);
     const size_t size = total_elements * 2 * esize;
-    printf("size=%zd\n", size);
     auto mem = std::make_shared<CudaTensorStorageMemory>(size);
 
     char *wbase = (char *)mem->m_mem;

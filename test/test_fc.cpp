@@ -69,7 +69,7 @@ fc_main(int argc, char **argv)
     auto l = g.addNode("loss", {{"x", n->y()}, {"target", target}});
     auto result = l->y();
 
-    auto p = ctx->createProgram({g, .batch_size = batch_size},
+    auto p = ctx->createProgram({.graph = g, .batch_size = batch_size},
                                 ProgramType::TRAINING, {.learning_rate = 0.1});
 
     auto activations = ctx->resolveTensor(input->grad());

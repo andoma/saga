@@ -13,10 +13,8 @@ struct Cell {
 };
 
 struct TUI : public UI {
-    void updateCell(size_t row, size_t column, Align a, const char *fmt,
-                    ...) override;
-
-    size_t alloc_row(size_t count) override;
+    void updateCell(Page page, size_t row, size_t column, Align a,
+                    const char *fmt, ...) override;
 
     void refresh() override;
 
@@ -24,14 +22,12 @@ struct TUI : public UI {
 
     void refresh_locked();
 
-    std::vector<std::vector<Cell>> m_rows;
+    std::map<int, std::vector<std::pair<std::vector<Cell>, bool>>> m_pages;
     std::vector<size_t> m_col_width;
     bool m_need_layout{false};
     int64_t m_last_refresh{0};
     int m_rewind_rows{0};
-
-    size_t m_rowgen{0};
-
+    bool m_all_is_dirty{false};
     std::mutex m_mutex;
 };
 
@@ -43,18 +39,9 @@ TUI::refresh()
     refresh_locked();
 }
 
-size_t
-TUI::alloc_row(size_t count)
-{
-    std::unique_lock lock{m_mutex};
-
-    const size_t r = m_rowgen;
-    m_rowgen += count;
-    return r;
-}
-
 void
-TUI::updateCell(size_t row, size_t col, Align a, const char *fmt, ...)
+TUI::updateCell(Page page, size_t row, size_t col, Align a, const char *fmt,
+                ...)
 {
     char tmp[1024];
     va_list ap;
@@ -64,24 +51,31 @@ TUI::updateCell(size_t row, size_t col, Align a, const char *fmt, ...)
 
     std::unique_lock lock{m_mutex};
 
-    if(m_rows.size() <= row) {
-        m_rows.resize(row + 1);
-    }
-    auto &r = m_rows[row];
+    auto &rows = m_pages[(int)page];
 
-    if(r.size() <= col) {
-        r.resize(col + 1);
+    if(rows.size() <= row) {
+        rows.resize(row + 1);
+        m_all_is_dirty = true;
+    }
+    auto &cells = rows[row];
+
+    if(cells.first.size() <= col) {
+        cells.first.resize(col + 1);
     }
 
     if(m_col_width.size() <= col) {
         m_col_width.resize(col + 1);
     }
 
-    auto &c = r[col];
-    c.str = tmp;
-    c.a = a;
+    auto &cell = cells.first[col];
+    cells.second = true;
+    cell.str = tmp;
+    cell.a = a;
 
-    m_col_width[col] = std::max(m_col_width[col], len);
+    if(len > m_col_width[col]) {
+        m_all_is_dirty = true;
+        m_col_width[col] = len;
+    }
 
     maybe_refresh();
 }
@@ -103,28 +97,47 @@ TUI::refresh_locked()
         printf("\033[%dA", m_rewind_rows);
     }
 
-    for(const auto &row : m_rows) {
-        printf("\033[K");
-        for(size_t i = 0; i < row.size(); i++) {
-            const auto &cell = row[i];
-            int width = m_col_width[i] + 2;
+    int rewind = 0;
 
-            switch(cell.a) {
-            case Align::LEFT:
-                printf("%-*.*s", width, width, cell.str.c_str());
-                break;
-            case Align::RIGHT:
-                printf("%*.*s", width, width, cell.str.c_str());
-                break;
-            case Align::CENTER:
-                printf("%*.*s", width, width, cell.str.c_str());
-                break;
+    for(auto &[id, page] : m_pages) {
+        int new_section = 1;
+        for(auto &row : page) {
+            rewind++;
+            if(row.second || m_all_is_dirty) {
+                // dirty flag
+                row.second = false;
+
+                if(new_section) {
+                    printf("\033[48:5:233m");
+                }
+                printf("\033[K");
+                for(size_t i = 0; i < row.first.size(); i++) {
+                    const auto &cell = row.first[i];
+                    int width = m_col_width[i] + 2;
+
+                    switch(cell.a) {
+                    case Align::LEFT:
+                        printf("%-*.*s", width, width, cell.str.c_str());
+                        break;
+                    case Align::RIGHT:
+                        printf("%*.*s", width, width, cell.str.c_str());
+                        break;
+                    case Align::CENTER:
+                        printf("%*.*s", width, width, cell.str.c_str());
+                        break;
+                    }
+                }
+                if(new_section) {
+                    printf("\033[0m");
+                }
             }
+            new_section = 0;
+            printf("\n");
         }
-        printf("\n");
     }
 
-    m_rewind_rows = m_rows.size();
+    m_rewind_rows = rewind;
+    m_all_is_dirty = false;
 }
 
 std::shared_ptr<UI>

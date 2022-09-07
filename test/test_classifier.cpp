@@ -613,7 +613,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                         loss_sum += v;
                     }
                     loss_sum_cnt += batch_size;
-                    ui->updateCell(p.getUiRowId(), 3, UI::Align::LEFT, "%f",
+                    ui->updateCell(ctx->getUiPage(), p.getUiRow(), 3,
+                                   UI::Align::LEFT, "%f",
                                    loss_sum / loss_sum_cnt);
                 } else {
                     auto &output = *tas[OUTPUT];
@@ -670,11 +671,11 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
             if(ui) {
                 if(training) {
-                    ui->updateCell(training->getUiRowId(), 2, UI::Align::RIGHT,
-                                   "Loss:");
+                    ui->updateCell(ctx->getUiPage(), training->getUiRow(), 2,
+                                   UI::Align::RIGHT, "Loss:");
                 }
-                ui->updateCell(testing->getUiRowId(), 2, UI::Align::RIGHT,
-                               "Recall:");
+                ui->updateCell(ctx->getUiPage(), testing->getUiRow(), 2,
+                               UI::Align::RIGHT, "Accuracy:");
             }
 
             const long train_batch_offset =
@@ -697,12 +698,14 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                     if(thread_index == 0)
                         epoch_begin(batch_size, false);
                     barrier.wait();
-                    loss_sum = 0;
-                    loss_sum_cnt = 0;
+
                     if(training->run(train_batches, stop_check,
                                      train_batch_offset) != ExecResult::OK) {
                         g_run = 0;
                     }
+
+                    loss_sum = 0;
+                    loss_sum_cnt = 0;
                 }
 
                 // Test
@@ -719,12 +722,14 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                     g_run = 0;
                 }
 
-                float percentage = 100.0f * correct / test_inputs_per_ctx;
+                double accuracy = (double)correct / test_inputs_per_ctx;
 
-                ui->updateCell(testing->getUiRowId(), 3, UI::Align::LEFT,
-                               "%.2f%%", percentage);
+                ui->updateCell(ctx->getUiPage(), testing->getUiRow(), 3,
+                               UI::Align::LEFT, "%.2f%%", 100.0f * accuracy);
 
-                if(percentage >= 99.0f) {
+                epoch++;
+
+                if(accuracy >= 0.99f || epoch == 20) {
                     g_run = 0;
                     ui->refresh();
                 }

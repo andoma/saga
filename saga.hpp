@@ -413,10 +413,11 @@ struct UI {
         RIGHT,
     };
 
-    virtual void updateCell(size_t row, size_t column, Align a, const char *fmt,
-                            ...) __attribute__((format(printf, 5, 6))) = 0;
+    enum Page { SYS = 0, DATA = 100, CTX = 200, USER = 300 };
 
-    virtual size_t alloc_row(size_t count = 1) = 0;
+    virtual void updateCell(Page page, size_t row, size_t column, Align a,
+                            const char *fmt, ...)
+        __attribute__((format(printf, 6, 7))) = 0;
 
     virtual void refresh() = 0;
 };
@@ -473,7 +474,7 @@ operator!(Phase a)
 
 typedef std::unordered_map<std::shared_ptr<Tensor>, Phase> BatchedTensors;
 
-struct Program;
+class Program;
 
 typedef std::function<void(
     long batch, const Program &p,
@@ -531,7 +532,9 @@ public:
 
     virtual ProgramType getType() const = 0;
 
-    virtual int getUiRowId() const = 0;
+    virtual int getUiRow() const = 0;
+
+    virtual double getMPS() const = 0;
 };
 
 //------------------------------------------------------------------------
@@ -555,7 +558,9 @@ public:
     virtual std::shared_ptr<Tensor> resolveTensor(
         std::shared_ptr<Tensor> t) = 0;
 
-    virtual int getId() = 0;
+    virtual int getId() const = 0;
+
+    virtual UI::Page getUiPage() const = 0;
 
     virtual void reset() = 0;
 

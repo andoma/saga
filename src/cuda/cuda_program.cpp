@@ -282,7 +282,8 @@ CudaProgram::prep(long batches, long batch_offset)
 {
     finalize();
 
-    m_ctx->m_ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Running");
+    m_ctx->m_ui->updateCell(m_ctx->m_ui_page, m_ui_row, 1, UI::Align::LEFT,
+                            "Running");
 
     run_batched_tensor_callbacks(m_pc.pre_ops, 0 + batch_offset, Phase::PRE);
 
@@ -336,13 +337,13 @@ CudaProgram::step(long batch, long batches, long batch_offset)
 
     float sps = m_total_samples / (1e-6 * (Now() - m_epoch_start));
 
-    m_ctx->m_ui->updateCell(m_ui_row, 7, UI::Align::LEFT, "%ld (%.1f/s)",
-                            m_total_samples, sps);
-    m_ctx->m_ui->updateCell(m_ui_row, 5, UI::Align::LEFT, "%ld / %ld",
-                            batch + 1, batches);
+    m_ctx->m_ui->updateCell(m_ctx->m_ui_page, m_ui_row, 7, UI::Align::LEFT,
+                            "%ld (%.1f/s)", m_total_samples, sps);
+    m_ctx->m_ui->updateCell(m_ctx->m_ui_page, m_ui_row, 5, UI::Align::LEFT,
+                            "%ld / %ld", batch + 1, batches);
     if(m_mp_enabled)
-        m_ctx->m_ui->updateCell(m_ui_row, 9, UI::Align::LEFT, "%.1e",
-                                m_mp_scaling);
+        m_ctx->m_ui->updateCell(m_ctx->m_ui_page, m_ui_row, 9, UI::Align::LEFT,
+                                "%.1e", m_mp_scaling);
 
     return ExecResult::OK;
 }
@@ -350,7 +351,8 @@ CudaProgram::step(long batch, long batches, long batch_offset)
 void
 CudaProgram::post(long batches, long batch_offset)
 {
-    m_ctx->m_ui->updateCell(m_ui_row, 1, UI::Align::LEFT, "Paused");
+    m_ctx->m_ui->updateCell(m_ctx->m_ui_page, m_ui_row, 1, UI::Align::LEFT,
+                            "Paused");
     run_batched_tensor_callbacks(m_pc.post_ops, batches - 1 + batch_offset,
                                  Phase::POST);
 }
@@ -468,7 +470,8 @@ CudaProgram::finalize()
     m_ctx->m_workspace.alloc();
 
     if(m_mp_enabled) {
-        m_ctx->m_ui->updateCell(m_ui_row, 8, UI::Align::RIGHT, "MPS:");
+        m_ctx->m_ui->updateCell(m_ctx->m_ui_page, m_ui_row, 8, UI::Align::RIGHT,
+                                "MPS:");
     }
 }
 

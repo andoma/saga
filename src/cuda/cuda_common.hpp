@@ -89,6 +89,7 @@ public:
     CudaContext(const std::shared_ptr<UI> &ui, int deviceId, int nccl_rank)
       : m_ui(ui)
       , m_deviceId(deviceId)
+      , m_ui_page((UI::Page)(UI::CTX + deviceId))
       , m_nccl_rank(nccl_rank)
       , m_workspace(4096)
     {
@@ -111,7 +112,9 @@ public:
         m_program_index_generator = 0;
     }
 
-    virtual int getId() override { return m_deviceId; }
+    virtual int getId() const override { return m_deviceId; }
+
+    virtual UI::Page getUiPage() const override { return m_ui_page; }
 
     virtual void bindToHostThread() override { cudaSetDevice(m_deviceId); }
 
@@ -119,9 +122,9 @@ public:
 
     const int m_deviceId;
 
-    const int m_nccl_rank;
+    const UI::Page m_ui_page;
 
-    int m_ui_row;
+    const int m_nccl_rank;
 
     CudaTmpMem m_workspace;
     CudaTmpMem m_tensor_mem;
@@ -195,7 +198,7 @@ public:
                 const ProgramConfig &pc)
       : m_ctx(ctx)
       , m_index(ctx->m_program_index_generator++)
-      , m_ui_row(ctx->m_ui->alloc_row())
+      , m_ui_row(m_index + 1)
       , m_pt(pt)
       , m_pc(pc)
     {
@@ -214,6 +217,7 @@ public:
 
     void dump(FILE *output, bool detailed) const override;
     void debug(bool) override;
+    double getMPS(void) const override { return m_mp_scaling; }
 
     const std::shared_ptr<CudaContext> m_ctx;
     const int m_index;
@@ -243,7 +247,7 @@ public:
     int64_t m_total_samples{0};
     int64_t m_epoch_start{0};
 
-    void finalize();
+    void finalize() override;
 
     std::unordered_map<
         std::shared_ptr<Tensor>,
@@ -308,7 +312,7 @@ public:
 
     bool dumpGraph(const char *path) override;
 
-    int getUiRowId() const override { return m_ui_row; }
+    int getUiRow() const override { return m_ui_row; }
 
     ProgramType getType() const override { return m_pt; }
 
