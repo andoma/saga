@@ -160,6 +160,7 @@ public:
     int64_t m_offset;
     std::shared_ptr<CudaTensorStorage> m_storage;
     cudnnTensorDescriptor_t m_desc;
+    bool m_auto_initialized{false};
 };
 
 }  // namespace saga

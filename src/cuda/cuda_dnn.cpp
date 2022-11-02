@@ -1820,14 +1820,16 @@ struct CudnnBatchNormInference : public CudnnOperation {
 struct CudnnBatchNormTrain : public CudnnOperation {
     const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_, sm_, sv_;
     const float epsilon_;
-    const float expavgf_;
+    float expavgf_{NAN};
 
-    CudnnBatchNormTrain(
-        std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> s,
-        std::shared_ptr<CudaTensor> b, std::shared_ptr<CudaTensor> m,
-        std::shared_ptr<CudaTensor> v, std::shared_ptr<CudaTensor> y,
-        std::shared_ptr<CudaTensor> sm, std::shared_ptr<CudaTensor> sv,
-        float epsilon, float expavgf)
+    CudnnBatchNormTrain(std::shared_ptr<CudaTensor> x,
+                        std::shared_ptr<CudaTensor> s,
+                        std::shared_ptr<CudaTensor> b,
+                        std::shared_ptr<CudaTensor> m,
+                        std::shared_ptr<CudaTensor> v,
+                        std::shared_ptr<CudaTensor> y,
+                        std::shared_ptr<CudaTensor> sm,
+                        std::shared_ptr<CudaTensor> sv, float epsilon)
       : CudnnOperation("bntrain")
       , x_(x)
       , s_(s)
@@ -1838,7 +1840,6 @@ struct CudnnBatchNormTrain : public CudnnOperation {
       , sm_(sm)
       , sv_(sv)
       , epsilon_(epsilon)
-      , expavgf_(expavgf)
     {
     }
 
@@ -1847,12 +1848,19 @@ struct CudnnBatchNormTrain : public CudnnOperation {
         float alpha = 1.0f;
         float beta = 0.0f;
 
-        return cudnnBatchNormalizationForwardTraining(
+        if(!isfinite(expavgf_)) {
+            expavgf_ = m_->m_auto_initialized ? 1.0f : p.m_pc.bn_expavg;
+        }
+
+        auto s = cudnnBatchNormalizationForwardTraining(
             p.m_ctx->m_cudnn, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta,
             x_->desc(), x_->deviceMem(), y_->desc(), y_->deviceMem(),
             s_->desc(), s_->deviceMem(), b_->deviceMem(), expavgf_,
             m_->deviceMem(), v_->deviceMem(), epsilon_, sm_->deviceMem(),
             sv_->deviceMem());
+
+        expavgf_ = p.m_pc.bn_expavg;
+        return s;
     }
 
     std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
@@ -1862,7 +1870,7 @@ struct CudnnBatchNormTrain : public CudnnOperation {
 
     std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
     {
-        return {y_, sm_, sv_};
+        return {y_, m_, v_, sm_, sv_};
     }
 };
 
@@ -1942,11 +1950,9 @@ batchnorm_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     auto sm = std::make_shared<CudaTensor>(*m, m->namePostfix("smean"));
     auto sv = std::make_shared<CudaTensor>(*v, v->namePostfix("svar"));
 
-    // expavgf, 0 = mean and var is stationary, 1 = overwritten
-    const float expavgf = n.attributes_.get("expavgf", 0.1f);
     const float dx_beta = n.attributes_.get("dx.beta", 0.0f);
     auto f = std::make_shared<CudnnBatchNormTrain>(x, s, b, m, v, y, sm, sv,
-                                                   epsilon, expavgf);
+                                                   epsilon);
     pu.fwd(f);
 
     auto dx = p.lower_grad(pu, n.inputs_.get("x"));
@@ -2138,7 +2144,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudaTensor> x_, z_, s_, b_, m_, v_, y_, sm_, sv_;
     const float epsilon_;
-    const float expavgf_;
+    float expavgf_{NAN};
     const cudnnBatchNormOps_t ops_;
     const cudnnBatchNormMode_t mode_;
     cudnnActivationDescriptor_t desc_;
@@ -2151,7 +2157,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         std::shared_ptr<CudaTensor> b, std::shared_ptr<CudaTensor> m,
         std::shared_ptr<CudaTensor> v, std::shared_ptr<CudaTensor> y,
         std::shared_ptr<CudaTensor> sm, std::shared_ptr<CudaTensor> sv,
-        float epsilon, float expavgf, cudnnBatchNormOps_t ops,
+        float epsilon, cudnnBatchNormOps_t ops,
         cudnnActivationMode_t activation_mode, float actalpha)
       : CudnnOperation(std::string(bnopsstr(ops)) + "_fwd.persistent")
       , ctx_(p.m_ctx)
@@ -2165,7 +2171,6 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
       , sm_(sm)
       , sv_(sv)
       , epsilon_(epsilon)
-      , expavgf_(expavgf)
       , ops_(ops)
       , mode_(CUDNN_BATCHNORM_SPATIAL_PERSISTENT)
     {
@@ -2199,6 +2204,10 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         void *reserve = m_reserve ? m_reserve->m_storage->m_data : NULL;
         size_t reserve_size = m_reserve ? (size_t)m_reserve->dims_[0] : 0;
 
+        if(!isfinite(expavgf_)) {
+            expavgf_ = m_->m_auto_initialized ? 1.0f : p.m_pc.bn_expavg;
+        }
+
         auto s = cudnnBatchNormalizationForwardTrainingEx(
             ctx_->m_cudnn, mode_, ops_, &alpha, &beta, x_->desc(),
             x_->deviceMem(), z_ ? z_->desc() : NULL,
@@ -2207,6 +2216,8 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
             m_->deviceMem(), v_->deviceMem(), epsilon_, sm_->deviceMem(),
             sv_->deviceMem(), desc_, ctx_->m_workspace.ptr(),
             ctx_->m_workspace.size(), reserve, reserve_size);
+
+        expavgf_ = p.m_pc.bn_expavg;
 
         if(!p.m_pc.anomaly_detect)
             return s;
@@ -2229,7 +2240,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
 
     std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
     {
-        auto r = std::vector{y_, sm_, sv_, m_, v_};
+        auto r = std::vector{y_, m_, v_, sm_, sv_};
         if(m_reserve)
             r.push_back(m_reserve);
         return r;
@@ -2359,8 +2370,6 @@ batchnorm_persistent_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     auto sm = std::make_shared<CudaTensor>(*m, m->namePostfix("smean"));
     auto sv = std::make_shared<CudaTensor>(*v, v->namePostfix("svar"));
 
-    const float expavgf = n.attributes_.get("expavgf", 0.1f);
-
     auto ops = CUDNN_BATCHNORM_OPS_BN;
     if(n.attributes_.get("relu", false)) {
         ops = CUDNN_BATCHNORM_OPS_BN_ACTIVATION;
@@ -2374,8 +2383,8 @@ batchnorm_persistent_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     float activation_alpha = 0.0f;
 
     auto f = std::make_shared<CudnnBatchNormActTrain>(
-        p, x0, x1, s, b, m, v, y, sm, sv, epsilon, expavgf, ops,
-        activation_mode, activation_alpha);
+        p, x0, x1, s, b, m, v, y, sm, sv, epsilon, ops, activation_mode,
+        activation_alpha);
     pu.fwd(f);
 
     auto dx0 = p.lower_grad(pu, n.inputs_.get("x0"));

@@ -501,6 +501,8 @@ struct ProgramConfig {
     // L2 regularization term
     float l2_lambda{0};
 
+    float bn_expavg{0.01};
+
     TensorLayout tensor_layout{TensorLayout::Auto};
 
     // Scan tensors for NAN values

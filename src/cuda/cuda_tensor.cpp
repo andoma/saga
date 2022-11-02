@@ -597,6 +597,10 @@ CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
 
     cudaStreamSynchronize(m_storage->m_ctx->m_stream);
 
+    if(!ta->data()) {
+        m_auto_initialized = true;
+    }
+
     if(!copy_tensor(m_storage->deviceMem(m_offset), dims_.size(),
                     &dims_.i32()[0], &strides[0], data_type_, t, ta.get(),
                     dst_broadcast_dimension)) {
