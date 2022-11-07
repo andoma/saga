@@ -90,6 +90,13 @@ SRCS-prog += \
 
 SRCS-prog-$(HAVE_PROTOBUF) += test/test_onnx.cpp
 
+ifeq '$(shell $(PKG_CONFIG) sqlite3 ; echo $$?)' '0'
+
+CPPFLAGS += -DHAVE_SQLITE
+LDFLAGS += -lsqlite3
+
+endif
+
 ###########################################
 
 SRCS += $(SRCS-lib) $(SRCS-lib-yes)

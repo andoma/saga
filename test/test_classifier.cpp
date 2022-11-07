@@ -12,6 +12,102 @@
 
 using namespace saga;
 
+#ifdef HAVE_SQLITE
+#include <sqlite3.h>
+static sqlite3 *g_db;
+
+static int64_t g_runid;
+
+void
+db_setup(const char *path, const char *model, int batch_size,
+         const char *datatype)
+{
+    int rc = sqlite3_open(path, &g_db);
+    if(rc != SQLITE_OK) {
+        fprintf(stderr, "Unable to open sqlite database\n");
+        exit(1);
+    }
+
+    sqlite3_exec(g_db,
+                 "CREATE TABLE IF NOT EXISTS run (id INTEGER PRIMARY KEY "
+                 "AUTOINCREMENT, model, batch_size, datatype)",
+                 0, 0, NULL);
+
+    sqlite3_exec(g_db,
+                 "CREATE TABLE IF NOT EXISTS train ("
+                 "run INTEGER, rank, epoch, batch, loss, mps,"
+                 "FOREIGN KEY(run) REFERENCES runs(id))",
+                 0, 0, NULL);
+
+    sqlite3_exec(g_db,
+                 "CREATE TABLE IF NOT EXISTS test ("
+                 "run INTEGER, rank, epoch, accuracy, "
+                 "FOREIGN KEY(run) REFERENCES runs(id))",
+                 0, 0, NULL);
+
+    sqlite3_stmt *stmt;
+
+    sqlite3_prepare_v2(
+        g_db, "INSERT INTO run (model, batch_size, datatype) VALUES (?,?,?)",
+        -1, &stmt, NULL);
+
+    sqlite3_bind_text(stmt, 1, model, -1, NULL);
+    sqlite3_bind_int(stmt, 2, batch_size);
+    sqlite3_bind_text(stmt, 3, datatype, -1, NULL);
+
+    sqlite3_step(stmt);
+    g_runid = sqlite3_last_insert_rowid(g_db);
+    sqlite3_finalize(stmt);
+}
+
+void
+db_train(int rank, int epoch, int batch, double loss, double mps)
+{
+    if(!g_db)
+        return;
+
+    sqlite3_stmt *stmt;
+
+    sqlite3_prepare_v2(g_db,
+                       "INSERT INTO train (run, rank, epoch, batch, loss, mps) "
+                       "VALUES (?,?,?,?,?,?)",
+                       -1, &stmt, NULL);
+
+    sqlite3_bind_int64(stmt, 1, g_runid);
+    sqlite3_bind_int(stmt, 2, rank);
+    sqlite3_bind_int(stmt, 3, epoch);
+    sqlite3_bind_int(stmt, 4, batch);
+    sqlite3_bind_double(stmt, 5, loss);
+    sqlite3_bind_double(stmt, 6, mps);
+
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void
+db_test(int rank, int epoch, double accuracy)
+{
+    if(!g_db)
+        return;
+
+    sqlite3_stmt *stmt;
+
+    sqlite3_prepare_v2(g_db,
+                       "INSERT INTO test (run, rank, epoch, accuracy) "
+                       "VALUES (?,?,?,?)",
+                       -1, &stmt, NULL);
+
+    sqlite3_bind_int64(stmt, 1, g_runid);
+    sqlite3_bind_int(stmt, 2, rank);
+    sqlite3_bind_int(stmt, 3, epoch);
+    sqlite3_bind_double(stmt, 4, accuracy);
+
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+#endif
+
 static int g_run = 1;
 
 typedef std::vector<std::shared_ptr<Tensor>> Stats;
@@ -467,7 +563,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     bool anomaly_detect = false;
     const char *program_dump_path = NULL;
 
-    while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:UNAp:")) != -1) {
+    const char *dbpath = NULL;
+
+    while((opt = getopt(argc, argv, "ns:l:b:hm:r:va:z:cCSG:UNAp:d:")) != -1) {
         switch(opt) {
         case 'A':
             anomaly_detect = true;
@@ -523,8 +621,16 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
         case 'p':
             program_dump_path = optarg;
             break;
+        case 'd':
+            dbpath = optarg;
+            break;
         }
     }
+
+#ifdef HAVE_SQLITE
+    db_setup(dbpath, mode.c_str(), batch_size,
+             dt == Tensor::DataType::HALF ? "fp16" : "fp32");
+#endif
 
     printf("Test classifer: DataType:%s BatchSize:%d\n",
            dt == Tensor::DataType::HALF ? "fp16" : "fp32", batch_size);
@@ -591,6 +697,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
             double loss_sum = 0;
             long loss_sum_cnt = 0;
             int correct = 0;
+            int epoch = 0;
 
             auto &ctx = contexts[thread_index];
 
@@ -616,6 +723,12 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                     ui->updateCell(ctx->getUiPage(), p.getUiRow(), 3,
                                    UI::Align::LEFT, "%f",
                                    loss_sum / loss_sum_cnt);
+
+#ifdef HAVE_SQLITE
+                    db_train(thread_index, epoch, batch,
+                             loss_sum / loss_sum_cnt, p.getMPS());
+#endif
+
                 } else {
                     auto &output = *tas[OUTPUT];
                     const size_t base = batch * batch_size;
@@ -728,6 +841,8 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                                UI::Align::LEFT, "%.2f%%", 100.0f * accuracy);
 
                 epoch++;
+
+                db_test(thread_index, epoch, accuracy);
 
                 if(accuracy >= 0.99f || epoch == 20) {
                     g_run = 0;
