@@ -352,8 +352,10 @@ CudaProgram::run(long batches, StopCheck stop_check, long batch_offset)
 }
 
 void
-CudaProgram::dump(FILE *output, bool detailed) const
+CudaProgram::dump(FILE *output, bool detailed)
 {
+    finalize();
+
     fprintf(output, "\n%zd ops\n", m_ops.size());
     int index = 0;
     for(const auto &op : m_ops) {

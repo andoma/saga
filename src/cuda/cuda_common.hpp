@@ -215,7 +215,7 @@ public:
     ExecResult step(long batch, long batches, long batch_offset);
     void post(long batches, long batch_offset);
 
-    void dump(FILE *output, bool detailed) const override;
+    void dump(FILE *output, bool detailed) override;
     void debug(bool) override;
     double getMPS(void) const override { return m_mp_scaling; }
 

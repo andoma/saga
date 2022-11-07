@@ -526,7 +526,7 @@ public:
     virtual ExecResult run(long batches = 1, StopCheck stop_check = nullptr,
                            long batch_offset = 0) = 0;
 
-    virtual void dump(FILE *output, bool detailed = false) const = 0;
+    virtual void dump(FILE *output, bool detailed = false) = 0;
 
     virtual void debug(bool on) = 0;
 
