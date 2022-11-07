@@ -141,28 +141,6 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
 }
 
 std::shared_ptr<CudaTensor>
-CudaProgram::lower_tensor(const CudaProgramUnit &pu,
-                          std::shared_ptr<Tensor> src,
-                          cudnnTensorFormat_t tensor_format)
-{
-    if(src == nullptr)
-        return nullptr;
-
-    auto it = m_ctx->m_tensors.find(src);
-    if(it != m_ctx->m_tensors.end()) {
-        return it->second;
-    }
-
-    auto t = std::make_shared<CudaTensor>(src->data_type_,
-                                          src->dims_.batch(pu.m_batch_size),
-                                          tensor_format, m_ctx, src->name_);
-
-    m_ctx->m_deferred_copy[t] = src;
-    m_ctx->m_tensors[src] = t;
-    return t;
-}
-
-std::shared_ptr<CudaTensor>
 CudaProgram::lower_grad(const CudaProgramUnit &pu, std::shared_ptr<Tensor> src,
                         size_t minimum_rank)
 {
@@ -171,17 +149,6 @@ CudaProgram::lower_grad(const CudaProgramUnit &pu, std::shared_ptr<Tensor> src,
     src = src->grad();
     assert(src.get());
     return lower_tensor(pu, src, minimum_rank);
-}
-
-std::shared_ptr<CudaTensor>
-CudaProgram::lower_grad(const CudaProgramUnit &pu, std::shared_ptr<Tensor> src,
-                        cudnnTensorFormat_t format)
-{
-    if(src == nullptr)
-        return nullptr;
-    src = src->grad();
-    assert(src.get());
-    return lower_tensor(pu, src, format);
 }
 
 void

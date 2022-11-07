@@ -278,17 +278,9 @@ public:
     std::shared_ptr<CudaTensor> lower_tensor(std::shared_ptr<Tensor> src,
                                              const CudaTensor &blueprint);
 
-    std::shared_ptr<CudaTensor> lower_tensor(const CudaProgramUnit &pu,
-                                             std::shared_ptr<Tensor> src,
-                                             cudnnTensorFormat_t format);
-
     std::shared_ptr<CudaTensor> lower_grad(const CudaProgramUnit &pu,
                                            std::shared_ptr<Tensor> src,
                                            size_t minimum_rank = 0);
-
-    std::shared_ptr<CudaTensor> lower_grad(const CudaProgramUnit &pu,
-                                           std::shared_ptr<Tensor> src,
-                                           cudnnTensorFormat_t format);
 
     float upd(const std::shared_ptr<CudaTensor> &weights,
               const std::shared_ptr<CudaTensor> &gradient);
