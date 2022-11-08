@@ -433,8 +433,8 @@ CudaProgram::finalize()
                 float *betap = op->getBeta(t.second);
                 if(betap == NULL) {
                     fprintf(stderr,
-                            "Operation %s does not support beta for %s\n",
-                            op->name().c_str(), t.first);
+                            "Operation ''%s'' does not support beta for %s\n",
+                            op->str().c_str(), t.first);
                     abort();
                 }
                 if(*betap == 0) {
