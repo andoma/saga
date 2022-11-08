@@ -630,6 +630,11 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 #ifdef HAVE_SQLITE
     db_setup(dbpath, mode.c_str(), batch_size,
              dt == Tensor::DataType::HALF ? "fp16" : "fp32");
+#else
+    if(dbpath) {
+        fprintf(stderr, "Not built with sqlite support\n");
+        exit(1);
+    }
 #endif
 
     printf("Test classifer: DataType:%s BatchSize:%d\n",
@@ -842,8 +847,9 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 
                 epoch++;
 
+#ifdef HAVE_SQLITE
                 db_test(thread_index, epoch, accuracy);
-
+#endif
                 if(accuracy >= 0.99f || epoch == 20) {
                     g_run = 0;
                     ui->refresh();
