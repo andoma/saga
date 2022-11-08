@@ -1726,6 +1726,8 @@ struct CudnnBatchNormTrain : public CudnnOperation {
     const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_, sm_, sv_;
     const float epsilon_;
     float expavgf_{NAN};
+    float m_m_beta{1.0f};
+    float m_v_beta{1.0f};
 
     CudnnBatchNormTrain(std::shared_ptr<CudaTensor> x,
                         std::shared_ptr<CudaTensor> s,
@@ -1757,6 +1759,9 @@ struct CudnnBatchNormTrain : public CudnnOperation {
             expavgf_ = m_->m_auto_initialized ? 1.0f : p.m_pc.bn_expavg;
         }
 
+        assert(m_m_beta == 1.0f);
+        assert(m_v_beta == 1.0f);
+
         auto s = cudnnBatchNormalizationForwardTraining(
             p.m_ctx->m_cudnn, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta,
             x_->desc(), x_->deviceMem(), y_->desc(), y_->deviceMem(),
@@ -1770,12 +1775,21 @@ struct CudnnBatchNormTrain : public CudnnOperation {
 
     CudaOpArgs listInputs() const override
     {
-        return {{"x", x_}, {"s", s_}, {"b", b_}, {"m", m_}, {"v", v_}};
+        return {{"x", x_}, {"s", s_}, {"b", b_}};
     }
 
     CudaOpArgs listOutputs() const override
     {
         return {{"y", y_}, {"m", m_}, {"v", v_}, {"sm", sm_}, {"sv", sv_}};
+    }
+
+    float *getBeta(const std::shared_ptr<CudaTensor> &t) override
+    {
+        if(t == m_)
+            return &m_m_beta;
+        if(t == v_)
+            return &m_v_beta;
+        return nullptr;
     }
 };
 
@@ -2042,6 +2056,8 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
     const std::shared_ptr<CudaTensor> x_, z_, s_, b_, m_, v_, y_, sm_, sv_;
     const float epsilon_;
     float expavgf_{NAN};
+    float m_m_beta{1.0f};
+    float m_v_beta{1.0f};
     const cudnnBatchNormOps_t ops_;
     const cudnnBatchNormMode_t mode_;
     cudnnActivationDescriptor_t desc_;
@@ -2105,6 +2121,9 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
             expavgf_ = m_->m_auto_initialized ? 1.0f : p.m_pc.bn_expavg;
         }
 
+        assert(m_m_beta == 1.0f);
+        assert(m_v_beta == 1.0f);
+
         auto s = cudnnBatchNormalizationForwardTrainingEx(
             ctx_->m_cudnn, mode_, ops_, &alpha, &beta, x_->desc(),
             x_->deviceMem(), z_ ? z_->desc() : NULL,
@@ -2133,8 +2152,6 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         r.push_back({"x", x_});
         r.push_back({"s", s_});
         r.push_back({"b", b_});
-        r.push_back({"m", m_});
-        r.push_back({"v", v_});
 
         if(z_)
             r.push_back({"z", z_});
@@ -2153,6 +2170,15 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         if(m_reserve)
             r.push_back({"res", m_reserve});
         return r;
+    }
+
+    float *getBeta(const std::shared_ptr<CudaTensor> &t) override
+    {
+        if(t == m_)
+            return &m_m_beta;
+        if(t == v_)
+            return &m_v_beta;
+        return nullptr;
     }
 };
 
