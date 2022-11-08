@@ -158,21 +158,37 @@ CudaContext::resolveTensor(std::shared_ptr<Tensor> src)
     return nullptr;
 }
 
+CudaOpArgs
+CudaOperation::getInputs()
+{
+    auto list = listInputs();
+
+    for(auto &t : listOutputs()) {
+        float *betap = getBeta(t.second);
+        if(betap && *betap) {
+            list.push_back(t);
+        }
+    }
+    return list;
+}
+
 std::string
-CudaOperation::str() const
+CudaOperation::str()
 {
     std::stringstream ss;
     const char *sep = "";
 
     for(auto const &t : getOutputs()) {
-        ss << sep << t->shortname();
+        float *betap = getBeta(t.second);
+        const char *mode = betap && *betap ? "+" : "";
+        ss << sep << mode << t.first << ":" << t.second->shortname();
         sep = ", ";
     }
 
     ss << " = " << name() << "(";
     sep = "";
     for(auto const &t : getInputs()) {
-        ss << sep << t->shortname();
+        ss << sep << t.first << ":" << t.second->shortname();
         sep = ", ";
     }
     auto inf = info();
@@ -184,7 +200,7 @@ CudaOperation::str() const
 }
 
 void
-CudaOperation::dump(FILE *output, bool full) const
+CudaOperation::dump(FILE *output, bool full)
 {
     auto inputs = getInputs();
     auto outputs = getOutputs();
@@ -196,12 +212,12 @@ CudaOperation::dump(FILE *output, bool full) const
                 fprintf(output, "\tE: %s\n", t->name().c_str());
         }
         for(auto const &t : inputs) {
-            if(t)
-                fprintf(output, "\tI: %s\n", t->info().c_str());
+            fprintf(output, "\tI: %3s: %s\n", t.first,
+                    t.second->info().c_str());
         }
         for(auto const &t : outputs) {
-            if(t)
-                fprintf(output, "\tO: %s\n", t->info().c_str());
+            fprintf(output, "\tO: %3s: %s\n", t.first,
+                    t.second->info().c_str());
         }
         for(auto const &t : m_post_invalidate) {
             if(t)
@@ -320,58 +336,6 @@ print_nodes(CudaProgram &p, const std::vector<std::shared_ptr<Node>> &nodes)
     }
 }
 
-/**
- * If the network forward path splits into multiple nodes such as...
- *
- *                        +---+
- *                /=====> | B |
- *  +---+        /        +---+
- *  | A | ===== <
- *  +---+        \        +---+
- *                \=====> | C |
- *                        +---+
- *
- * ... results of backpropagation from B, C must be added together before
- * fed back into A.
- *
- * This code does so by adjusting the dx.beta to 1 for all nodes but
- * the first one (to be executed during backprop).
- *
- * dx.beta = 1 means that before writing a value the node will read
- * the current value and sum them together.
- */
-static Nodes
-compute_dx_beta(CudaProgram &p, CudaProgramUnit &pu, const Nodes &nodes)
-{
-    Nodes r;
-    std::unordered_set<std::shared_ptr<Tensor>> xset;
-
-    for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
-        std::shared_ptr<Node> n = nodes[i];
-
-        for(const auto &it : n->inputs_) {
-            const auto &name = it.first;
-            if(name[0] != 'x')
-                continue;
-
-            auto &x = it.second;
-
-            if(xset.find(x) == xset.end()) {
-                // First contributing node. dx.beta = 0 (default)
-                xset.insert(x);
-            } else {
-                // Other contributing nodes: Add to current value
-                auto n2 = std::make_shared<Node>(*n);
-                n2->attributes_["d" + name + ".beta"] = 1.0f;
-                n = n2;
-            }
-        }
-        r.insert(r.begin(), n);
-    }
-    return r;
-}
-REGISTER_CUDA_TRANSFORM(1000, ProgramType::TRAINING, compute_dx_beta);
-
 std::shared_ptr<Program>
 CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
                                 ProgramType pt, const ProgramConfig &pc)
@@ -428,7 +392,7 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
             // nonfinite numbers
             for(const auto &op : pu.m_bwd_operations) {
                 for(auto &t : op->getOutputs()) {
-                    t->m_storage->m_nonfinite_is_valid = true;
+                    t.second->m_storage->m_nonfinite_is_valid = true;
                 }
             }
         }

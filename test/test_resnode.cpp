@@ -183,7 +183,7 @@ expect(std::shared_ptr<Tensor> result, std::shared_ptr<Tensor> expect,
 
 static int
 runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
-        bool check_dx)
+        bool check_dx, bool disable_op_fusing, int verbose)
 {
     ctx->reset();
 
@@ -195,9 +195,10 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
     const TensorData *expected_dx =
         bypass ? &expected_dx_with_bypass : &expected_dx_no_bypass;
 
-    printf("\nTesting resnet node: dt:%s bypass:%s read-out-dx:%s\n",
-           Tensor::DataTypeStr(dt), bypass ? "yes" : "no",
-           check_dx ? "yes" : "no");
+    printf(
+        "\nTesting resnet node: dt:%s bypass:%s read-out-dx:%s op-fusing:%s\n",
+        Tensor::DataTypeStr(dt), bypass ? "yes" : "no", check_dx ? "yes" : "no",
+        disable_op_fusing ? "no" : "yes");
 
     Graph g;
     auto x = create_tensor(dt, conv_input_x);
@@ -220,18 +221,21 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
     }
     n = g.addNode("relu", n->y());
 
+    if(verbose)
+        g.print();
+
     auto p = ctx->createProgram({.graph = g, .batch_size = batch_size},
                                 ProgramType::TRAINING,
-                                {.tensor_layout = TensorLayout::Auto});
+                                {.tensor_layout = TensorLayout::Auto,
+                                 .disable_op_fusing = disable_op_fusing});
 
     auto y = ctx->resolveTensor(n->y());
     auto dx = check_dx ? ctx->resolveTensor(x->grad()) : nullptr;
 
     fill_tensor(ctx->resolveTensor(n->y()->grad()), grad);
 
-    p->finalize();
-
-    p->dump(stdout, true);
+    if(verbose)
+        p->dump(stdout, verbose > 1);
 
     if(p->run(1) != ExecResult::OK) {
         printf("Execution failed\n");
@@ -251,24 +255,26 @@ runtest(std::shared_ptr<Context> ctx, Tensor::DataType dt, bool bypass,
 static int
 resnode_main(int argc, char **argv)
 {
+    int verbose = 0;
+    int opt;
+    while((opt = getopt(argc, argv, "v")) != -1) {
+        switch(opt) {
+        case 'v':
+            verbose++;
+            break;
+        }
+    }
+
     auto ctx = createContext();
 
-    if(runtest(ctx, Tensor::DataType::FLOAT, true, true))
-        return 1;
-    if(runtest(ctx, Tensor::DataType::FLOAT, true, false))
-        return 1;
-    if(runtest(ctx, Tensor::DataType::FLOAT, false, true))
-        return 1;
-    if(runtest(ctx, Tensor::DataType::FLOAT, false, false))
-        return 1;
-    if(runtest(ctx, Tensor::DataType::HALF, true, true))
-        return 1;
-    if(runtest(ctx, Tensor::DataType::HALF, true, false))
-        return 1;
-    if(runtest(ctx, Tensor::DataType::HALF, false, true))
-        return 1;
-    if(runtest(ctx, Tensor::DataType::HALF, false, false))
-        return 1;
+    for(int i = 0; i < 8; i++) {
+        if(runtest(ctx, Tensor::DataType::FLOAT, !!(i & 1), !!(i & 2),
+                   !!(i & 4), verbose))
+            return 1;
+        if(runtest(ctx, Tensor::DataType::HALF, !!(i & 1), !!(i & 2), !!(i & 4),
+                   verbose))
+            return 1;
+    }
 
     return 0;
 }

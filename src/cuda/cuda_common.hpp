@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <map>
+#include <set>
 
 #include <cudnn.h>
 #include <cublas_v2.h>
@@ -282,8 +283,8 @@ public:
                                            std::shared_ptr<Tensor> src,
                                            size_t minimum_rank = 0);
 
-    float upd(const std::shared_ptr<CudaTensor> &weights,
-              const std::shared_ptr<CudaTensor> &gradient);
+    void upd(const std::shared_ptr<CudaTensor> &weights,
+             const std::shared_ptr<CudaTensor> &gradient);
 
     std::map<std::shared_ptr<CudaTensor>, std::shared_ptr<CudaTensor>>
         m_updates;
@@ -292,9 +293,11 @@ public:
 
     void setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml);
 
-    void detect_anomaly(const CudaOperation &op,
-                        const std::vector<std::shared_ptr<CudaTensor>> &tensors,
-                        const char *what);
+    void detect_anomaly(
+        CudaOperation &op,
+        const std::vector<std::pair<const char *, std::shared_ptr<CudaTensor>>>
+            &tensors,
+        const char *what);
 
     bool runOps(const CudaOps &ops, long batch, bool anomaly_detect = false);
 
@@ -313,6 +316,9 @@ public:
     CudaOp create_optimizer(Tensor::DataType dt);
 };
 
+using CudaOpArgs =
+    std::vector<std::pair<const char *, std::shared_ptr<CudaTensor>>>;
+
 class CudaOperation {
 public:
     CudaOperation &operator=(CudaOperation const &) = delete;
@@ -321,22 +327,33 @@ public:
     virtual ~CudaOperation() {}
     virtual const char *exec(CudaProgram &p, long batch) = 0;
 
-    virtual std::vector<std::shared_ptr<CudaTensor>> getInputs() const = 0;
-    virtual std::vector<std::shared_ptr<CudaTensor>> getOutputs() const = 0;
+    virtual CudaOpArgs listInputs() const = 0;
+
+    virtual CudaOpArgs listOutputs() const = 0;
+
+    CudaOpArgs getInputs();
+
+    CudaOpArgs getOutputs() const { return listOutputs(); }
+
     virtual bool killOutput(std::shared_ptr<CudaTensorStorage> t)
     {
         return false;
     }
 
+    virtual float *getBeta(const std::shared_ptr<CudaTensor> &t)
+    {
+        return nullptr;
+    }
+
     virtual std::shared_ptr<CudaOperation> getSyncOp() { return nullptr; };
 
-    void dump(FILE *output, bool full = false) const;
+    void dump(FILE *output, bool full = false);
 
     std::string name() const { return m_kind; }
 
     virtual std::string info() const { return ""; };
 
-    std::string str() const;
+    std::string str();
 
     std::vector<std::shared_ptr<CudaTensorStorage>> m_pre_invalidate;
     std::vector<std::shared_ptr<CudaTensorStorage>> m_post_invalidate;

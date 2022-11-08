@@ -509,6 +509,9 @@ struct ProgramConfig {
     // Caution: Makes everything slower.
     // Only use for debug
     bool anomaly_detect{false};
+
+    // Useful for debug
+    bool disable_op_fusing{false};
 };
 
 enum class ExecResult {

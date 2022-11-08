@@ -155,5 +155,5 @@ mnist_main(int argc, char **argv)
     return 0;
 }
 
-SAGA_CLI_CMD("mnist", "minst <PATH> [OPTIONS ...]",
+SAGA_CLI_CMD("mnist", "mnist <PATH> [OPTIONS ...]",
              "Infer/Train on mnist dataset", mnist_main);

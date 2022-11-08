@@ -74,7 +74,7 @@ conv_main(int argc, char **argv)
 {
     int verbose = 0;
     int opt;
-    auto dt = Tensor::DataType::HALF;
+    auto dt = Tensor::DataType::FLOAT;
     int batch_size = 1;
 
     while((opt = getopt(argc, argv, "hv")) != -1) {
@@ -106,17 +106,18 @@ conv_main(int argc, char **argv)
                         {"activations", 5}},
                        "node");
 
+    std::shared_ptr<saga::Tensor> mid;
+
     n = g.addNode("relu", n->y());
 
     n = g.addNode("fc", n->y(),
                   {{"outputs", 20}, {"bias", true}, {"transW", true}}, "fc1");
 
-    auto mid = n->y();
+    mid = n->y();
 
     n = g.addNode("relu", n->y());
 
-    n = g.addNode("reshape", n->y(),
-                  {{"cpacked", true}, {"shape", saga::Dims({2, 5, 2, 2})}});
+    n = g.addNode("reshape", n->y(), {{"shape", saga::Dims({2, 5, 2, 2})}});
 
     n = g.addNode("conv", n->y(),
                   {{"transpose", true},
@@ -128,7 +129,9 @@ conv_main(int argc, char **argv)
                   "node");
     auto last = n->y();
 
-    n = g.addNode("mse", n->y());
+    auto target = saga::makeTensor(dt, last->dims_);
+
+    n = g.addNode("loss", {{"x", n->y()}, {"target", target}});
 
     auto out = n->y();
 
@@ -142,27 +145,30 @@ conv_main(int argc, char **argv)
         },
         ProgramType::TRAINING, {});
 
-    auto loss = ctx->resolveTensor(n->outputs_["loss"]);
-    auto grad = ctx->resolveTensor(out->grad());
+    auto mmss = ctx->resolveTensor(n->outputs_["mmss"]);
+    target = ctx->resolveTensor(target);
     mid = ctx->resolveTensor(mid);
     out = ctx->resolveTensor(out);
-    last = ctx->resolveTensor(last->grad());
+    auto bp = ctx->resolveTensor(last->grad());
 
     if(verbose)
         p->dump(stdout, verbose > 1);
 
+    int i = 0;
     while(1) {
         {
-            auto grad_ta = grad->access();
-            load_tensor(*grad_ta, conv_input_x);
+            auto target_ta = target->access();
+            load_tensor(*target_ta, conv_input_x);
         }
         if(p->run() != ExecResult::OK)
             break;
 
-        mid->print("mid");
-        last->print("last");
-        out->print("out");
-        usleep(10000);
+        if((i % 1000) == 0) {
+            bp->print("last");
+            out->print("out");
+            mmss->print("MMSS");
+        }
+        i++;
     }
 
     return 0;

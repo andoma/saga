@@ -379,7 +379,7 @@ loss_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 {
     auto x = n->inputs_.get("x");
     n->outputs_["mmss"] =
-        makeTensor(Tensor::DataType::FLOAT, Dims({x->dims_[0], 4}), "");
+        makeTensor(Tensor::DataType::FLOAT, Dims({x->dims_[0], 4}));
     return {n};
 }
 

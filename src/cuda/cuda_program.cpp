@@ -55,18 +55,11 @@ CudaProgramUnit::tail(const std::shared_ptr<CudaOperation> &op)
     m_tail_operations.push_back(op);
 }
 
-float
+void
 CudaProgram::upd(const std::shared_ptr<CudaTensor> &weights,
                  const std::shared_ptr<CudaTensor> &gradient)
 {
-    auto &p = m_updates[weights];
-    if(p) {
-        assert(p.get() == gradient.get());
-        return 1.0f;
-    } else {
-        p = gradient;
-        return 0;
-    }
+    m_updates[weights] = gradient;
 }
 
 cudnnTensorFormat_t
@@ -168,25 +161,27 @@ CudaProgram::setupTensorStorage(std::shared_ptr<CudaMemoryLayout> cml)
 
 void
 CudaProgram::detect_anomaly(
-    const CudaOperation &op,
-    const std::vector<std::shared_ptr<CudaTensor>> &tensors, const char *what)
+    CudaOperation &op,
+    const std::vector<std::pair<const char *, std::shared_ptr<CudaTensor>>>
+        &tensors,
+    const char *what)
 {
     for(const auto &t : tensors) {
-        t->detect_anomaly(&m_aux->anomaly);
+        t.second->detect_anomaly(&m_aux->anomaly);
         chkCuda(cudaStreamSynchronize(m_ctx->m_stream));
         if(m_aux->anomaly) {
             fprintf(stderr, "\n\n *** Anomaly in tensor %s (%s)\n",
-                    t->storage_name().c_str(), what);
+                    t.second->storage_name().c_str(), what);
 
             op.dump(stderr, 1);
 
             for(const auto &t : op.getInputs()) {
-                t->print_anomaly("I");
-                t->printStats("I");
+                t.second->print_anomaly(t.first);
+                t.second->printStats(t.first);
             }
             for(const auto &t : op.getOutputs()) {
-                t->print_anomaly("O");
-                t->printStats("O");
+                t.second->print_anomaly(t.first);
+                t.second->printStats(t.first);
             }
 
             printf("Pre invalidate: ");
@@ -422,6 +417,33 @@ CudaProgram::finalize()
         pu.m_bwd_operations.clear();
     }
 
+    // If multiple operators write to the same tensor, we should add
+    // the result together. Find multiple writes and adjust beta-parameter
+    // for all tensors except first so it will sum.
+
+    std::set<std::shared_ptr<CudaTensor>> wrset;
+
+    for(auto &op : m_ops) {
+        auto tensors = op->listOutputs();
+        for(auto &t : tensors) {
+            auto it = wrset.find(t.second);
+            if(it == wrset.end()) {
+                wrset.insert(t.second);
+            } else {
+                float *betap = op->getBeta(t.second);
+                if(betap == NULL) {
+                    fprintf(stderr,
+                            "Operation %s does not support beta for %s\n",
+                            op->name().c_str(), t.first);
+                    abort();
+                }
+                if(*betap == 0) {
+                    *betap = 1.0f;
+                }
+            }
+        }
+    }
+
     m_ops.insert(m_ops.end(), m_opt.begin(), m_opt.end());
     m_opt.clear();
 
@@ -464,10 +486,10 @@ CudaProgram::dumpGraphFromOps(const char *path, const CudaOps &ops)
         i++;
 
         for(auto const &t : op->getInputs()) {
-            storage.insert(t->m_storage);
+            storage.insert(t.second->m_storage);
         }
         for(auto const &t : op->getOutputs()) {
-            storage.insert(t->m_storage);
+            storage.insert(t.second->m_storage);
         }
     }
 
@@ -481,11 +503,11 @@ CudaProgram::dumpGraphFromOps(const char *path, const CudaOps &ops)
     i = 0;
     for(auto &op : ops) {
         for(auto const &t : op->getInputs()) {
-            const auto name = t->storage_name();
+            const auto name = t.second->storage_name();
             fprintf(fp, "%s->O%d;\n", name.c_str(), i);
         }
         for(auto const &t : op->getOutputs()) {
-            const auto name = t->storage_name();
+            const auto name = t.second->storage_name();
             fprintf(fp, "O%d->%s;\n", i, name.c_str());
         }
         i++;

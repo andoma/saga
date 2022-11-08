@@ -35,15 +35,15 @@
 namespace saga {
 
 struct Optimizer : public CudaOperation {
-    std::vector<std::shared_ptr<CudaTensor>> m_inputs;
-    std::vector<std::shared_ptr<CudaTensor>> m_outputs;
+    CudaOpArgs m_inputs;
+    CudaOpArgs m_outputs;
     const std::shared_ptr<CudaTensorStorageMemory> m_mem;
     int m_iter{0};
     const std::shared_ptr<CudaContext> m_ctx;
     const size_t m_elements;
 
-    Optimizer(CudaProgram &p, std::vector<std::shared_ptr<CudaTensor>> inputs,
-              std::vector<std::shared_ptr<CudaTensor>> outputs,
+    Optimizer(CudaProgram &p, const CudaOpArgs &inputs,
+              const CudaOpArgs &outputs,
               const std::shared_ptr<CudaTensorStorageMemory> &mem,
               const size_t elements, const char *name)
       : CudaOperation(name)
@@ -56,20 +56,13 @@ struct Optimizer : public CudaOperation {
     {
     }
 
-    std::vector<std::shared_ptr<CudaTensor>> getInputs() const override
-    {
-        return m_inputs;
-    }
+    CudaOpArgs listInputs() const override { return m_inputs; }
 
-    std::vector<std::shared_ptr<CudaTensor>> getOutputs() const override
-    {
-        return m_outputs;
-    }
+    CudaOpArgs listOutputs() const override { return m_outputs; }
 };
 
 struct AdamF32 : public Optimizer {
-    AdamF32(CudaProgram &p, std::vector<std::shared_ptr<CudaTensor>> inputs,
-            std::vector<std::shared_ptr<CudaTensor>> outputs,
+    AdamF32(CudaProgram &p, const CudaOpArgs &inputs, const CudaOpArgs &outputs,
             const std::shared_ptr<CudaTensorStorageMemory> &mem,
             const size_t elements)
       : Optimizer(p, inputs, outputs, mem, elements, "adam-f32")
@@ -127,8 +120,8 @@ struct AdamF32 : public Optimizer {
 };
 
 struct AdamMixed : public Optimizer {
-    AdamMixed(CudaProgram &p, std::vector<std::shared_ptr<CudaTensor>> inputs,
-              std::vector<std::shared_ptr<CudaTensor>> outputs,
+    AdamMixed(CudaProgram &p, const CudaOpArgs &inputs,
+              const CudaOpArgs &outputs,
               const std::shared_ptr<CudaTensorStorageMemory> &mem,
               const size_t elements)
       : Optimizer(p, inputs, outputs, mem, elements, "adam-mixed")
@@ -240,8 +233,7 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
 
     total_elements = 0;
 
-    std::vector<std::shared_ptr<CudaTensor>> inputs;
-    std::vector<std::shared_ptr<CudaTensor>> outputs;
+    CudaOpArgs inputs, outputs;
 
     for(auto it : m_updates) {
         auto &w = it.first;
@@ -259,9 +251,9 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
         w->m_storage->m_data = wbase + total_elements * esize;
         g->m_storage->m_data = gbase + total_elements * esize;
 
-        inputs.push_back(g);
-        inputs.push_back(w);
-        outputs.push_back(w);
+        inputs.push_back({"g", g});
+        inputs.push_back({"w", w});
+        outputs.push_back({"w", w});
 
         auto src = m_ctx->m_deferred_copy[w];
         w->copyFromLocked(*src, 0);

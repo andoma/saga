@@ -213,7 +213,7 @@ struct LiveAnalysis {
 
         for(const auto &op : ops) {
             for(const auto &t : op->getInputs()) {
-                auto ids = t->storage_id();
+                auto ids = t.second->storage_id();
                 for(const auto &id : ids) {
                     lowest_id = std::min(lowest_id, id);
                     highest_id = std::max(highest_id, id);
@@ -221,7 +221,7 @@ struct LiveAnalysis {
             }
 
             for(const auto &t : op->getOutputs()) {
-                auto ids = t->storage_id();
+                auto ids = t.second->storage_id();
                 for(const auto &id : ids) {
                     lowest_id = std::min(lowest_id, id);
                     highest_id = std::max(highest_id, id);
@@ -258,20 +258,20 @@ struct LiveAnalysis {
             auto ln = std::make_unique<Liveness>(m_ln_words);
 
             for(const auto &t : op->getInputs()) {
-                for(const auto &id0 : t->storage_id()) {
+                for(const auto &id0 : t.second->storage_id()) {
                     const int id = id0 - m_ln_id_base;
                     bitset(ln->m_gen, id);
-                    m_memory_usage[id] = t->memoryUsage();
-                    m_storage[id] = t->m_storage;
+                    m_memory_usage[id] = t.second->memoryUsage();
+                    m_storage[id] = t.second->m_storage;
                 }
             }
 
             for(const auto &t : op->getOutputs()) {
-                for(const auto &id0 : t->storage_id()) {
+                for(const auto &id0 : t.second->storage_id()) {
                     const int id = id0 - m_ln_id_base;
                     bitset(ln->m_def, id);
-                    m_memory_usage[id] = t->memoryUsage();
-                    m_storage[id] = t->m_storage;
+                    m_memory_usage[id] = t.second->memoryUsage();
+                    m_storage[id] = t.second->m_storage;
                 }
             }
             m_lns.push_back(std::move(ln));
