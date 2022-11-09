@@ -260,7 +260,7 @@ find_operation(const Node &n)
 {
     if(!cuda_op_factories)
         return &no_op;
-    auto it = cuda_op_factories->find(n.type_);
+    auto it = cuda_op_factories->find(n.m_type);
     if(it == cuda_op_factories->end())
         return &no_op;
     return &it->second;
@@ -302,21 +302,21 @@ print_nodes(CudaProgram &p, const std::vector<std::shared_ptr<Node>> &nodes)
     for(size_t i = 0; i < nodes.size(); i++) {
         auto &n = nodes[i];
 
-        printf("%s:\n", n->type_.c_str());
+        printf("%s:\n", n->m_type.c_str());
 
-        for(const auto &t : n->inputs_) {
+        for(const auto &t : n->m_inputs) {
             auto l = p.resolveTensor_locked(t.second);
             printf("\t Input: %s: %s\n", t.first.c_str(),
                    l ? l->info().c_str() : t.second->info().c_str());
         }
 
-        for(const auto &t : n->outputs_) {
+        for(const auto &t : n->m_outputs) {
             auto l = p.resolveTensor_locked(t.second);
             printf("\tOutput: %s: %s\n", t.first.c_str(),
                    l ? l->info().c_str() : t.second->info().c_str());
         }
 
-        for(const auto &a : n->attributes_) {
+        for(const auto &a : n->m_attributes) {
             std::string value;
 
             if(auto v = std::get_if<int>(&a.second)) {
@@ -363,7 +363,7 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
         auto &pu = p->m_units[p->m_units.size() - 1];
         pu.m_batch_size = s.batch_size;
         mp_scaling += s.batch_size;
-        pu.m_transformed = applyTransforms(*p, pu, s.graph.nodes_);
+        pu.m_transformed = applyTransforms(*p, pu, s.graph.m_nodes);
         total_nodes += pu.m_transformed.size();
     }
 
@@ -380,7 +380,7 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
                 fprintf(stderr,
                         "Unable to create operation for %s "
                         "(#%zd)-- %s\n",
-                        n->type_.c_str(), cnt, err);
+                        n->m_type.c_str(), cnt, err);
                 n->print();
                 exit(1);
             }

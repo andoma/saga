@@ -377,16 +377,16 @@ TensorStorage::TensorStorage(Tensor::DataType data_type)
 
 Tensor::Tensor(DataType data_type, const Dims &dims,
                const std::optional<const std::string> &name)
-  : name_(name), data_type_(data_type), dims_(dims){};
+  : m_name(name), m_data_type(data_type), m_dims(dims){};
 
 std::string
 Tensor::info() const
 {
     std::stringstream ss;
-    if(name_) {
-        ss << "\"" << *name_ << "\"";
+    if(m_name) {
+        ss << "\"" << *m_name << "\"";
     }
-    ss << "<" << datatype_str(data_type_) << ">" << dims_.to_string();
+    ss << "<" << datatype_str(m_data_type) << ">" << m_dims.to_string();
     return ss.str();
 }
 
@@ -411,7 +411,7 @@ Tensor::value() const
 static void
 print1dTensor(const char *prefix, Tensor &t, TensorAccess &ta)
 {
-    for(int i = 0; i < t.dims_[0]; i++) {
+    for(int i = 0; i < t.m_dims[0]; i++) {
         printf("%s: [%5d]: %f\n", prefix, (int)i, ta.get({i}));
     }
 }
@@ -423,9 +423,9 @@ Tensor::stats()
     if(ta == nullptr) {
         return Stats({});
     }
-    Dims c(dims_.size(), 0);
+    Dims c(m_dims.size(), 0);
 
-    const size_t elements = dims_.elements();
+    const size_t elements = m_dims.elements();
     double max = -INFINITY;
     double min = INFINITY;
     double sum = 0;
@@ -441,7 +441,7 @@ Tensor::stats()
 
         for(ssize_t j = c.size() - 1; j >= 0; j--) {
             ++c[j];
-            if(c[j] == dims_[j]) {
+            if(c[j] == m_dims[j]) {
                 c[j] = 0;
             } else {
                 break;
@@ -484,13 +484,13 @@ Tensor::print(const char *prefix, int elements_per_rank)
         return;
     }
 
-    if(dims_.size() == 1) {
+    if(m_dims.size() == 1) {
         // We format 1d tensor vertically instead of a long horizontal line
         print1dTensor(prefix, *this, *ta);
         return;
     }
 
-    const size_t rank = dims_.size();
+    const size_t rank = m_dims.size();
     Dims c(rank, 0);
 
     const char *lf = "";
@@ -508,7 +508,7 @@ Tensor::print(const char *prefix, int elements_per_rank)
 
         for(ssize_t j = rank - 1; j >= 0; j--) {
             ++c[j];
-            if(c[j] == dims_[j] || c[j] == elements_per_rank) {
+            if(c[j] == m_dims[j] || c[j] == elements_per_rank) {
                 if(j == 0) {
                     printf("%s", lf);
                     return;
@@ -532,13 +532,13 @@ Tensor::print_anomaly(const char *prefix)
         return;
     }
 
-    if(dims_.size() == 1) {
+    if(m_dims.size() == 1) {
         // We format 1d tensor vertically instead of a long horizontal line
         print1dTensor(prefix, *this, *ta);
         return;
     }
 
-    const size_t rank = dims_.size();
+    const size_t rank = m_dims.size();
     Dims c(rank, 0);
 
     const char *lf = "";
@@ -560,7 +560,7 @@ Tensor::print_anomaly(const char *prefix)
 
         for(ssize_t j = rank - 1; j >= 0; j--) {
             ++c[j];
-            if(c[j] == dims_[j]) {
+            if(c[j] == m_dims[j]) {
                 if(j == 0) {
                     printf("%s", lf);
                     return;
@@ -576,13 +576,13 @@ Tensor::print_anomaly(const char *prefix)
 std::shared_ptr<Tensor>
 Tensor::toRGB(std::optional<std::pair<float, float>> range)
 {
-    if(dims_.size() != 4)
+    if(m_dims.size() != 4)
         return nullptr;
 
-    const int in = dims_[0];
-    const int ic = dims_[1];
-    const int ih = dims_[2];
-    const int iw = dims_[3];
+    const int in = m_dims[0];
+    const int ic = m_dims[1];
+    const int ih = m_dims[2];
+    const int iw = m_dims[3];
 
     float min, max;
 
@@ -602,7 +602,7 @@ Tensor::toRGB(std::optional<std::pair<float, float>> range)
     if(src == nullptr)
         return nullptr;
 
-    Dims odims = dims_;
+    Dims odims = m_dims;
 
     if(ic > 3) {
         odims.push_back(3);
@@ -669,10 +669,10 @@ Tensor::printRGB(const char *prefix,
         return;
     }
 
-    const int n = rgb->dims_[0];
-    const int c = rgb->dims_[1];
-    const int h = rgb->dims_[2];
-    const int w = rgb->dims_[3];
+    const int n = rgb->m_dims[0];
+    const int c = rgb->m_dims[1];
+    const int h = rgb->m_dims[2];
+    const int w = rgb->m_dims[3];
 
     auto ta = rgb->access();
     const auto strides = ta->strides();
@@ -840,7 +840,7 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
             TensorAccess *ta, int broadcast_dimension)
 {
     int dst_dim = dst_rank;
-    int src_dim = t.dims_.size();
+    int src_dim = t.m_dims.size();
     auto src_strides = ta->strides();
 
     const int rank = std::max(dst_dim, src_dim);
@@ -853,7 +853,7 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
     for(int i = 0; i < rank; i++, dst_dim++, src_dim++) {
         int dst_size = dst_dim >= 0 ? dst_sizes[dst_dim] : 1;
         int dst_stride = dst_strides[std::max(dst_dim, 0)];
-        int src_size = src_dim >= 0 ? (int)t.dims_[src_dim] : 1;
+        int src_size = src_dim >= 0 ? (int)t.m_dims[src_dim] : 1;
         int src_stride = src_strides[std::max(src_dim, 0)];
 
         if(broadcast_dimension == dst_dim) {
@@ -884,7 +884,7 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
 
     const void *src = ta->data();
 
-    if(src != NULL && t.data_type_ == datatype) {
+    if(src != NULL && t.m_data_type == datatype) {
         DimInfo::reduce(dis);
         // We can copy using recursive strided copies
         switch(datatype) {
@@ -913,7 +913,7 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
         return true;
     }
 
-    Dims selem(t.dims_.size(), 0);
+    Dims selem(t.m_dims.size(), 0);
     switch(datatype) {
     case Tensor::DataType::U8:
         copy_tensor_T((uint8_t *)dst, ta, selem, dis.size(), &dis[0]);
@@ -943,8 +943,8 @@ Tensor::copyFrom(Tensor &t)
 {
     auto dst = access();
     auto src_ta = t.access();
-    if(!copy_tensor(dst->data(), dims_.size(), &dims_.i32()[0],
-                    &dst->strides().i32()[0], data_type_, t, src_ta.get())) {
+    if(!copy_tensor(dst->data(), m_dims.size(), &m_dims.i32()[0],
+                    &dst->strides().i32()[0], m_data_type, t, src_ta.get())) {
         fprintf(stderr,
                 "Tensor copy failed\n"
                 "From: %s\n"
@@ -965,11 +965,11 @@ Tensor::sse(Tensor &t)
     if(a == nullptr || b == nullptr)
         return INFINITY;
 
-    Dims c_a(t.dims_.size(), 0);
-    Dims c_b(dims_.size(), 0);
+    Dims c_a(t.m_dims.size(), 0);
+    Dims c_b(m_dims.size(), 0);
 
-    const size_t elements = dims_.elements();
-    assert(elements == t.dims_.elements());
+    const size_t elements = m_dims.elements();
+    assert(elements == t.m_dims.elements());
 
     double r = 0;
     for(size_t i = 0; i < elements; i++) {
@@ -978,7 +978,7 @@ Tensor::sse(Tensor &t)
 
         for(ssize_t j = c_a.size() - 1; j >= 0; j--) {
             ++c_a[j];
-            if(c_a[j] == t.dims_[j]) {
+            if(c_a[j] == t.m_dims[j]) {
                 c_a[j] = 0;
             } else {
                 break;
@@ -987,7 +987,7 @@ Tensor::sse(Tensor &t)
 
         for(ssize_t j = c_b.size() - 1; j >= 0; j--) {
             ++c_b[j];
-            if(c_b[j] == dims_[j]) {
+            if(c_b[j] == m_dims[j]) {
                 c_b[j] = 0;
             } else {
                 break;
@@ -1000,7 +1000,7 @@ Tensor::sse(Tensor &t)
 std::optional<const std::string>
 Tensor::namePostfix(const std::string &postfix) const
 {
-    return name_ ? std::make_optional(*name_ + "." + postfix) : std::nullopt;
+    return m_name ? std::make_optional(*m_name + "." + postfix) : std::nullopt;
 }
 
 //------------------------------------------------------------------------
@@ -1023,7 +1023,7 @@ public:
         if(m_gradient || !create)
             return m_gradient;
 
-        m_gradient = std::make_shared<EmptyTensor>(data_type_, dims_,
+        m_gradient = std::make_shared<EmptyTensor>(m_data_type, m_dims,
                                                    namePostfix("grad"));
         m_gradient->m_value = shared_from_this();
         return m_gradient;
@@ -1085,31 +1085,32 @@ public:
     GenTensor(DataType data_type, const Dims &size,
               const std::optional<std::string> &name, double mean,
               double stddev)
-      : EmptyTensor(data_type, size, name), mean_(mean), stddev_(stddev)
+      : EmptyTensor(data_type, size, name), m_mean(mean), m_stddev(stddev)
     {
     }
 
     std::unique_ptr<TensorAccess> access()
     {
-        return std::make_unique<GenTensorAccess>(dims_.size(), mean_, stddev_);
+        return std::make_unique<GenTensorAccess>(m_dims.size(), m_mean,
+                                                 m_stddev);
     }
 
     std::shared_ptr<Tensor> slice(const Dims &offset, const Dims &size)
     {
-        return std::make_shared<GenTensor>(data_type_, size, name_, mean_,
-                                           stddev_);
+        return std::make_shared<GenTensor>(m_data_type, size, m_name, m_mean,
+                                           m_stddev);
     }
 
     std::string info() const
     {
         std::stringstream ss;
         ss << Tensor::info();
-        ss << "(mean:" << mean_ << ", stddev:" << stddev_ << ")";
+        ss << "(mean:" << m_mean << ", stddev:" << m_stddev << ")";
         return ss.str();
     }
 
-    const double mean_;
-    const double stddev_;
+    const double m_mean;
+    const double m_stddev;
 };
 
 std::shared_ptr<Tensor>
@@ -1122,20 +1123,20 @@ Tensor::find(Tensor::DataType data_type, const Dims &size, double init_mean,
         if(it != named_tensors.end()) {
             auto t = it->second;
 
-            if(t->data_type_ != data_type) {
+            if(t->m_data_type != data_type) {
                 fprintf(stderr,
                         "Pre-initialized tensor %s datatype mismatch: "
                         "Loaded:%s != Requested:%s\n",
-                        (*name).c_str(), Tensor::DataTypeStr(t->data_type_),
+                        (*name).c_str(), Tensor::DataTypeStr(t->m_data_type),
                         Tensor::DataTypeStr(data_type));
                 exit(1);
             }
 
-            if(!t->dims_.similar(size)) {
+            if(!t->m_dims.similar(size)) {
                 fprintf(stderr,
                         "Pre-initialized tensor %s dimensions mismatch: "
                         "Loaded:%s != Requested:%s\n",
-                        (*name).c_str(), t->dims_.to_string().c_str(),
+                        (*name).c_str(), t->m_dims.to_string().c_str(),
                         size.to_string().c_str());
                 exit(1);
             }
@@ -1453,7 +1454,7 @@ Tensor::save(const char *path)
     TensorDiskHeader tdh;
     memcpy(&tdh.magic, "sagaT001", 8);
 
-    switch(data_type_) {
+    switch(m_data_type) {
     case Tensor::DataType::FLOAT:
         tdh.type = TENSOR_DISK_FLOAT;
         break;
@@ -1462,7 +1463,7 @@ Tensor::save(const char *path)
         break;
     default:
         fprintf(stderr, "Unable to load %s -- Unsupported data type:%d\n", path,
-                (int)data_type_);
+                (int)m_data_type);
         return false;
     }
 
@@ -1475,7 +1476,7 @@ Tensor::save(const char *path)
         return false;
     }
 
-    tdh.rank = dims_.size();
+    tdh.rank = m_dims.size();
 
     if(write(fd, &tdh, sizeof(tdh)) != sizeof(tdh)) {
         fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));
@@ -1486,7 +1487,7 @@ Tensor::save(const char *path)
 
     uint32_t ondiskdims[tdh.rank];
     for(unsigned int i = 0; i < tdh.rank; i++) {
-        ondiskdims[i] = dims_[i];
+        ondiskdims[i] = m_dims[i];
     }
 
     if(write(fd, &ondiskdims[0], sizeof(int) * tdh.rank) !=
@@ -1497,13 +1498,13 @@ Tensor::save(const char *path)
         return false;
     }
 
-    CPUTensor copy(data_type_, dims_, std::nullopt);
+    CPUTensor copy(m_data_type, m_dims, std::nullopt);
     copy.copyFrom(*this);
 
     auto ta = copy.access();
 
     size_t size =
-        copy.strides_[0] * copy.dims_[0] * Tensor::DataTypeSize(data_type_);
+        copy.strides_[0] * copy.m_dims[0] * Tensor::DataTypeSize(m_data_type);
 
     if(write(fd, ta->data(), size) != (int)size) {
         fprintf(stderr, "Unable to save %s -- %s\n", path, strerror(errno));

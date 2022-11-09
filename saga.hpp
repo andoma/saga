@@ -216,9 +216,9 @@ public:
     std::optional<const std::string> namePostfix(
         const std::string &postfix) const;
 
-    const std::optional<const std::string> name_;
-    const DataType data_type_;
-    const Dims dims_;
+    const std::optional<const std::string> m_name;
+    const DataType m_data_type;
+    const Dims m_dims;
 
 protected:
     Tensor(DataType data_type, const Dims &size,
@@ -272,26 +272,26 @@ class Node {
 public:
     Node(const std::string &type,
          const std::optional<const std::string> &name = std::nullopt)
-      : type_(type), name_(name)
+      : m_type(type), m_name(name)
     {
     }
 
     Node(const Node &n)
-      : type_(n.type_)
-      , name_(n.name_)
-      , inputs_(n.inputs_)
-      , attributes_(n.attributes_)
-      , outputs_(n.outputs_)
+      : m_type(n.m_type)
+      , m_name(n.m_name)
+      , m_inputs(n.m_inputs)
+      , m_attributes(n.m_attributes)
+      , m_outputs(n.m_outputs)
     {
     }
 
-    const std::string type_;
-    const std::optional<const std::string> name_;
+    const std::string m_type;
+    const std::optional<const std::string> m_name;
 
-    Tensors inputs_;
-    Attributes attributes_;
-    Tensors outputs_;
-    Loader loader_;
+    Tensors m_inputs;
+    Attributes m_attributes;
+    Tensors m_outputs;
+    Loader m_loader;
 
     std::shared_ptr<Tensor> inferTensor_y(
         const std::optional<const std::string> &name = std::nullopt);
@@ -333,9 +333,9 @@ public:
     {
     }
 
-    Nodes nodes_;
-    std::unordered_set<std::shared_ptr<Tensor>> inputs_;
-    std::unordered_set<std::shared_ptr<Tensor>> outputs_;
+    Nodes m_nodes;
+    std::unordered_set<std::shared_ptr<Tensor>> m_inputs;
+    std::unordered_set<std::shared_ptr<Tensor>> m_outputs;
     const std::shared_ptr<Tensors> m_named_tensors;
 
     std::shared_ptr<Node> addNode(

@@ -23,8 +23,8 @@ test_one_layout(const char *base_path, std::shared_ptr<Context> ctx,
     auto p = ctx->createProgram({.graph = g}, ProgramType::INFERENCE,
                                 {.tensor_layout = layout});
 
-    auto input = ctx->resolveTensor(*g.inputs_.begin());
-    auto output = ctx->resolveTensor(*g.outputs_.begin());
+    auto input = ctx->resolveTensor(*g.m_inputs.begin());
+    auto output = ctx->resolveTensor(*g.m_outputs.begin());
 
     p->finalize();
 
@@ -196,7 +196,7 @@ test_tandem_onnx_main(int argc, char **argv)
                                     ProgramType::INFERENCE,
                                     {.tensor_layout = TensorLayout::Auto});
 
-        auto input = ctx->resolveTensor(*g->inputs_.begin());
+        auto input = ctx->resolveTensor(*g->m_inputs.begin());
         input->copyFrom(*loaded_input);
         p->run();
         ps.push_back(p);
@@ -207,7 +207,7 @@ test_tandem_onnx_main(int argc, char **argv)
     for(auto &n : g->nodes_) {
         n->print();
 
-        for(auto &i : n->inputs_) {
+        for(auto &i : n->m_inputs) {
             auto t0 = ctxs[0]->resolveTensor(i.second);
             auto t1 = ctxs[1]->resolveTensor(i.second);
             if(!t0 || !t1)
@@ -224,7 +224,7 @@ test_tandem_onnx_main(int argc, char **argv)
                 return 1;
             }
         }
-        for(auto &i : n->outputs_) {
+        for(auto &i : n->m_outputs) {
             auto t0 = ctxs[0]->resolveTensor(i.second);
             auto t1 = ctxs[1]->resolveTensor(i.second);
             if(!t0 || !t1)

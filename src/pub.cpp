@@ -143,12 +143,12 @@ TCPPublisher::publish(const char *id, Tensor &t, const Dims &offset,
         ta = TA.get();
     }
 
-    size_t outsize = Tensor::DataTypeSize(t.data_type_);
+    size_t outsize = Tensor::DataTypeSize(t.m_data_type);
 
     Header h = {};
     snprintf(h.id, sizeof(h.id), "%s", id);
 
-    switch(t.data_type_) {
+    switch(t.m_data_type) {
     case Tensor::DataType::U8:
         h.datatype = '8';
         break;
@@ -171,13 +171,13 @@ TCPPublisher::publish(const char *id, Tensor &t, const Dims &offset,
         abort();
     }
 
-    assert(offset.size() < t.dims_.size());
+    assert(offset.size() < t.m_dims.size());
 
-    const size_t output_rank = t.dims_.size() - offset.size();
+    const size_t output_rank = t.m_dims.size() - offset.size();
 
     for(size_t i = 0; i < output_rank; i++) {
-        outsize *= t.dims_[i + offset.size()];
-        h.sizes[i] = t.dims_[i + offset.size()];
+        outsize *= t.m_dims[i + offset.size()];
+        h.sizes[i] = t.m_dims[i + offset.size()];
     }
 
     h.type = HEADER_TYPE_TENSOR;

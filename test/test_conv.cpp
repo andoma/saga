@@ -129,7 +129,7 @@ conv_main(int argc, char **argv)
                   "node");
     auto last = n->y();
 
-    auto target = saga::makeTensor(dt, last->dims_);
+    auto target = saga::makeTensor(dt, last->m_dims);
 
     n = g.addNode("loss", {{"x", n->y()}, {"target", target}});
 
@@ -145,7 +145,7 @@ conv_main(int argc, char **argv)
         },
         ProgramType::TRAINING, {});
 
-    auto mmss = ctx->resolveTensor(n->outputs_["mmss"]);
+    auto mmss = ctx->resolveTensor(n->m_outputs["mmss"]);
     target = ctx->resolveTensor(target);
     mid = ctx->resolveTensor(mid);
     out = ctx->resolveTensor(out);

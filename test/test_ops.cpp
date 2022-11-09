@@ -509,7 +509,7 @@ test_op(std::shared_ptr<Context> ctx, const char *op, const Tensors &inputs,
         }
     }
     auto x = xit->second;
-    int batch_size = x->dims_[0];
+    int batch_size = x->m_dims[0];
     auto n = g.addNode(op, inputs, attributes);
     auto p = ctx->createProgram({.graph = g, .batch_size = batch_size},
                                 ProgramType::INFERENCE, {});

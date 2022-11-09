@@ -79,7 +79,7 @@ fc_main(int argc, char **argv)
     target = ctx->resolveTensor(target);
     auto grad = ctx->resolveTensor(output->grad());
     output = ctx->resolveTensor(output);
-    auto mmss = ctx->resolveTensor(l->outputs_["mmss"]);
+    auto mmss = ctx->resolveTensor(l->m_outputs["mmss"]);
 
     auto input_ta = input->access();
     for(int n = 0; n < batch_size; n++) {

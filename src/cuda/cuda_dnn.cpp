@@ -225,8 +225,9 @@ struct CudnnConvolutionDesc {
         cudnnStatus_t s;
 
         auto wfmt = y.format();
-        s = cudnnSetFilter4dDescriptor(filter_desc_, x.m_type, wfmt, w.dims_[0],
-                                       w.dims_[1], w.dims_[2], w.dims_[3]);
+        s = cudnnSetFilter4dDescriptor(filter_desc_, x.m_type, wfmt,
+                                       w.m_dims[0], w.m_dims[1], w.m_dims[2],
+                                       w.m_dims[3]);
         if(s)
             return cudnnGetErrorString(s);
 
@@ -526,17 +527,17 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
 static const char *
 conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-    auto w = p.lower_tensor(pu, n.inputs_.get("w"), y->format());
-    auto b = p.lower_tensor(pu, n.inputs_.get("b"), 2);
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto w = p.lower_tensor(pu, n.m_inputs.get("w"), y->format());
+    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), 2);
 
     auto desc = std::make_shared<CudnnConvolutionDesc>();
 
-    const int pad = n.attributes_.get("pad", 0);
-    const int stride = n.attributes_.get("stride", 1);
-    const bool transpose = n.attributes_.get("transpose", false);
-    const int group = n.attributes_.get("group", 1);
+    const int pad = n.m_attributes.get("pad", 0);
+    const int stride = n.m_attributes.get("stride", 1);
+    const bool transpose = n.m_attributes.get("transpose", false);
+    const int group = n.m_attributes.get("group", 1);
     if(!transpose) {
         // Non-transposed (Standard convolution)
 
@@ -552,19 +553,19 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         if(p.m_pt == ProgramType::INFERENCE)
             return NULL;
 
-        auto dy = p.lower_grad(pu, n.outputs_.get("y"));
+        auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
         if(b) {
-            auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
+            auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
             pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
             p.upd(b, db);
         }
 
-        auto dw = p.lower_grad(pu, n.inputs_.get("w"), y->format());
+        auto dw = p.lower_grad(pu, n.m_inputs.get("w"), y->format());
         pu.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, x, dy,
                                                            dw));
         p.upd(w, dw);
 
-        auto dx = p.lower_grad(pu, n.inputs_.get("x"));
+        auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
         if(dx) {
             pu.bwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w,
                                                              dy, dx));
@@ -585,21 +586,21 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         if(p.m_pt == ProgramType::INFERENCE)
             return NULL;
 
-        auto dy = p.lower_grad(pu, n.outputs_.get("y"));
+        auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
         if(b) {
-            auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
+            auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
             pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
             p.upd(b, db);
         }
 
         // Update weights
-        auto dw = p.lower_grad(pu, n.inputs_.get("w"), y->format());
+        auto dw = p.lower_grad(pu, n.m_inputs.get("w"), y->format());
         pu.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, dy, x,
                                                            dw));
         p.upd(w, dw);
 
         // Backprop
-        auto dx = p.lower_grad(pu, n.inputs_.get("x"));
+        auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
         if(dx) {
             pu.bwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, dy, w,
                                                          dx));
@@ -733,8 +734,8 @@ static const char *
 activation_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n,
                  cudnnActivationMode_t mode, float alpha)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
     auto fwd = std::make_shared<CudnnActivationFwd>(x, y, mode, alpha);
 
     pu.fwd(fwd);
@@ -742,10 +743,10 @@ activation_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n,
     if(p.m_pt == ProgramType::INFERENCE)
         return NULL;
 
-    auto dx = p.lower_grad(pu, n.inputs_.get("x"));
+    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
     if(!dx)
         return NULL;
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
 
     pu.bwd(std::make_shared<CudnnActivationBwd>(fwd, x, y, dx, dy));
     return NULL;
@@ -763,7 +764,7 @@ static const char *
 elu_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     return activation_setup(p, pu, n, CUDNN_ACTIVATION_ELU,
-                            n.attributes_.get("alpha", 0.1f));
+                            n.m_attributes.get("alpha", 0.1f));
 }
 
 REGISTER_CUDA_OP("elu", relu_setup);
@@ -805,13 +806,13 @@ struct CudaLeakyRelu : public CudaOperation {
       , x_(x)
       , y_(y)
       , alpha_(alpha)
-      , m_elements(x->dims_.elements())
+      , m_elements(x->m_dims.elements())
     {
     }
 
     const char *exec(CudaProgram &p, long batch) override
     {
-        switch(x_->data_type_) {
+        switch(x_->m_data_type) {
         case Tensor::DataType::FLOAT:
             leaky_relu_float(m_elements, (float *)y_->deviceMem(),
                              (const float *)x_->deviceMem(), alpha_,
@@ -834,9 +835,9 @@ leakyrelu_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     if(p.m_pt != ProgramType::INFERENCE)
         return "LeakRelu not supported for training";
 
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-    float alpha = n.attributes_.get("alpha", 0.01f);
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    float alpha = n.m_attributes.get("alpha", 0.01f);
     auto op = std::make_shared<CudaLeakyRelu>(x, y, alpha);
     pu.fwd(op);
     return NULL;
@@ -923,17 +924,17 @@ static const char *
 pooling_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n,
               cudnnPoolingMode_t mode)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
 
     int size;
-    if(n.attributes_.get("global", false)) {
-        size = x->dims_[2];
+    if(n.m_attributes.get("global", false)) {
+        size = x->m_dims[2];
     } else {
-        size = n.attributes_.get("size", 1);
+        size = n.m_attributes.get("size", 1);
     }
-    const int pad = n.attributes_.get("pad", 0);
-    const int stride = n.attributes_.get("stride", 1);
+    const int pad = n.m_attributes.get("pad", 0);
+    const int stride = n.m_attributes.get("stride", 1);
 
     auto fwd = std::make_shared<CudnnPoolingFwd>(x, y, mode, size, pad, stride);
 
@@ -942,10 +943,10 @@ pooling_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n,
     if(p.m_pt == ProgramType::INFERENCE)
         return NULL;
 
-    auto dx = p.lower_grad(pu, n.inputs_.get("x"));
+    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
     if(!dx)
         return NULL;
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
 
     pu.bwd(std::make_shared<CudnnPoolingBwd>(fwd, x, y, dx, dy));
     return NULL;
@@ -1085,15 +1086,15 @@ struct CudaGemm : public CudaOperation {
 static const char *
 fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-    auto w = p.lower_tensor(pu, n.inputs_.get("w"));
-    auto b = p.lower_tensor(pu, n.inputs_.get("b"), 2);
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto w = p.lower_tensor(pu, n.m_inputs.get("w"));
+    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), 2);
 
-    const bool transW = n.attributes_.get("transW", false);
-    const int num_inputs = x->dims_[1];
-    const int num_outputs = y->dims_[1];
-    const int batch_size = x->dims_[0];
+    const bool transW = n.m_attributes.get("transW", false);
+    const int num_inputs = x->m_dims[1];
+    const int num_outputs = y->m_dims[1];
+    const int batch_size = x->m_dims[0];
 
     // clang-format off
     auto fwd = std::make_shared<CudaGemm>(
@@ -1114,9 +1115,9 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     if(p.m_pt == ProgramType::INFERENCE)
         return NULL;
 
-    auto dx = p.lower_grad(pu, n.inputs_.get("x"));
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
-    auto dw = p.lower_grad(pu, n.inputs_.get("w"));
+    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto dw = p.lower_grad(pu, n.m_inputs.get("w"));
 
     // clang-format off
     if(transW) {
@@ -1144,9 +1145,9 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
     if(b) {
         auto ones = p.lower_tensor(
-            pu, Tensor::make(x->data_type_, {batch_size, 1}, 1, 0));
+            pu, Tensor::make(x->m_data_type, {batch_size, 1}, 1, 0));
 
-        auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
+        auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
         pu.bwd(std::make_shared<CudaGemm>(CUBLAS_OP_N, CUBLAS_OP_T, 1,
                                           num_outputs, batch_size, ones, 1, dy,
                                           num_outputs, db, 1, "fc.bwd.bias"));
@@ -1188,19 +1189,19 @@ struct CudaConvert : public CudaOperation {
       , x_(x)
       , y_(y)
       , scale_(scale)
-      , m_elements(x->dims_.elements())
+      , m_elements(x->m_dims.elements())
     {
-        if(x_->data_type_ == Tensor::DataType::U8 &&
-           y_->data_type_ == Tensor::DataType::FLOAT) {
+        if(x_->m_data_type == Tensor::DataType::U8 &&
+           y_->m_data_type == Tensor::DataType::FLOAT) {
             algo_ = convert_u8_float;
-        } else if(x_->data_type_ == Tensor::DataType::U8 &&
-                  y_->data_type_ == Tensor::DataType::HALF) {
+        } else if(x_->m_data_type == Tensor::DataType::U8 &&
+                  y_->m_data_type == Tensor::DataType::HALF) {
             algo_ = convert_u8_half;
-        } else if(x_->data_type_ == Tensor::DataType::FLOAT &&
-                  y_->data_type_ == Tensor::DataType::HALF) {
+        } else if(x_->m_data_type == Tensor::DataType::FLOAT &&
+                  y_->m_data_type == Tensor::DataType::HALF) {
             algo_ = convert_float_half;
-        } else if(x_->data_type_ == Tensor::DataType::I16 &&
-                  y_->data_type_ == Tensor::DataType::HALF) {
+        } else if(x_->m_data_type == Tensor::DataType::I16 &&
+                  y_->m_data_type == Tensor::DataType::HALF) {
             algo_ = convert_i16_half;
         } else {
             algo_ = NULL;
@@ -1222,16 +1223,16 @@ struct CudaConvert : public CudaOperation {
 static const char *
 convert_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto scale = n.attributes_.get("scale", 1.0f);
+    auto scale = n.m_attributes.get("scale", 1.0f);
 
-    auto xh = n.inputs_.get("x");
+    auto xh = n.m_inputs.get("x");
     auto x = p.lower_tensor(pu, xh);
 
-    auto yh = n.outputs_.get("y");
+    auto yh = n.m_outputs.get("y");
 
-    if(xh->data_type_ == yh->data_type_ && scale == 1.0f) {
+    if(xh->m_data_type == yh->m_data_type && scale == 1.0f) {
         auto y =
-            std::make_shared<CudaTensor>(x, x->dims_, std::vector<int64_t>{},
+            std::make_shared<CudaTensor>(x, x->m_dims, std::vector<int64_t>{},
                                          xh->namePostfix("nop-convert"));
         p.m_ctx->m_tensors[yh] = y;
         return NULL;
@@ -1255,12 +1256,12 @@ convert_fuse_nodes(CudaProgram &p, std::shared_ptr<Node> a,
                    std::shared_ptr<Node> b)
 {
     float scale =
-        a->attributes_.get("scale", 1.0f) * b->attributes_.get("scale", 1.0f);
+        a->m_attributes.get("scale", 1.0f) * b->m_attributes.get("scale", 1.0f);
 
     auto nn = std::make_shared<Node>("convert");
-    nn->inputs_["x"] = a->inputs_.get("x");
-    nn->outputs_["y"] = b->outputs_.get("y");
-    nn->attributes_["scale"] = scale;
+    nn->m_inputs["x"] = a->m_inputs.get("x");
+    nn->m_outputs["y"] = b->m_outputs.get("y");
+    nn->m_attributes["scale"] = scale;
     return nn;
 }
 
@@ -1272,7 +1273,7 @@ convert_transform(CudaProgram &p, CudaProgramUnit &pu, const Nodes &input)
 again:
 
     for(auto &n : nodes) {
-        if(n->type_ != "convert")
+        if(n->m_type != "convert")
             continue;
 
         auto it = nodes.findSingleDownStreamNode(n->y(), "convert");
@@ -1304,13 +1305,13 @@ struct CudaCatClassifierFwd : public CudaOperation {
         switch(x_->m_type) {
         case CUDNN_DATA_FLOAT:
             catclassifier_fwd_float_i32(
-                x_->dims_[0], (const float *)x_->deviceMem(),
-                (int32_t *)y_->deviceMem(), x_->dims_[1], p.m_ctx->m_stream);
+                x_->m_dims[0], (const float *)x_->deviceMem(),
+                (int32_t *)y_->deviceMem(), x_->m_dims[1], p.m_ctx->m_stream);
             break;
         case CUDNN_DATA_HALF:
             catclassifier_fwd_half_i32(
-                x_->dims_[0], (const __half *)x_->deviceMem(),
-                (int32_t *)y_->deviceMem(), x_->dims_[1], p.m_ctx->m_stream);
+                x_->m_dims[0], (const __half *)x_->deviceMem(),
+                (int32_t *)y_->deviceMem(), x_->m_dims[1], p.m_ctx->m_stream);
             break;
         default:
             return "Unsupported tensor datatype";
@@ -1342,8 +1343,8 @@ struct CudaCatClassifierBwd : public CudaOperation {
 
     const char *exec(CudaProgram &p, long batch) override
     {
-        const int n = x_->dims_[0];
-        const int c = x_->dims_[1];
+        const int n = x_->m_dims[0];
+        const int c = x_->m_dims[1];
         const float scale = 1.0f / n;
 
         switch(x_->m_type) {
@@ -1385,8 +1386,8 @@ struct CudaCatClassifierBwd : public CudaOperation {
 static const char *
 catclassifier_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
 
     auto op = std::make_shared<CudaCatClassifierFwd>(x, y);
 
@@ -1395,12 +1396,12 @@ catclassifier_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     if(p.m_pt == ProgramType::INFERENCE)
         return NULL;
 
-    auto dx = p.lower_grad(pu, n.inputs_.get("x"));
+    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
     if(!dx)
         return NULL;
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
 
-    auto loss = p.lower_tensor(pu, n.outputs_.get("loss"));
+    auto loss = p.lower_tensor(pu, n.m_outputs.get("loss"));
 
     pu.bwd(std::make_shared<CudaCatClassifierBwd>(x, y, dx, dy, loss));
     return NULL;
@@ -1414,7 +1415,7 @@ struct CudaLossFwd : public CudaOperation {
     const size_t m_elements;
 
     CudaLossFwd(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y)
-      : CudaOperation("lossfwd"), x_(x), y_(y), m_elements(x->dims_.elements())
+      : CudaOperation("lossfwd"), x_(x), y_(y), m_elements(x->m_dims.elements())
     {
     }
 
@@ -1465,11 +1466,11 @@ struct CudaLossBwd : public CudaOperation {
 
     const char *exec(CudaProgram &p, long batch) override
     {
-        const int n = x_->dims_[0];
+        const int n = x_->m_dims[0];
 
         int c = 1;
-        for(size_t i = 1; i < x_->dims_.size(); i++) {
-            c *= x_->dims_[i];
+        for(size_t i = 1; i < x_->m_dims.size(); i++) {
+            c *= x_->m_dims[i];
         }
 
         const float scale = m_strength / n;
@@ -1516,8 +1517,8 @@ struct CudaLossBwd : public CudaOperation {
 static const char *
 loss_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
 
     auto op = std::make_shared<CudaLossFwd>(x, y);
 
@@ -1526,17 +1527,17 @@ loss_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     if(p.m_pt == ProgramType::INFERENCE)
         return NULL;
 
-    auto dx = p.lower_grad(pu, n.inputs_.get("x"));
+    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
     if(!dx)
         return NULL;
-    auto target = p.lower_tensor(pu, n.inputs_.get("target"));
+    auto target = p.lower_tensor(pu, n.m_inputs.get("target"));
     if(!target)
         return NULL;
 
-    auto mmss = p.lower_tensor(pu, n.outputs_.get("mmss"));
+    auto mmss = p.lower_tensor(pu, n.m_outputs.get("mmss"));
     assert(mmss);
 
-    const float strength = n.attributes_.get("strength", 1.0f);
+    const float strength = n.m_attributes.get("strength", 1.0f);
     pu.bwd(std::make_shared<CudaLossBwd>(x, dx, target, mmss, strength));
     return NULL;
 }
@@ -1619,17 +1620,17 @@ dropout_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     assert(p.m_pt == ProgramType::TRAINING);
 
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-    const float prob = n.attributes_.get("prob", 0.5f);
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    const float prob = n.m_attributes.get("prob", 0.5f);
 
     auto fwd = std::make_shared<CudnnDropoutFwd>(p, x, y, prob);
     pu.fwd(fwd);
 
-    auto dx = p.lower_grad(pu, n.inputs_.get("x"));
+    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
     if(!dx)
         return NULL;
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
 
     pu.bwd(std::make_shared<CudnnDropoutBwd>(fwd, dx, dy));
     return NULL;
@@ -1641,19 +1642,19 @@ static std::vector<std::shared_ptr<Node>>
 dropout_transform_node(CudaProgram &p, CudaProgramUnit &pu,
                        std::shared_ptr<Node> n)
 {
-    auto y = n->outputs_.get("y");
+    auto y = n->m_outputs.get("y");
     auto ly = p.m_ctx->m_tensors[y];
 
     if(ly) {
-        auto x = n->inputs_.get("x");
-        auto lx = std::make_shared<CudaTensor>(ly->m_storage, ly->dims_,
+        auto x = n->m_inputs.get("x");
+        auto lx = std::make_shared<CudaTensor>(ly->m_storage, ly->m_dims,
                                                p.tensorFormat(*ly),
                                                ly->namePostfix("dropout"));
         p.m_ctx->m_tensors[x] = ly;
 
     } else {
-        auto x = p.lower_tensor(pu, n->inputs_.get("x"));
-        ly = std::make_shared<CudaTensor>(x->m_storage, x->dims_,
+        auto x = p.lower_tensor(pu, n->m_inputs.get("x"));
+        ly = std::make_shared<CudaTensor>(x->m_storage, x->m_dims,
                                           p.tensorFormat(*x),
                                           x->namePostfix("dropout"));
         p.m_ctx->m_tensors[y] = ly;
@@ -1668,7 +1669,7 @@ dropout_transform(CudaProgram &p, CudaProgramUnit &pu, const Nodes &nodes)
 
     for(size_t i = 0; i < nodes.size(); i++) {
         auto &n = nodes[i];
-        if(n->type_ == "dropout") {
+        if(n->m_type == "dropout") {
             dropout_transform_node(p, pu, n);
         } else {
             r.push_back(n);
@@ -1855,14 +1856,14 @@ struct CudnnBatchNormBwd : public CudnnOperation {
 static const char *
 batchnorm_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-    auto s = p.lower_tensor(pu, n.inputs_.get("s"), 2);
-    auto b = p.lower_tensor(pu, n.inputs_.get("b"), 2);
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto s = p.lower_tensor(pu, n.m_inputs.get("s"), 2);
+    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), 2);
 
-    auto m = p.lower_tensor(pu, n.inputs_.get("m"), 2);
-    auto v = p.lower_tensor(pu, n.inputs_.get("v"), 2);
-    const float epsilon = n.attributes_.get("epsilon", 1e-5f);
+    auto m = p.lower_tensor(pu, n.m_inputs.get("m"), 2);
+    auto v = p.lower_tensor(pu, n.m_inputs.get("v"), 2);
+    const float epsilon = n.m_attributes.get("epsilon", 1e-5f);
 
     if(p.m_pt == ProgramType::INFERENCE) {
         pu.fwd(std::make_shared<CudnnBatchNormInference>(x, s, b, m, v, y,
@@ -1877,10 +1878,10 @@ batchnorm_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
                                                    epsilon);
     pu.fwd(f);
 
-    auto dx = p.lower_grad(pu, n.inputs_.get("x"));
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
-    auto ds = p.lower_grad(pu, n.inputs_.get("s"), 2);
-    auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
+    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto ds = p.lower_grad(pu, n.m_inputs.get("s"), 2);
+    auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
 
     pu.bwd(std::make_shared<CudnnBatchNormBwd>(*f, dy, dx, ds, db));
 
@@ -1948,10 +1949,10 @@ struct CudnnOpTensor : public CudnnOperation {
 static const char *
 sum_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x0 = p.lower_tensor(pu, n.inputs_.get("x0"));
-    auto x1 = p.lower_tensor(pu, n.inputs_.get("x1"));
+    auto x0 = p.lower_tensor(pu, n.m_inputs.get("x0"));
+    auto x1 = p.lower_tensor(pu, n.m_inputs.get("x1"));
 
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
 
     auto fwd = std::make_shared<CudnnOpTensor>(x0, x1, y, CUDNN_OP_TENSOR_ADD);
 
@@ -1960,13 +1961,13 @@ sum_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     if(p.m_pt == ProgramType::INFERENCE)
         return NULL;
 
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
 
-    auto dx0 = p.lower_grad(pu, n.inputs_.get("x0"));
+    auto dx0 = p.lower_grad(pu, n.m_inputs.get("x0"));
     if(dx0) {
         pu.bwd(std::make_shared<CudnnTransform>(dy, dx0));
     }
-    auto dx1 = p.lower_grad(pu, n.inputs_.get("x1"));
+    auto dx1 = p.lower_grad(pu, n.m_inputs.get("x1"));
     if(dx1) {
         pu.bwd(std::make_shared<CudnnTransform>(dy, dx1));
     }
@@ -1978,9 +1979,9 @@ REGISTER_CUDA_OP("sum", sum_setup);
 static const char *
 add_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-    auto b = p.lower_tensor(pu, n.inputs_.get("b"));
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto b = p.lower_tensor(pu, n.m_inputs.get("b"));
 
     auto fwd = std::make_shared<CudnnOpTensor>(x, b, y, CUDNN_OP_TENSOR_ADD);
 
@@ -2026,8 +2027,8 @@ softmax_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         return "not supported for training";
     }
 
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
     pu.fwd(std::make_shared<CudnnSoftmaxFwd>(x, y));
     return NULL;
 }
@@ -2115,7 +2116,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         float beta = 0.0f;
 
         void *reserve = m_reserve ? m_reserve->m_storage->m_data : NULL;
-        size_t reserve_size = m_reserve ? (size_t)m_reserve->dims_[0] : 0;
+        size_t reserve_size = m_reserve ? (size_t)m_reserve->m_dims[0] : 0;
 
         if(!isfinite(expavgf_)) {
             expavgf_ = m_->m_auto_initialized ? 1.0f : p.m_pc.bn_expavg;
@@ -2220,7 +2221,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
         void *reserve =
             fwd_->m_reserve ? fwd_->m_reserve->m_storage->m_data : NULL;
         size_t reserve_size =
-            fwd_->m_reserve ? (size_t)fwd_->m_reserve->dims_[0] : 0;
+            fwd_->m_reserve ? (size_t)fwd_->m_reserve->m_dims[0] : 0;
 
         assert(m_ds_beta == m_db_beta);
 
@@ -2305,21 +2306,21 @@ batchnorm_persistent_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         return "not supported for inferenece";
     }
 
-    auto x0 = p.lower_tensor(pu, n.inputs_.get("x0"));
-    auto x1 = p.lower_tensor(pu, n.inputs_.get("x1"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-    auto s = p.lower_tensor(pu, n.inputs_.get("s"), 2);
-    auto b = p.lower_tensor(pu, n.inputs_.get("b"), 2);
+    auto x0 = p.lower_tensor(pu, n.m_inputs.get("x0"));
+    auto x1 = p.lower_tensor(pu, n.m_inputs.get("x1"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto s = p.lower_tensor(pu, n.m_inputs.get("s"), 2);
+    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), 2);
 
-    auto m = p.lower_tensor(pu, n.inputs_.get("m"), 2);
-    auto v = p.lower_tensor(pu, n.inputs_.get("v"), 2);
-    const float epsilon = n.attributes_.get("epsilon", 1e-5f);
+    auto m = p.lower_tensor(pu, n.m_inputs.get("m"), 2);
+    auto v = p.lower_tensor(pu, n.m_inputs.get("v"), 2);
+    const float epsilon = n.m_attributes.get("epsilon", 1e-5f);
 
     auto sm = std::make_shared<CudaTensor>(*m, m->namePostfix("smean"));
     auto sv = std::make_shared<CudaTensor>(*v, v->namePostfix("svar"));
 
     auto ops = CUDNN_BATCHNORM_OPS_BN;
-    if(n.attributes_.get("relu", false)) {
+    if(n.m_attributes.get("relu", false)) {
         ops = CUDNN_BATCHNORM_OPS_BN_ACTIVATION;
         if(x1)
             ops = CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION;
@@ -2335,11 +2336,11 @@ batchnorm_persistent_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         activation_alpha);
     pu.fwd(f);
 
-    auto dx0 = p.lower_grad(pu, n.inputs_.get("x0"));
-    auto dx1 = p.lower_grad(pu, n.inputs_.get("x1"));
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
-    auto ds = p.lower_grad(pu, n.inputs_.get("s"), 2);
-    auto db = p.lower_grad(pu, n.inputs_.get("b"), 2);
+    auto dx0 = p.lower_grad(pu, n.m_inputs.get("x0"));
+    auto dx1 = p.lower_grad(pu, n.m_inputs.get("x1"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto ds = p.lower_grad(pu, n.m_inputs.get("s"), 2);
+    auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
 
     pu.bwd(std::make_shared<CudnnBatchNormActBwd>(p, f, dy, dx0, dx1, ds, db,
                                                   ops));
@@ -2357,12 +2358,12 @@ batchnorm_persistent_transform_node(CudaProgram &p, std::shared_ptr<Node> bn,
                                     std::shared_ptr<Node> sum,
                                     std::shared_ptr<Node> relu)
 {
-    auto x = bn->inputs_["x"];
+    auto x = bn->m_inputs["x"];
 
-    if(x->data_type_ != Tensor::DataType::HALF)
+    if(x->m_data_type != Tensor::DataType::HALF)
         return nullptr;
 
-    if(x->dims_[1] % 4)
+    if(x->m_dims[1] % 4)
         return nullptr;
 
     auto lx = p.m_ctx->m_tensors.find(x);
@@ -2371,7 +2372,7 @@ batchnorm_persistent_transform_node(CudaProgram &p, std::shared_ptr<Node> bn,
             return nullptr;
     }
 
-    auto y = relu ? relu->outputs_["y"] : bn->outputs_["y"];
+    auto y = relu ? relu->m_outputs["y"] : bn->m_outputs["y"];
 
     auto ly = p.m_ctx->m_tensors.find(y);
     if(ly != p.m_ctx->m_tensors.end()) {
@@ -2381,31 +2382,31 @@ batchnorm_persistent_transform_node(CudaProgram &p, std::shared_ptr<Node> bn,
 
     auto nn = std::make_shared<Node>("batchnorm.persistent");
 
-    nn->inputs_["x0"] = bn->inputs_["x"];
-    auto bn_y = bn->outputs_["y"];
+    nn->m_inputs["x0"] = bn->m_inputs["x"];
+    auto bn_y = bn->m_outputs["y"];
 
     if(sum) {
-        auto sum_x0 = sum->inputs_["x0"];
-        auto sum_x1 = sum->inputs_["x1"];
+        auto sum_x0 = sum->m_inputs["x0"];
+        auto sum_x1 = sum->m_inputs["x1"];
 
         if(sum_x0 == bn_y) {
-            nn->inputs_["x1"] = sum->inputs_["x1"];
+            nn->m_inputs["x1"] = sum->m_inputs["x1"];
         } else {
-            nn->inputs_["x1"] = sum->inputs_["x0"];
+            nn->m_inputs["x1"] = sum->m_inputs["x0"];
         }
     }
-    nn->inputs_["s"] = bn->inputs_["s"];
-    nn->inputs_["b"] = bn->inputs_["b"];
-    nn->inputs_["m"] = bn->inputs_["m"];
-    nn->inputs_["v"] = bn->inputs_["v"];
+    nn->m_inputs["s"] = bn->m_inputs["s"];
+    nn->m_inputs["b"] = bn->m_inputs["b"];
+    nn->m_inputs["m"] = bn->m_inputs["m"];
+    nn->m_inputs["v"] = bn->m_inputs["v"];
 
-    if(bn->attributes_.find("epsilon") != bn->attributes_.end())
-        nn->attributes_["epsilon"] = bn->attributes_["epsilon"];
+    if(bn->m_attributes.find("epsilon") != bn->m_attributes.end())
+        nn->m_attributes["epsilon"] = bn->m_attributes["epsilon"];
 
     if(relu)
-        nn->attributes_["relu"] = true;
+        nn->m_attributes["relu"] = true;
 
-    nn->outputs_["y"] = y;
+    nn->m_outputs["y"] = y;
     return nn;
 }
 
@@ -2422,24 +2423,24 @@ batchnorm_relu_transform(CudaProgram &p, CudaProgramUnit &pu,
     for(ssize_t i = 0; i < num_nodes; i++) {
         std::shared_ptr<Node> n = nodes[i];
 
-        if(i < num_nodes - 1 && nodes[i + 0]->type_ == "batchnorm" &&
-           nodes[i + 1]->type_ == "relu") {
+        if(i < num_nodes - 1 && nodes[i + 0]->m_type == "batchnorm" &&
+           nodes[i + 1]->m_type == "relu") {
             auto n2 = batchnorm_persistent_transform_node(p, nodes[i], nullptr,
                                                           nodes[i + 1]);
             if(n2) {
                 i++;
                 n = n2;
             }
-        } else if(i < num_nodes - 2 && nodes[i + 0]->type_ == "batchnorm" &&
-                  nodes[i + 1]->type_ == "sum" &&
-                  nodes[i + 2]->type_ == "relu") {
+        } else if(i < num_nodes - 2 && nodes[i + 0]->m_type == "batchnorm" &&
+                  nodes[i + 1]->m_type == "sum" &&
+                  nodes[i + 2]->m_type == "relu") {
             auto n2 = batchnorm_persistent_transform_node(
                 p, nodes[i], nodes[i + 1], nodes[i + 2]);
             if(n2) {
                 i += 2;
                 n = n2;
             }
-        } else if(nodes[i]->type_ == "batchnorm") {
+        } else if(nodes[i]->m_type == "batchnorm") {
             auto n2 = batchnorm_persistent_transform_node(p, nodes[i], nullptr,
                                                           nullptr);
             if(n2) {
@@ -2470,14 +2471,14 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
       , y_(y)
       , grid_(std::make_shared<CudaTensor>(
             Tensor::DataType::FLOAT,
-            Dims{y_->dims_[0], 2, y_->dims_[2], y_->dims_[3]},
+            Dims{y_->m_dims[0], 2, y_->m_dims[2], y_->m_dims[3]},
             CUDNN_TENSOR_NHWC, ctx))
     {
         int dims[4] = {
-            (int)y_->dims_[0],  // n
-            1,                  // c
-            (int)y_->dims_[2],  // h
-            (int)y_->dims_[3]   // w
+            (int)y_->m_dims[0],  // n
+            1,                   // c
+            (int)y_->m_dims[2],  // h
+            (int)y_->m_dims[3]   // w
         };
         chkCUDNN(cudnnCreateSpatialTransformerDescriptor(&desc_));
         chkCUDNN(cudnnSetSpatialTransformerNdDescriptor(
@@ -2515,19 +2516,19 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
 static const char *
 spatialtransform_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"));
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
 
     const bool disable = p.m_pt == ProgramType::INFERENCE &&
-                         !n.attributes_.get("inference", false);
-    const bool bypass = disable && x->dims_ == y->dims_;
+                         !n.m_attributes.get("inference", false);
+    const bool bypass = disable && x->m_dims == y->m_dims;
 
     if(bypass) {
         pu.fwd(std::make_shared<CudnnTransform>(x, y));
         return NULL;
     }
 
-    auto th = n.inputs_.get("theta");
+    auto th = n.m_inputs.get("theta");
 
     std::shared_ptr<CudaTensor> theta;
 
@@ -2560,21 +2561,21 @@ spatialtransform_transform(CudaProgram &p, CudaProgramUnit &pu,
 
     for(size_t i = 0; i < nodes.size(); i++) {
         auto &n = nodes[i];
-        if(n->type_ == "spatialtransform") {
-            auto x = n->inputs_.get("x");
-            if(x && x->data_type_ != Tensor::DataType::FLOAT) {
+        if(n->m_type == "spatialtransform") {
+            auto x = n->m_inputs.get("x");
+            if(x && x->m_data_type != Tensor::DataType::FLOAT) {
                 Tensors emptyset;
                 auto n0 = Node::make(
                     "convert", {{"x", x}},
                     {{"datatype", (int)Tensor::DataType::FLOAT}}, emptyset)[0];
                 auto n1 = Node::make(
                     "spatialtransform",
-                    {{"x", n0->y()}, {"theta", n->inputs_.get("theta")}},
-                    n->attributes_, emptyset)[0];
-                auto n2 =
-                    Node::make("convert", {{"x", n1->y()}},
-                               {{"datatype", (int)x->data_type_}}, emptyset)[0];
-                n2->outputs_["y"] = n->outputs_.get("y");
+                    {{"x", n0->y()}, {"theta", n->m_inputs.get("theta")}},
+                    n->m_attributes, emptyset)[0];
+                auto n2 = Node::make("convert", {{"x", n1->y()}},
+                                     {{"datatype", (int)x->m_data_type}},
+                                     emptyset)[0];
+                n2->m_outputs["y"] = n->m_outputs.get("y");
                 r.push_back(n0);
                 r.push_back(n1);
                 r.push_back(n2);
@@ -2595,22 +2596,22 @@ static std::vector<std::shared_ptr<Node>>
 reshape_transform_node(CudaProgram &p, CudaProgramUnit &pu,
                        std::shared_ptr<Node> n)
 {
-    auto xh = n->inputs_.get("x");
-    auto yh = n->outputs_.get("y");
+    auto xh = n->m_inputs.get("x");
+    auto yh = n->m_outputs.get("y");
 
-    auto fmt = p.tensorFormat(xh->data_type_);
+    auto fmt = p.tensorFormat(xh->m_data_type);
     auto x = p.lower_tensor(pu, xh, fmt);
 
     auto y = std::make_shared<CudaTensor>(x->m_storage,
-                                          yh->dims_.batch(pu.m_batch_size), fmt,
-                                          x->namePostfix("reshape"));
+                                          yh->m_dims.batch(pu.m_batch_size),
+                                          fmt, x->namePostfix("reshape"));
 
     p.m_ctx->m_tensors[yh] = y;
 
     auto dx = p.lower_grad(pu, xh, fmt);
     auto dy = std::make_shared<CudaTensor>(dx->m_storage,
-                                           y->dims_.batch(pu.m_batch_size), fmt,
-                                           x->namePostfix("reshape"));
+                                           y->m_dims.batch(pu.m_batch_size),
+                                           fmt, x->namePostfix("reshape"));
     p.m_ctx->m_tensors[yh->grad()] = dy;
     return {};
 }
@@ -2622,7 +2623,7 @@ reshape_transform(CudaProgram &p, CudaProgramUnit &pu, const Nodes &nodes)
 
     for(size_t i = 0; i < nodes.size(); i++) {
         auto &n = nodes[i];
-        if(n->type_ == "reshape") {
+        if(n->m_type == "reshape") {
             reshape_transform_node(p, pu, n);
         } else {
             r.push_back(n);
@@ -2639,20 +2640,20 @@ REGISTER_CUDA_TRANSFORM(110, ProgramType::INFERENCE | ProgramType::TRAINING,
 static void
 window_transform_node(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.inputs_.get("x"), CUDNN_TENSOR_NCHW);
-    auto dx = p.lower_grad(pu, n.inputs_.get("x"), CUDNN_TENSOR_NCHW);
-    auto y = n.outputs_.get("y");
+    auto x = p.lower_tensor(pu, n.m_inputs.get("x"), CUDNN_TENSOR_NCHW);
+    auto dx = p.lower_grad(pu, n.m_inputs.get("x"), CUDNN_TENSOR_NCHW);
+    auto y = n.m_outputs.get("y");
 
-    Dims offset(n.attributes_.get("offset", std::vector<int>{}));
+    Dims offset(n.m_attributes.get("offset", std::vector<int>{}));
 
     auto yl =
-        std::make_shared<CudaTensor>(x, y->dims_.batch(pu.m_batch_size),
+        std::make_shared<CudaTensor>(x, y->m_dims.batch(pu.m_batch_size),
                                      offset.i64(), y->namePostfix("alias"));
 
     p.m_ctx->m_tensors[y] = yl;
 
     auto dxl =
-        std::make_shared<CudaTensor>(dx, y->dims_.batch(pu.m_batch_size),
+        std::make_shared<CudaTensor>(dx, y->m_dims.batch(pu.m_batch_size),
                                      offset.i64(), y->namePostfix("alias"));
     p.m_ctx->m_tensors[dx] = dxl;
 }
@@ -2664,7 +2665,7 @@ window_transform(CudaProgram &p, CudaProgramUnit &pu, const Nodes &nodes)
 
     for(size_t i = 0; i < nodes.size(); i++) {
         auto &n = nodes[i];
-        if(n->type_ == "window") {
+        if(n->m_type == "window") {
             window_transform_node(p, pu, *n);
         } else {
             r.push_back(n);
@@ -2681,26 +2682,26 @@ REGISTER_CUDA_TRANSFORM(100, ProgramType::INFERENCE | ProgramType::TRAINING,
 static void
 concat_transform_node(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    const int axis = n.attributes_.get("axis", 1);
+    const int axis = n.m_attributes.get("axis", 1);
 
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
-    auto dy = p.lower_grad(pu, n.outputs_.get("y"));
-    auto element_offset = std::vector<int64_t>(y->dims_.size(), 0);
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto element_offset = std::vector<int64_t>(y->m_dims.size(), 0);
 
-    for(const auto &xh : n.inputs_.getv("x")) {
+    for(const auto &xh : n.m_inputs.getv("x")) {
         auto x = std::make_shared<CudaTensor>(
-            y, xh->dims_.batch(pu.m_batch_size), element_offset,
+            y, xh->m_dims.batch(pu.m_batch_size), element_offset,
             xh->namePostfix("alias"));
         x->copyFromLocked(*xh);
         p.m_ctx->m_tensors[xh] = x;
 
         auto dx = std::make_shared<CudaTensor>(
-            dy, xh->dims_.batch(pu.m_batch_size), element_offset,
+            dy, xh->m_dims.batch(pu.m_batch_size), element_offset,
             xh->namePostfix("alias"));
 
         p.m_ctx->m_tensors[xh->grad()] = dx;
 
-        element_offset[axis] += xh->dims_[axis];
+        element_offset[axis] += xh->m_dims[axis];
     }
 }
 
@@ -2711,7 +2712,7 @@ concat_transform(CudaProgram &p, CudaProgramUnit &pu, const Nodes &nodes)
 
     for(ssize_t i = nodes.size() - 1; i >= 0; i--) {
         auto &n = nodes[i];
-        if(n->type_ == "concat") {
+        if(n->m_type == "concat") {
             concat_transform_node(p, pu, *n);
         } else {
             r.insert(r.begin(), n);
@@ -2729,13 +2730,13 @@ struct CudaStats : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
     const size_t m_elements;
     CudaStats(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y)
-      : CudaOperation("stats"), x_(x), y_(y), m_elements(x->dims_.elements())
+      : CudaOperation("stats"), x_(x), y_(y), m_elements(x->m_dims.elements())
     {
     }
 
     const char *exec(CudaProgram &p, long batch) override
     {
-        switch(x_->data_type_) {
+        switch(x_->m_data_type) {
         case Tensor::DataType::FLOAT:
             tensor_stats_float(m_elements, (const float *)x_->deviceMem(),
                                (float *)y_->deviceMem(), p.m_ctx->m_stream);
@@ -2758,13 +2759,13 @@ struct CudaStats : public CudaOperation {
 static const char *
 stats_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto it = p.m_ctx->m_tensors.find(n.inputs_.get("x"));
+    auto it = p.m_ctx->m_tensors.find(n.m_inputs.get("x"));
     if(it == p.m_ctx->m_tensors.end())
         return "x-tensor not found";
 
     auto x = it->second;
 
-    auto y = p.lower_tensor(pu, n.outputs_.get("y"));
+    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
     pu.tail(std::make_shared<CudaStats>(x, y));
     return NULL;
 }

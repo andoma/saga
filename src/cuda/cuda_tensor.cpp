@@ -276,15 +276,15 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size, const int *strides,
 
 CudaTensor::CudaTensor(const CudaTensor &o, cudnnTensorFormat_t format,
                        const std::optional<const std::string> &postfix)
-  : CudaTensor(o.data_type_, o.dims_, format, o.m_storage->m_ctx,
+  : CudaTensor(o.m_data_type, o.m_dims, format, o.m_storage->m_ctx,
                postfix ? o.namePostfix(*postfix) : std::nullopt)
 {
 }
 
 CudaTensor::CudaTensor(const CudaTensor &o,
                        const std::optional<const std::string> &name)
-  : Tensor(o.data_type_, o.dims_, name)
-  , m_type(cudnnDataType_from_dataType(data_type_))
+  : Tensor(o.m_data_type, o.m_dims, name)
+  , m_type(cudnnDataType_from_dataType(m_data_type))
   , m_offset(0)
 {
     const int max_rank = 8;
@@ -301,13 +301,13 @@ CudaTensor::CudaTensor(const CudaTensor &o,
     size_t bytes;
     chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
 
-    m_storage = std::make_shared<CudaTensorStorage>(data_type_, bytes,
+    m_storage = std::make_shared<CudaTensorStorage>(m_data_type, bytes,
                                                     o.m_storage->m_ctx);
 }
 
 CudaTensor::CudaTensor(DataType data_type, const CudaTensor &o,
                        const std::optional<const std::string> &name)
-  : Tensor(data_type, o.dims_, name)
+  : Tensor(data_type, o.m_dims, name)
   , m_type(cudnnDataType_from_dataType(data_type))
   , m_offset(0)
 {
@@ -315,17 +315,17 @@ CudaTensor::CudaTensor(DataType data_type, const CudaTensor &o,
     int dimsA[max_rank];
     int stridesA[max_rank];
     int rank;
-    cudnnDataType_t data_type_o;
+    cudnnDataType_t m_data_typeo;
 
-    chkCUDNN(cudnnGetTensorNdDescriptor(o.m_desc, max_rank, &data_type_o, &rank,
-                                        dimsA, stridesA));
+    chkCUDNN(cudnnGetTensorNdDescriptor(o.m_desc, max_rank, &m_data_typeo,
+                                        &rank, dimsA, stridesA));
 
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
     chkCUDNN(cudnnSetTensorNdDescriptor(m_desc, m_type, rank, dimsA, stridesA));
     size_t bytes;
     chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
 
-    m_storage = std::make_shared<CudaTensorStorage>(data_type_, bytes,
+    m_storage = std::make_shared<CudaTensorStorage>(m_data_type, bytes,
                                                     o.m_storage->m_ctx);
 }
 
@@ -372,7 +372,7 @@ std::vector<int>
 CudaTensor::storage_id() const
 {
     std::vector<int> r;
-    size_t our_size = dims_.elements() * m_storage->m_element_size;
+    size_t our_size = m_dims.elements() * m_storage->m_element_size;
 
     // Crude check, do we cover the entire storage?
     if(our_size == m_storage->m_size) {
@@ -408,8 +408,8 @@ CudaTensor::shortname() const
 {
     std::stringstream ss;
     ss << storage_name();
-    if(name_) {
-        ss << "\"" << *name_ << "\"";
+    if(m_name) {
+        ss << "\"" << *m_name << "\"";
     }
 
     if(m_offset) {
@@ -478,8 +478,8 @@ CudaTensor::info() const
 {
     std::stringstream ss;
     ss << storage_name();
-    if(name_)
-        ss << "\"" << *name_ << "\"";
+    if(m_name)
+        ss << "\"" << *m_name << "\"";
 
     const int max_rank = 8;
     int dims[max_rank];
@@ -601,8 +601,8 @@ CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
         m_auto_initialized = true;
     }
 
-    if(!copy_tensor(m_storage->deviceMem(m_offset), dims_.size(),
-                    &dims_.i32()[0], &strides[0], data_type_, t, ta.get(),
+    if(!copy_tensor(m_storage->deviceMem(m_offset), m_dims.size(),
+                    &m_dims.i32()[0], &strides[0], m_data_type, t, ta.get(),
                     dst_broadcast_dimension)) {
         fprintf(stderr,
                 "Cuda Tensor copy failed\n"
@@ -625,7 +625,7 @@ CudaTensor::stats()
     ctx->m_workspace.alloc();
 
     float *output = (float *)ctx->m_workspace.ptr();
-    const size_t elements = dims_.elements();
+    const size_t elements = m_dims.elements();
 
     switch(m_type) {
     case CUDNN_DATA_FLOAT:
@@ -697,7 +697,7 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
     auto dv = collapse_dims();
 
     if(dv.size() == 1) {
-        switch(data_type_) {
+        switch(m_data_type) {
         case Tensor::DataType::FLOAT:
             find_non_finite_float_1d(dv[0].first, (const float *)deviceMem(),
                                      ptr, true, s->m_ctx->m_stream);
@@ -710,7 +710,7 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
             return;
         }
     } else if(dv.size() == 2) {
-        switch(data_type_) {
+        switch(m_data_type) {
         case Tensor::DataType::FLOAT:
             find_non_finite_float_2d(dv[1].first, dv[0].first, dv[0].second,
                                      (const float *)deviceMem(), ptr, true,

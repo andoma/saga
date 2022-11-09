@@ -81,7 +81,7 @@ Tensors::saveTensors(const char *path, Context *ctx)
 void
 Graph::print() const
 {
-    for(const auto &n : nodes_) {
+    for(const auto &n : m_nodes) {
         n->print();
     }
 }
@@ -92,10 +92,10 @@ Graph::addNode(const std::string &type, const Tensors &inputs,
                const std::optional<const std::string> &name)
 {
     auto nodes = Node::make(type, inputs, attributes, *m_named_tensors, name);
-    nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
-    if(nodes_.size() == 0)
+    m_nodes.insert(m_nodes.end(), nodes.begin(), nodes.end());
+    if(m_nodes.size() == 0)
         return nullptr;
-    return nodes_[nodes_.size() - 1];
+    return m_nodes[m_nodes.size() - 1];
 }
 
 std::shared_ptr<Node>
@@ -119,10 +119,10 @@ Graph::addNode(const std::string &type, Loader loader,
                const Attributes &attributes)
 {
     auto nodes = Node::make(type, loader, attributes);
-    nodes_.insert(nodes_.end(), nodes.begin(), nodes.end());
-    if(nodes_.size() == 0)
+    m_nodes.insert(m_nodes.end(), nodes.begin(), nodes.end());
+    if(m_nodes.size() == 0)
         return nullptr;
-    return nodes_[nodes_.size() - 1];
+    return m_nodes[m_nodes.size() - 1];
 }
 
 std::unordered_set<std::shared_ptr<Tensor>>
@@ -130,13 +130,13 @@ Graph::inputTensors() const
 {
     std::unordered_set<std::shared_ptr<Tensor>> inputs;
 
-    for(const auto &n : nodes_) {
-        for(auto &t : n->inputs_) {
+    for(const auto &n : m_nodes) {
+        for(auto &t : n->m_inputs) {
             inputs.insert(t.second);
         }
     }
-    for(const auto &n : nodes_) {
-        for(auto &t : n->outputs_) {
+    for(const auto &n : m_nodes) {
+        for(auto &t : n->m_outputs) {
             inputs.erase(t.second);
         }
     }
@@ -148,13 +148,13 @@ Graph::outputTensors() const
 {
     std::unordered_set<std::shared_ptr<Tensor>> outputs;
 
-    for(const auto &n : nodes_) {
-        for(auto &t : n->outputs_) {
+    for(const auto &n : m_nodes) {
+        for(auto &t : n->m_outputs) {
             outputs.insert(t.second);
         }
     }
-    for(const auto &n : nodes_) {
-        for(auto &t : n->inputs_) {
+    for(const auto &n : m_nodes) {
+        for(auto &t : n->m_inputs) {
             outputs.erase(t.second);
         }
     }
@@ -173,11 +173,11 @@ Graph::tensorMappings() const
         std::vector<std::pair<std::string, std::shared_ptr<Node>>>>
         output_usage;
 
-    for(const auto &n : nodes_) {
-        for(const auto &t : n->inputs_) {
+    for(const auto &n : m_nodes) {
+        for(const auto &t : n->m_inputs) {
             input_usage[t.second].push_back(std::make_pair(t.first, n));
         }
-        for(const auto &t : n->outputs_) {
+        for(const auto &t : n->m_outputs) {
             output_usage[t.second].push_back(std::make_pair(t.first, n));
         }
     }
@@ -278,7 +278,7 @@ Graph::addResNetBottleNeck(std::shared_ptr<Tensor> input,
                 name + "-conv-3");
     a = addNode("batchnorm", a->y(), {}, name + "-bn-3");
 
-    bool need_projection = a->y()->dims_ != input->dims_;
+    bool need_projection = a->y()->m_dims != input->m_dims;
 
     if(need_projection) {
         auto c = addNode("conv", input,
@@ -336,7 +336,7 @@ Graph::addResNetBottleNeck_transposed(std::shared_ptr<Tensor> input,
                 name + "-conv-1");
     a = addNode("batchnorm", a->y(), {}, name + "-bn-1t");
 
-    bool need_projection = a->y()->dims_ != input->dims_;
+    bool need_projection = a->y()->m_dims != input->m_dims;
 
     if(need_projection) {
         auto c = addNode("conv", input,
@@ -380,7 +380,7 @@ Graph::addResNet(std::shared_ptr<Tensor> input, int output_activations,
                 name + "-conv-2");
     a = addNode("batchnorm", a->y(), {}, name + "-bn-2");
 
-    bool need_projection = a->y()->dims_ != input->dims_;
+    bool need_projection = a->y()->m_dims != input->m_dims;
 
     if(need_projection) {
         auto c = addNode("conv", input,

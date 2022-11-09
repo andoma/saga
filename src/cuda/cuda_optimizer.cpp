@@ -207,16 +207,16 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
         auto &w = it.first;
         auto &g = it.second;
 
-        if(w->data_type_ != dt)
+        if(w->m_data_type != dt)
             continue;
 
         // Get rid of this dep
         assert(!w->m_storage->m_memory && !g->m_storage->m_memory);
 
-        assert(w->dims_ == g->dims_);
-        assert(w->data_type_ == g->data_type_);
+        assert(w->m_dims == g->m_dims);
+        assert(w->m_data_type == g->m_data_type);
 
-        size_t elements = w->dims_.elements();
+        size_t elements = w->m_dims.elements();
         size_t rounded_elements = (elements + align - 1) & ~(align - 1);
         total_elements += rounded_elements;
     }
@@ -239,10 +239,10 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
         auto &w = it.first;
         auto &g = it.second;
 
-        if(w->data_type_ != dt)
+        if(w->m_data_type != dt)
             continue;
 
-        const size_t elements = w->dims_.elements();
+        const size_t elements = w->m_dims.elements();
         const size_t rounded_elements = (elements + align - 1) & ~(align - 1);
 
         w->m_storage->m_memory = mem;

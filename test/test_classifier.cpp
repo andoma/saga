@@ -261,19 +261,19 @@ vgg19(Graph &g, std::shared_ptr<Node> n, bool bn, int output_classes)
     n = convrelu(g, n, bn, 3, 256, "3b");
     n = convrelu(g, n, bn, 3, 256, "3c");
     n = convrelu(g, n, bn, 3, 256, "3d");
-    if(n->y()->dims_[2] > 7)
+    if(n->y()->m_dims[2] > 7)
         n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
     n = convrelu(g, n, bn, 3, 512, "4a");
     n = convrelu(g, n, bn, 3, 512, "4b");
     n = convrelu(g, n, bn, 3, 512, "4c");
     n = convrelu(g, n, bn, 3, 512, "4d");
-    if(n->y()->dims_[2] > 7)
+    if(n->y()->m_dims[2] > 7)
         n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
     n = convrelu(g, n, bn, 3, 512, "5a");
     n = convrelu(g, n, bn, 3, 512, "5b");
     n = convrelu(g, n, bn, 3, 512, "5c");
     n = convrelu(g, n, bn, 3, 512, "5d");
-    if(n->y()->dims_[2] > 7)
+    if(n->y()->m_dims[2] > 7)
         n = g.addNode("maxpool", n->y(), {{"size", 2}, {"stride", 2}});
 
     n = g.addNode("fc", n->y(),
@@ -668,10 +668,10 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     if(verbose)
         g.print();
 
-    const auto LABELS = n->outputs_["y"]->grad();
-    const auto LOSS = n->outputs_["loss"];
+    const auto LABELS = n->m_outputs["y"]->grad();
+    const auto LOSS = n->m_outputs["loss"];
     const auto INPUT = x;
-    const auto OUTPUT = n->outputs_["y"];
+    const auto OUTPUT = n->m_outputs["y"];
 
     BatchedTensors bt{{LOSS, Phase::POST},
                       {LABELS, Phase::PRE},

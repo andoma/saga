@@ -269,7 +269,7 @@ public:
 
     cudnnTensorFormat_t tensorFormat(const Tensor &t)
     {
-        return tensorFormat(t.data_type_);
+        return tensorFormat(t.m_data_type);
     }
 
     std::shared_ptr<CudaTensor> lower_tensor(const CudaProgramUnit &pu,

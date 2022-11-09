@@ -99,7 +99,7 @@ CudaProgram::lower_tensor(const CudaProgramUnit &pu,
         return it->second;
     }
 
-    Dims dims = src->dims_;
+    Dims dims = src->m_dims;
 
     if(minimum_rank) {
         while(dims.size() < minimum_rank) dims.insert(dims.begin(), 1);
@@ -108,7 +108,7 @@ CudaProgram::lower_tensor(const CudaProgramUnit &pu,
     dims = dims.batch(pu.m_batch_size);
 
     auto t = std::make_shared<CudaTensor>(
-        src->data_type_, dims, tensorFormat(*src), m_ctx, src->name_);
+        src->m_data_type, dims, tensorFormat(*src), m_ctx, src->m_name);
 
     m_ctx->m_deferred_copy[t] = src;
     m_ctx->m_tensors[src] = t;
@@ -127,7 +127,7 @@ CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
         return it->second;
     }
 
-    auto t = std::make_shared<CudaTensor>(src->data_type_, blueprint);
+    auto t = std::make_shared<CudaTensor>(src->m_data_type, blueprint);
     m_ctx->m_deferred_copy[t] = src;
     m_ctx->m_tensors[src] = t;
     return t;
@@ -375,10 +375,10 @@ CudaProgram::addBatchedTensors(const ProgramSource &ps)
         auto &p = m_batched_tensors[src];
 
         if(!p.first) {
-            auto dims = src->dims_.batch(ps.batch_size);
+            auto dims = src->m_dims.batch(ps.batch_size);
             auto fmt = tensorFormat(*src);
             auto s = std::make_shared<CudaTensorStorageDoubleBuffered>(
-                src->data_type_, dims, fmt, m_ctx);
+                src->m_data_type, dims, fmt, m_ctx);
             auto t = std::make_shared<CudaTensor>(s, dims, fmt);
 
             m_flips.push_back(s);
