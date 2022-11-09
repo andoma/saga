@@ -69,7 +69,7 @@ struct CudnnAddTensor : public CudnnOperation {
                               y_->deviceMem());
     }
 
-    CudaOpArgs listInputs() const override { return {{"x", x_}, {"y", y_}}; }
+    CudaOpArgs listInputs() const override { return {{"x", x_}}; }
 
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 
