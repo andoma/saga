@@ -55,39 +55,33 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
     if(w == nullptr)
         return nullptr;
     const int features = w->m_dims[transpose ? 1 : 0] * group;
-    const int filterdim_h = w->m_dims[2];
-    const int filterdim_w = w->m_dims[3];
 
     auto x = n.m_inputs.get("x");
     if(x == nullptr)
         return nullptr;
 
-    const int inputdim_h = x->m_dims[2];
-    const int inputdim_w = x->m_dims[3];
-
-    int odw;
-    int odh;
+    const size_t spatial_dims = w->m_dims.size() - 2;
+    Dims odims{x->m_dims[0], features};
 
     if(transpose) {
         const int opad = n.m_attributes.get("outputpad", 0);
 
-        odw = stride * (inputdim_w - 1) + opad +
-              ((filterdim_w - 1) * dilation + 1) - 2 * pad;
+        for(size_t i = 0; i < spatial_dims; i++) {
+            int s = stride * (x->m_dims[2 + i] - 1) + opad +
+                    ((w->m_dims[2 + i] - 1) * dilation + 1) - 2 * pad;
+            odims.push_back(s);
+        }
 
-        odh = stride * (inputdim_h - 1) + opad +
-              ((filterdim_h - 1) * dilation + 1) - 2 * pad;
     } else {
-        odw =
-            1 + (inputdim_w + 2 * pad - (((filterdim_w - 1) * dilation) + 1)) /
-                    stride;
-
-        odh =
-            1 + (inputdim_h + 2 * pad - (((filterdim_h - 1) * dilation) + 1)) /
-                    stride;
+        for(size_t i = 0; i < spatial_dims; i++) {
+            int s = 1 + (x->m_dims[2 + i] + 2 * pad -
+                         (((w->m_dims[2 + i] - 1) * dilation) + 1)) /
+                            stride;
+            odims.push_back(s);
+        }
     }
 
-    return makeTensor(x->m_data_type, Dims({x->m_dims[0], features, odh, odw}),
-                      name);
+    return makeTensor(x->m_data_type, odims, name);
 }
 
 static std::vector<std::shared_ptr<Node>>
@@ -96,6 +90,10 @@ conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
     auto x = n->m_inputs.get("x");
     if(!x)
         return {};
+
+    assert(x->m_dims.size() >= 4);
+
+    int spatial_dims = x->m_dims.size() - 2;
 
     auto w = n->m_inputs.get("w");
     auto b = n->m_inputs.get("b");
@@ -110,10 +108,16 @@ conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
             (transpose ? activations : (int)x->m_dims[1]) / group;
         const int out_features = transpose ? (int)x->m_dims[1] : activations;
 
-        n->m_inputs["w"] = w = Tensor::find(
-            x->m_data_type, {out_features, in_features, size, size}, 0,
-            sqrt(2.0 / (in_features * size * size)), named_tensors,
-            node_tensor_name(n->m_name, "w"));
+        int spatial_elements = powf(size, spatial_dims);
+        Dims wdims{out_features, in_features};
+        for(int i = 0; i < spatial_dims; i++) {
+            wdims.push_back(size);
+        }
+
+        n->m_inputs["w"] = w =
+            Tensor::find(x->m_data_type, wdims, 0,
+                         sqrt(2.0 / (in_features * spatial_elements)),
+                         named_tensors, node_tensor_name(n->m_name, "w"));
     }
 
     if(!b && n->m_attributes.get("bias", false)) {

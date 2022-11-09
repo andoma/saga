@@ -101,8 +101,13 @@ CudaProgram::lower_tensor(const CudaProgramUnit &pu,
 
     Dims dims = src->m_dims;
 
-    if(minimum_rank) {
-        while(dims.size() < minimum_rank) dims.insert(dims.begin(), 1);
+    if(minimum_rank > 1) {
+        if(dims.size() < 2) {
+            dims.insert(dims.begin(), 1);
+        }
+        while(dims.size() < minimum_rank) {
+            dims.push_back(1);
+        }
     }
 
     dims = dims.batch(pu.m_batch_size);

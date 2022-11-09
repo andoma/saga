@@ -225,9 +225,9 @@ struct CudnnConvolutionDesc {
         cudnnStatus_t s;
 
         auto wfmt = y.format();
-        s = cudnnSetFilter4dDescriptor(filter_desc_, x.m_type, wfmt,
-                                       w.m_dims[0], w.m_dims[1], w.m_dims[2],
-                                       w.m_dims[3]);
+        auto dima = w.m_dims.i32();
+        s = cudnnSetFilterNdDescriptor(filter_desc_, x.m_type, wfmt,
+                                       dima.size(), dima.data());
         if(s)
             return cudnnGetErrorString(s);
 
@@ -239,9 +239,22 @@ struct CudnnConvolutionDesc {
         if(s)
             return cudnnGetErrorString(s);
 
-        s = cudnnSetConvolution2dDescriptor(
-            conv_desc_, pad, pad, stride, stride, 1, 1, CUDNN_CROSS_CORRELATION,
-            CUDNN_DATA_FLOAT);
+        size_t spatial_dims = x.m_dims.size() - 2;
+
+        assert(spatial_dims <= 3);
+        int padA[3];
+        int strideA[3];
+        int dilationA[3];
+
+        for(size_t i = 0; i < spatial_dims; i++) {
+            padA[i] = pad;
+            strideA[i] = stride;
+            dilationA[i] = 1;
+        }
+
+        s = cudnnSetConvolutionNdDescriptor(
+            conv_desc_, spatial_dims, padA, strideA, dilationA,
+            CUDNN_CROSS_CORRELATION, CUDNN_DATA_FLOAT);
         if(s)
             return cudnnGetErrorString(s);
 
@@ -530,7 +543,7 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
     auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
     auto w = p.lower_tensor(pu, n.m_inputs.get("w"), y->format());
-    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), 2);
+    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), y->m_dims.size());
 
     auto desc = std::make_shared<CudnnConvolutionDesc>();
 
@@ -555,7 +568,7 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
         auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
         if(b) {
-            auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
+            auto db = p.lower_grad(pu, n.m_inputs.get("b"), y->m_dims.size());
             pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
             p.upd(b, db);
         }
@@ -588,7 +601,7 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
         auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
         if(b) {
-            auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
+            auto db = p.lower_grad(pu, n.m_inputs.get("b"), y->m_dims.size());
             pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
             p.upd(b, db);
         }
