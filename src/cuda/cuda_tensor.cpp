@@ -186,12 +186,11 @@ CudaTensor::CudaTensor(DataType data_type, const Dims &size,
   , m_offset(0)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-    assert(size.size() >= 0 && size.size() <= 4);
-    chkCUDNN(cudnnSetTensor4dDescriptor(m_desc, format, m_type, size[0],
-                                        size.size() > 1 ? (int)size[1] : 1,
-                                        size.size() > 2 ? (int)size[2] : 1,
-                                        size.size() > 3 ? (int)size[3] : 1));
+    auto dimA = size.i32();
+    while(dimA.size() < 4) dimA.push_back(1);
 
+    chkCUDNN(cudnnSetTensorNdDescriptorEx(m_desc, format, m_type, dimA.size(),
+                                          dimA.data()));
     size_t bytes;
     chkCUDNN(cudnnGetTensorSizeInBytes(m_desc, &bytes));
 
@@ -206,11 +205,10 @@ CudaTensor::CudaTensor(std::shared_ptr<CudaTensorStorage> storage,
   , m_offset(0)
 {
     chkCUDNN(cudnnCreateTensorDescriptor(&m_desc));
-    assert(size.size() >= 0 && size.size() <= 4);
-    chkCUDNN(cudnnSetTensor4dDescriptor(m_desc, format, m_type, size[0],
-                                        size.size() > 1 ? (int)size[1] : 1,
-                                        size.size() > 2 ? (int)size[2] : 1,
-                                        size.size() > 3 ? (int)size[3] : 1));
+    auto dimA = size.i32();
+    while(dimA.size() < 4) dimA.push_back(1);
+    chkCUDNN(cudnnSetTensorNdDescriptorEx(m_desc, format, m_type, dimA.size(),
+                                          dimA.data()));
     m_storage = storage;
 }
 
@@ -467,6 +465,11 @@ CudaTensor::hashkey() const
                  dims[1], dims[2], dims[3], strides[0], strides[1], strides[2],
                  strides[3], dt);
         break;
+    case 5:
+        snprintf(buf, sizeof(buf), "%d.%d.%d.%d.%d;%d.%d.%d.%d.%d;%s", dims[0],
+                 dims[1], dims[2], dims[3], dims[4], strides[0], strides[1],
+                 strides[2], strides[3], strides[4], dt);
+        break;
     default:
         abort();
     }
@@ -568,10 +571,15 @@ CudaTensor::format() const
     if(rank < 4)
         return CUDNN_TENSOR_NCHW;
 
-    if(rank == 4) {
-        if(strides[1] == 1 && strides[2] != 1 && strides[3] != 1)
-            return CUDNN_TENSOR_NHWC;
-        return CUDNN_TENSOR_NCHW;
+    if(rank >= 4) {
+        if(strides[1] != 1)
+            return CUDNN_TENSOR_NCHW;
+
+        for(int i = 2; i < rank; i++) {
+            if(strides[i] == 1)
+                return CUDNN_TENSOR_NCHW;
+        }
+        return CUDNN_TENSOR_NHWC;
     }
     abort();
 }
@@ -771,13 +779,11 @@ size_from_params(const Dims &size, cudnnTensorFormat_t format,
 {
     cudnnTensorDescriptor_t desc;
     chkCUDNN(cudnnCreateTensorDescriptor(&desc));
-    assert(size.size() >= 0 && size.size() <= 4);
 
-    chkCUDNN(cudnnSetTensor4dDescriptor(desc, format, data_type, size[0],
-                                        size.size() > 1 ? (int)size[1] : 1,
-                                        size.size() > 2 ? (int)size[2] : 1,
-                                        size.size() > 3 ? (int)size[3] : 1));
-
+    auto dimA = size.i32();
+    while(dimA.size() < 4) dimA.push_back(1);
+    chkCUDNN(cudnnSetTensorNdDescriptorEx(desc, format, data_type, dimA.size(),
+                                          dimA.data()));
     size_t bytes;
     chkCUDNN(cudnnGetTensorSizeInBytes(desc, &bytes));
 
