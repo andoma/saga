@@ -41,7 +41,7 @@ static const int table_xor[12] = {
     0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1,
 };
 
-extern int
+static int
 minimal_main(int argc, char **argv)
 {
     int opt;
@@ -117,7 +117,7 @@ minimal_main(int argc, char **argv)
 SAGA_CLI_CMD("minimal", "minimal [OPTIONS ...]", "Run some minimal tests",
              minimal_main);
 
-extern int
+static int
 mse_main(int argc, char **argv)
 {
     int opt;

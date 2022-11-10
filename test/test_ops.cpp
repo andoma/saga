@@ -545,7 +545,7 @@ test_op(std::shared_ptr<Context> ctx, const char *op, const Tensors &inputs,
     return 0;
 }
 
-extern int
+static int
 ops_main(int argc, char **argv)
 {
     int opt;
@@ -662,7 +662,7 @@ static const TensorData concat_x1 = {{2, 2}, {5, 6, 7, 8}};
 static const TensorData concat_x2 = {{2, 2}, {11, 12, 13, 14}};
 static const TensorData concat_x3 = {{2, 2}, {15, 16, 17, 18}};
 
-extern int
+static int
 concat_main(int argc, char **argv)
 {
     int opt;

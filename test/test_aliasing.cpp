@@ -14,7 +14,7 @@
 
 using namespace saga;
 
-extern int
+static int
 aliasing_main(int argc, char **argv)
 {
     int opt;

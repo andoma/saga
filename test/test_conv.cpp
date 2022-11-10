@@ -69,7 +69,7 @@ static const TensorData conv_input_x = {
 
 // clang-format on
 
-extern int
+static int
 conv_main(int argc, char **argv)
 {
     int verbose = 0;
