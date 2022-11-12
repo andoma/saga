@@ -369,10 +369,10 @@ protected:
 #define CPPGLUE(a, b) a##b
 #define CPPJOIN(a, b) CPPGLUE(a, b)
 
-void CudaRegisterOpFactory(const char *name,
-                           const char *(*setup)(CudaProgram &p,
-                                                CudaProgramUnit &pu,
-                                                const Node &n));
+using OpSetup = std::function<const char *(CudaProgram &p, CudaProgramUnit &pu,
+                                           const Node &n)>;
+
+void CudaRegisterOpFactory(const char *name, OpSetup setup);
 
 #define REGISTER_CUDA_OP(name, setup)                                      \
     static void __attribute__((constructor)) CPPJOIN(init, __LINE__)(void) \

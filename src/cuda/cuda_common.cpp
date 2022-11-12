@@ -230,40 +230,24 @@ CudaOperation::dump(FILE *output, bool full)
 
 //------------------------------------------------------------------------
 
-struct OpFactory {
-    const char *(*setup)(CudaProgram &p, CudaProgramUnit &pu, const Node &n);
-};
-
-static std::map<std::string, OpFactory> *cuda_op_factories;
+static std::map<std::string, OpSetup> cuda_op_factories;
 
 void
-CudaRegisterOpFactory(const char *name,
-                      const char *(*setup)(CudaProgram &p, CudaProgramUnit &pu,
-                                           const Node &n))
+CudaRegisterOpFactory(const char *name, OpSetup setup)
 {
-    if(!cuda_op_factories)
-        cuda_op_factories = new std::map<std::string, OpFactory>;
-
-    (*cuda_op_factories)[name] = OpFactory{.setup = setup};
+    cuda_op_factories[name] = setup;
 }
 
-static const char *
-no_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
-{
-    return "operation does not exist";
-}
-
-static const OpFactory no_op = {.setup = no_setup};
-
-static const OpFactory *
+static OpSetup
 find_operation(const Node &n)
 {
-    if(!cuda_op_factories)
-        return &no_op;
-    auto it = cuda_op_factories->find(n.m_type);
-    if(it == cuda_op_factories->end())
-        return &no_op;
-    return &it->second;
+    auto &p = cuda_op_factories[n.m_type];
+    if(!p) {
+        return [](CudaProgram &p, CudaProgramUnit &pu, const Node &n) {
+            return "operation does not exist";
+        };
+    }
+    return p;
 }
 
 struct CudaNodeTransform {
@@ -375,7 +359,8 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
             m_ui->updateCell(m_ui_page, p->m_ui_row, 1, UI::Align::LEFT,
                              "Init:%d%%", (int)(100.0f * cnt / total_nodes));
 
-            const char *err = find_operation(*n)->setup(*p, pu, *n);
+            auto op = find_operation(*n);
+            const char *err = op(*p, pu, *n);
             if(err) {
                 fprintf(stderr,
                         "Unable to create operation for %s "
