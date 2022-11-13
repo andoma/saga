@@ -360,14 +360,12 @@ CudaContext::createMultiProgram(const std::vector<ProgramSource> &sources,
                              "Init:%d%%", (int)(100.0f * cnt / total_nodes));
 
             auto op = find_operation(*n);
-            const char *err = op(*p, pu, *n);
-            if(err) {
-                fprintf(stderr,
-                        "Unable to create operation for %s "
-                        "(#%zd)-- %s\n",
-                        n->m_type.c_str(), cnt, err);
-                n->print();
-                exit(1);
+            try {
+                op(*p, pu, *n);
+            } catch(const std::exception &e) {
+                throw std::runtime_error(
+                    fmt("Unable to create operation %s (#%zd) -- %s",
+                        n->m_type.c_str(), cnt, e.what()));
             }
             cnt++;
         }

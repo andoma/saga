@@ -19,26 +19,24 @@
 
 #include "cuda_aux.hpp"
 
-#define chkCUDNN(expression)                                              \
-    {                                                                     \
-        const cudnnStatus_t cudnn_status__ = (expression);                \
-        if(cudnn_status__ != CUDNN_STATUS_SUCCESS) {                      \
-            fprintf(stderr, "CUDNN error at %s:%d in %s: %s\n", __FILE__, \
-                    __LINE__, __FUNCTION__,                               \
-                    cudnnGetErrorString(cudnn_status__));                 \
-            abort();                                                      \
-        }                                                                 \
+#define chkCUDNN(expression)                                                \
+    {                                                                       \
+        const cudnnStatus_t cudnn_status__ = (expression);                  \
+        if(cudnn_status__ != CUDNN_STATUS_SUCCESS) {                        \
+            throw std::runtime_error(fmt(                                   \
+                "%s at %s:%d in %s: %s\n", #expression, __FILE__, __LINE__, \
+                __FUNCTION__, cudnnGetErrorString(cudnn_status__)));        \
+        }                                                                   \
     }
 
-#define chkCuda(expression)                                              \
-    {                                                                    \
-        cudaError_t cuda_status__ = (expression);                        \
-        if(cuda_status__) {                                              \
-            fprintf(stderr, "CUDA error at %s:%d in %s: %s\n", __FILE__, \
-                    __LINE__, __FUNCTION__,                              \
-                    cudaGetErrorString(cuda_status__));                  \
-            abort();                                                     \
-        }                                                                \
+#define chkCuda(expression)                                                 \
+    {                                                                       \
+        cudaError_t cuda_status__ = (expression);                           \
+        if(cuda_status__) {                                                 \
+            throw std::runtime_error(fmt(                                   \
+                "%s at %s:%d in %s: %s\n", #expression, __FILE__, __LINE__, \
+                __FUNCTION__, cudaGetErrorString(cuda_status__)));          \
+        }                                                                   \
     }
 
 namespace saga {
@@ -299,7 +297,7 @@ public:
             &tensors,
         const char *what);
 
-    bool runOps(const CudaOps &ops, long batch, bool anomaly_detect = false);
+    void runOps(const CudaOps &ops, long batch, bool anomaly_detect = false);
 
     bool check_anomaly();
 
@@ -325,7 +323,7 @@ public:
     CudaOperation(CudaOperation const &) = delete;
 
     virtual ~CudaOperation() {}
-    virtual const char *exec(CudaProgram &p, long batch) = 0;
+    virtual void exec(CudaProgram &p) = 0;
 
     virtual CudaOpArgs listInputs() const = 0;
 
@@ -369,8 +367,8 @@ protected:
 #define CPPGLUE(a, b) a##b
 #define CPPJOIN(a, b) CPPGLUE(a, b)
 
-using OpSetup = std::function<const char *(CudaProgram &p, CudaProgramUnit &pu,
-                                           const Node &n)>;
+using OpSetup =
+    std::function<void(CudaProgram &p, CudaProgramUnit &pu, const Node &n)>;
 
 void CudaRegisterOpFactory(const char *name, OpSetup setup);
 

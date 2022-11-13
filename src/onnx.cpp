@@ -605,9 +605,10 @@ make_flatten(Graph &g, const onnx::NodeProto &np, const Attributes &attribs)
     n->m_inputs["x"] = x;
     const int rank = x->m_dims.size();
     int axis = attribs.get("axis", 1);
-    if(axis < 0)
+    if(axis < 0) {
         axis = rank + axis;
-
+    }
+    assert(axis >= 0);
     Dims shape(axis + 1, DimParam::UNCHANGED);
     shape[axis] = DimParam::REDUCE;
     n->m_attributes["shape"] = shape;

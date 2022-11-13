@@ -515,10 +515,13 @@ test_op(std::shared_ptr<Context> ctx, const char *op, const Tensors &inputs,
                                 ProgramType::INFERENCE, {});
 
     auto y = ctx->resolveTensor(n->y());
-    p->run();
 
-    if(g_verbose)
-        p->dump(stdout);
+    if(g_verbose) {
+        g.print();
+        p->dump(stdout, g_verbose > 1);
+    }
+
+    p->run();
 
     if(!ref_output) {
         printf("Test of %s - No reference\n", op);

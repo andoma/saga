@@ -32,6 +32,31 @@
 
 namespace saga {
 
+const std::shared_ptr<Tensor>
+Tensors::operator[](const std::string &n) const
+{
+    auto it = find(n);
+    if(it == end())
+        throw std::runtime_error{fmt("tensor-%s not found", n.c_str())};
+    return it->second;
+}
+
+bool
+Tensors::has(const std::string &n) const
+{
+    return find(n) != end();
+}
+
+std::shared_ptr<Tensor> &
+Tensors::operator[](const std::string &n)
+{
+    auto it = find(n);
+    if(it != end())
+        return it->second;
+    auto p = emplace(std::make_pair(n, nullptr));
+    return p.first->second;
+}
+
 void
 Tensors::loadTensors(const char *path)
 {

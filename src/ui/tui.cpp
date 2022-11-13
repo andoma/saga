@@ -35,7 +35,7 @@ void
 TUI::refresh()
 {
     std::unique_lock lock{m_mutex};
-    m_last_refresh = Now();
+    m_last_refresh = now();
     refresh_locked();
 }
 
@@ -83,10 +83,10 @@ TUI::updateCell(Page page, size_t row, size_t col, Align a, const char *fmt,
 void
 TUI::maybe_refresh()
 {
-    int64_t now = Now();
-    if(now < m_last_refresh + 250000)
+    int64_t t0 = now();
+    if(t0 < m_last_refresh + 250000)
         return;
-    m_last_refresh = now;
+    m_last_refresh = t0;
     refresh_locked();
 }
 

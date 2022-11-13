@@ -34,39 +34,25 @@
 
 namespace saga {
 
-struct CudnnOperation : public CudaOperation {
-    CudnnOperation(const std::string &name) : CudaOperation(name) {}
-
-    virtual cudnnStatus_t exec(CudaProgram &p) = 0;
-
-    const char *exec(CudaProgram &p, long batch)
-    {
-        cudnnStatus_t s = exec(p);
-        if(s == CUDNN_STATUS_SUCCESS)
-            return NULL;
-
-        return cudnnGetErrorString(s);
-    }
-};
-
 //------------------------------------------------------------------------
 
-struct CudnnAddTensor : public CudnnOperation {
+struct CudnnAddTensor : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
     float m_beta{1.0f};
 
     CudnnAddTensor(std::shared_ptr<CudaTensor> x, std::shared_ptr<CudaTensor> y)
-      : CudnnOperation("add"), x_(x), y_(y)
+      : CudaOperation("add"), x_(x), y_(y)
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         assert(m_beta == 1.0f);
-        return cudnnAddTensor(p.m_ctx->m_cudnn, &alpha, x_->desc(),
-                              x_->deviceMem(), &alpha, y_->desc(),
-                              y_->deviceMem());
+
+        chkCUDNN(cudnnAddTensor(p.m_ctx->m_cudnn, &alpha, x_->desc(),
+                                x_->deviceMem(), &alpha, y_->desc(),
+                                y_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -83,21 +69,21 @@ struct CudnnAddTensor : public CudnnOperation {
 
 //------------------------------------------------------------------------
 
-struct CudnnTransform : public CudnnOperation {
+struct CudnnTransform : public CudaOperation {
     const std::shared_ptr<CudaTensor> a_, b_;
     float m_beta{0};
 
     CudnnTransform(std::shared_ptr<CudaTensor> a, std::shared_ptr<CudaTensor> b)
-      : CudnnOperation("transform"), a_(a), b_(b)
+      : CudaOperation("transform"), a_(a), b_(b)
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
-        return cudnnTransformTensor(p.m_ctx->m_cudnn, &alpha, a_->desc(),
-                                    a_->deviceMem(), &m_beta, b_->desc(),
-                                    b_->deviceMem());
+        chkCUDNN(cudnnTransformTensor(p.m_ctx->m_cudnn, &alpha, a_->desc(),
+                                      a_->deviceMem(), &m_beta, b_->desc(),
+                                      b_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"a", a_}}; }
@@ -217,27 +203,19 @@ struct CudnnConvolutionDesc {
         chkCUDNN(cudnnDestroyConvolutionDescriptor(conv_desc_));
     }
 
-    const char *setup(CudaProgram &p, CudaTensor &x, CudaTensor &w,
-                      CudaTensor &y, int pad, int stride, int group, bool bwd)
+    void setup(CudaProgram &p, CudaTensor &x, CudaTensor &w, CudaTensor &y,
+               int pad, int stride, int group, bool bwd)
     {
         auto algo_key = cudnn_conv_hash_key(x, w, y, pad, stride);
 
-        cudnnStatus_t s;
-
         auto wfmt = y.format();
         auto dima = w.m_dims.i32();
-        s = cudnnSetFilterNdDescriptor(filter_desc_, x.m_type, wfmt,
-                                       dima.size(), dima.data());
-        if(s)
-            return cudnnGetErrorString(s);
+        chkCUDNN(cudnnSetFilterNdDescriptor(filter_desc_, x.m_type, wfmt,
+                                            dima.size(), dima.data()));
 
-        s = cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH);
-        if(s)
-            return cudnnGetErrorString(s);
+        chkCUDNN(cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH));
 
-        s = cudnnSetConvolutionGroupCount(conv_desc_, group);
-        if(s)
-            return cudnnGetErrorString(s);
+        chkCUDNN(cudnnSetConvolutionGroupCount(conv_desc_, group));
 
         size_t spatial_dims = x.m_dims.size() - 2;
 
@@ -252,48 +230,40 @@ struct CudnnConvolutionDesc {
             dilationA[i] = 1;
         }
 
-        s = cudnnSetConvolutionNdDescriptor(
+        chkCUDNN(cudnnSetConvolutionNdDescriptor(
             conv_desc_, spatial_dims, padA, strideA, dilationA,
-            CUDNN_CROSS_CORRELATION, CUDNN_DATA_FLOAT);
-        if(s)
-            return cudnnGetErrorString(s);
+            CUDNN_CROSS_CORRELATION, CUDNN_DATA_FLOAT))
 
-        auto fwd_algo_key = std::string("conv.fwd;") + algo_key;
+            auto fwd_algo_key = std::string("conv.fwd;") + algo_key;
         if(auto it = p.m_ctx->m_algo_hash.find(fwd_algo_key);
            it != p.m_ctx->m_algo_hash.end()) {
             conv_fwd_algo_ = (cudnnConvolutionFwdAlgo_t)it->second;
         } else {
             int count;
-            s = cudnnGetConvolutionForwardAlgorithmMaxCount(p.m_ctx->m_cudnn,
-                                                            &count);
-            if(s)
-                return cudnnGetErrorString(s);
+            chkCUDNN(cudnnGetConvolutionForwardAlgorithmMaxCount(
+                p.m_ctx->m_cudnn, &count))
 
-            cudnnConvolutionFwdAlgoPerf_t fwdalgos[count];
+                cudnnConvolutionFwdAlgoPerf_t fwdalgos[count];
 
-            s = cudnnFindConvolutionForwardAlgorithm(
+            chkCUDNN(cudnnFindConvolutionForwardAlgorithm(
                 p.m_ctx->m_cudnn, x.m_desc, filter_desc_, conv_desc_, y.m_desc,
-                count, &count, fwdalgos);
-            if(s)
-                return cudnnGetErrorString(s);
+                count, &count, fwdalgos));
 
             if(count == 0)
-                return "No forwarding algo found";
+                throw std::runtime_error("No forwarding algo found");
 
             conv_fwd_algo_ = fwdalgos[0].algo;
             p.m_ctx->m_algo_hash[fwd_algo_key] = conv_fwd_algo_;
         }
         size_t workspace;
-        s = cudnnGetConvolutionForwardWorkspaceSize(
+        chkCUDNN(cudnnGetConvolutionForwardWorkspaceSize(
             p.m_ctx->m_cudnn, x.m_desc, filter_desc_, conv_desc_, y.m_desc,
-            conv_fwd_algo_, &workspace);
-        if(s)
-            return cudnnGetErrorString(s);
+            conv_fwd_algo_, &workspace));
 
         p.m_ctx->m_workspace.request(workspace);
 
         if(!bwd)
-            return NULL;
+            return;
 
         auto bwd_data_algo_key = std::string("conv.bwd.data;") + algo_key;
         if(auto it = p.m_ctx->m_algo_hash.find(bwd_data_algo_key);
@@ -301,30 +271,24 @@ struct CudnnConvolutionDesc {
             bwd_data_algo_ = (cudnnConvolutionBwdDataAlgo_t)it->second;
         } else {
             int count;
-            s = cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
-                p.m_ctx->m_cudnn, &count);
-            if(s)
-                return cudnnGetErrorString(s);
+            chkCUDNN(cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
+                p.m_ctx->m_cudnn, &count))
 
-            cudnnConvolutionBwdDataAlgoPerf_t bwdalgos[count];
+                cudnnConvolutionBwdDataAlgoPerf_t bwdalgos[count];
 
-            s = cudnnFindConvolutionBackwardDataAlgorithm(
+            chkCUDNN(cudnnFindConvolutionBackwardDataAlgorithm(
                 p.m_ctx->m_cudnn, filter_desc_, y.desc(), conv_desc_, x.desc(),
-                count, &count, bwdalgos);
-            if(s)
-                return cudnnGetErrorString(s);
+                count, &count, bwdalgos));
 
             if(count == 0)
-                return "No backward data algo found";
+                throw std::runtime_error("No backward data algo found");
 
             bwd_data_algo_ = bwdalgos[0].algo;
             p.m_ctx->m_algo_hash[bwd_data_algo_key] = bwd_data_algo_;
         }
-        s = cudnnGetConvolutionBackwardDataWorkspaceSize(
+        chkCUDNN(cudnnGetConvolutionBackwardDataWorkspaceSize(
             p.m_ctx->m_cudnn, filter_desc_, y.desc(), conv_desc_, x.desc(),
-            bwd_data_algo_, &workspace);
-        if(s)
-            return cudnnGetErrorString(s);
+            bwd_data_algo_, &workspace));
 
         p.m_ctx->m_workspace.request(workspace);
 
@@ -334,38 +298,29 @@ struct CudnnConvolutionDesc {
             bwd_filter_algo_ = (cudnnConvolutionBwdFilterAlgo_t)it->second;
         } else {
             int count;
-            s = cudnnGetConvolutionBackwardFilterAlgorithmMaxCount(
-                p.m_ctx->m_cudnn, &count);
-            if(s)
-                return cudnnGetErrorString(s);
-
+            chkCUDNN(cudnnGetConvolutionBackwardFilterAlgorithmMaxCount(
+                p.m_ctx->m_cudnn, &count));
             cudnnConvolutionBwdFilterAlgoPerf_t filteralgos[count];
 
-            s = cudnnFindConvolutionBackwardFilterAlgorithm(
+            chkCUDNN(cudnnFindConvolutionBackwardFilterAlgorithm(
                 p.m_ctx->m_cudnn, x.desc(), y.desc(), conv_desc_, filter_desc_,
-                count, &count, filteralgos);
-            if(s)
-                return cudnnGetErrorString(s);
+                count, &count, filteralgos));
 
             if(count == 0)
-                return "No backward filter algo found";
+                throw std::runtime_error("No backward filer algo found");
 
             bwd_filter_algo_ = filteralgos[0].algo;
             p.m_ctx->m_algo_hash[bwd_filter_algo_key] = bwd_filter_algo_;
         }
-        s = cudnnGetConvolutionBackwardFilterWorkspaceSize(
+        chkCUDNN(cudnnGetConvolutionBackwardFilterWorkspaceSize(
             p.m_ctx->m_cudnn, x.desc(), y.desc(), conv_desc_, filter_desc_,
-            bwd_filter_algo_, &workspace);
-        if(s)
-            return cudnnGetErrorString(s);
+            bwd_filter_algo_, &workspace));
 
         p.m_ctx->m_workspace.request(workspace);
-
-        return NULL;
     }
 };
 
-struct CudnnConvolutionFwd : public CudnnOperation {
+struct CudnnConvolutionFwd : public CudaOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudnnConvolutionDesc> desc_;
     const std::shared_ptr<CudaTensor> x_, w_, y_;
@@ -376,19 +331,19 @@ struct CudnnConvolutionFwd : public CudnnOperation {
                         std::shared_ptr<CudaTensor> x,
                         std::shared_ptr<CudaTensor> w,
                         std::shared_ptr<CudaTensor> y)
-      : CudnnOperation("convfwd"), ctx_(ctx), desc_(desc), x_(x), w_(w), y_(y)
+      : CudaOperation("convfwd"), ctx_(ctx), desc_(desc), x_(x), w_(w), y_(y)
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
-        return cudnnConvolutionForward(
+        chkCUDNN(cudnnConvolutionForward(
             ctx_->m_cudnn, &alpha, x_->desc(), x_->deviceMem(),
             desc_->filter_desc_, w_->deviceMem(), desc_->conv_desc_,
             desc_->conv_fwd_algo_, ctx_->m_workspace.ptr(),
-            ctx_->m_workspace.size(), &m_beta, y_->desc(), y_->deviceMem());
+            ctx_->m_workspace.size(), &m_beta, y_->desc(), y_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}, {"w", w_}}; }
@@ -408,7 +363,7 @@ struct CudnnConvolutionFwd : public CudnnOperation {
     }
 };
 
-struct CudnnConvolutionBwdBias : public CudnnOperation {
+struct CudnnConvolutionBwdBias : public CudaOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudaTensor> dy_, db_;
     float m_beta{0};
@@ -416,17 +371,17 @@ struct CudnnConvolutionBwdBias : public CudnnOperation {
     CudnnConvolutionBwdBias(std::shared_ptr<CudaContext> ctx,
                             std::shared_ptr<CudaTensor> dy,
                             std::shared_ptr<CudaTensor> db)
-      : CudnnOperation("convbwdbias"), ctx_(ctx), dy_(dy), db_(db)
+      : CudaOperation("convbwdbias"), ctx_(ctx), dy_(dy), db_(db)
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
-        return cudnnConvolutionBackwardBias(ctx_->m_cudnn, &alpha, dy_->desc(),
-                                            dy_->deviceMem(), &m_beta,
-                                            db_->desc(), db_->deviceMem());
+        chkCUDNN(cudnnConvolutionBackwardBias(
+            ctx_->m_cudnn, &alpha, dy_->desc(), dy_->deviceMem(), &m_beta,
+            db_->desc(), db_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"dy", dy_}}; }
@@ -441,7 +396,7 @@ struct CudnnConvolutionBwdBias : public CudnnOperation {
     }
 };
 
-struct CudnnConvolutionBwdFilter : public CudnnOperation {
+struct CudnnConvolutionBwdFilter : public CudaOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudnnConvolutionDesc> desc_;
     const std::shared_ptr<CudaTensor> x_, dy_, dw_;
@@ -452,7 +407,7 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
                               std::shared_ptr<CudaTensor> x,
                               std::shared_ptr<CudaTensor> dy,
                               std::shared_ptr<CudaTensor> dw)
-      : CudnnOperation("convbwdfilter")
+      : CudaOperation("convbwdfilter")
       , ctx_(ctx)
       , desc_(desc)
       , x_(x)
@@ -461,15 +416,15 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
-        return cudnnConvolutionBackwardFilter(
+        chkCUDNN(cudnnConvolutionBackwardFilter(
             ctx_->m_cudnn, &alpha, x_->desc(), x_->deviceMem(), dy_->desc(),
             dy_->deviceMem(), desc_->conv_desc_, desc_->bwd_filter_algo_,
             ctx_->m_workspace.ptr(), ctx_->m_workspace.size(), &m_beta,
-            desc_->filter_desc_, dw_->deviceMem());
+            desc_->filter_desc_, dw_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}, {"dy", dy_}}; }
@@ -489,7 +444,7 @@ struct CudnnConvolutionBwdFilter : public CudnnOperation {
     }
 };
 
-struct CudnnConvolutionBwdData : public CudnnOperation {
+struct CudnnConvolutionBwdData : public CudaOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudnnConvolutionDesc> desc_;
     const std::shared_ptr<CudaTensor> w_, dy_, dx_;
@@ -500,7 +455,7 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
                             std::shared_ptr<CudaTensor> w,
                             std::shared_ptr<CudaTensor> dy,
                             std::shared_ptr<CudaTensor> dx)
-      : CudnnOperation("convbwddata")
+      : CudaOperation("convbwddata")
       , ctx_(ctx)
       , desc_(desc)
       , w_(w)
@@ -509,15 +464,15 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
-        return cudnnConvolutionBackwardData(
+        chkCUDNN(cudnnConvolutionBackwardData(
             ctx_->m_cudnn, &alpha, desc_->filter_desc_, w_->deviceMem(),
             dy_->desc(), dy_->deviceMem(), desc_->conv_desc_,
             desc_->bwd_data_algo_, ctx_->m_workspace.ptr(),
-            ctx_->m_workspace.size(), &m_beta, dx_->desc(), dx_->deviceMem());
+            ctx_->m_workspace.size(), &m_beta, dx_->desc(), dx_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"w", w_}, {"dy", dy_}}; }
@@ -537,13 +492,15 @@ struct CudnnConvolutionBwdData : public CudnnOperation {
     }
 };
 
-static const char *
+static const void
 conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
-    auto w = p.lower_tensor(pu, n.m_inputs.get("w"), y->format());
-    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), y->m_dims.size());
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
+    auto w = p.lower_tensor(pu, n.m_inputs["w"], y->format());
+    auto b = n.m_inputs.has("b")
+                 ? p.lower_tensor(pu, n.m_inputs["b"], y->m_dims.size())
+                 : nullptr;
 
     auto desc = std::make_shared<CudnnConvolutionDesc>();
 
@@ -554,31 +511,29 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     if(!transpose) {
         // Non-transposed (Standard convolution)
 
-        const char *err = desc->setup(p, *x, *w, *y, pad, stride, group,
-                                      p.m_pt == ProgramType::TRAINING);
-        if(err)
-            return err;
+        desc->setup(p, *x, *w, *y, pad, stride, group,
+                    p.m_pt == ProgramType::TRAINING);
 
         pu.fwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, x, w, y));
         if(b)
             pu.fwd(std::make_shared<CudnnAddTensor>(b, y));
 
         if(p.m_pt == ProgramType::INFERENCE)
-            return NULL;
+            return;
 
-        auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+        auto dy = p.lower_grad(pu, n.m_outputs["y"]);
         if(b) {
-            auto db = p.lower_grad(pu, n.m_inputs.get("b"), y->m_dims.size());
+            auto db = p.lower_grad(pu, n.m_inputs["b"], y->m_dims.size());
             pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
             p.upd(b, db);
         }
 
-        auto dw = p.lower_grad(pu, n.m_inputs.get("w"), y->format());
+        auto dw = p.lower_grad(pu, n.m_inputs["w"], y->format());
         pu.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, x, dy,
                                                            dw));
         p.upd(w, dw);
 
-        auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
+        auto dx = p.lower_grad(pu, n.m_inputs["x"]);
         if(dx) {
             pu.bwd(std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w,
                                                              dy, dx));
@@ -587,9 +542,7 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     } else {
         // Transposed ("up-convolution" / "fractionally strided convolution")
 
-        const char *err = desc->setup(p, *y, *w, *x, pad, stride, group, true);
-        if(err)
-            return err;
+        desc->setup(p, *y, *w, *x, pad, stride, group, true);
 
         pu.fwd(
             std::make_shared<CudnnConvolutionBwdData>(p.m_ctx, desc, w, x, y));
@@ -597,29 +550,28 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
             pu.fwd(std::make_shared<CudnnAddTensor>(b, y));
 
         if(p.m_pt == ProgramType::INFERENCE)
-            return NULL;
+            return;
 
-        auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+        auto dy = p.lower_grad(pu, n.m_outputs["y"]);
         if(b) {
-            auto db = p.lower_grad(pu, n.m_inputs.get("b"), y->m_dims.size());
+            auto db = p.lower_grad(pu, n.m_inputs["b"], y->m_dims.size());
             pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
             p.upd(b, db);
         }
 
         // Update weights
-        auto dw = p.lower_grad(pu, n.m_inputs.get("w"), y->format());
+        auto dw = p.lower_grad(pu, n.m_inputs["w"], y->format());
         pu.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, dy, x,
                                                            dw));
         p.upd(w, dw);
 
         // Backprop
-        auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
+        auto dx = p.lower_grad(pu, n.m_inputs["x"]);
         if(dx) {
             pu.bwd(std::make_shared<CudnnConvolutionFwd>(p.m_ctx, desc, dy, w,
                                                          dx));
         }
     }
-    return NULL;
 }
 
 REGISTER_CUDA_OP("conv", conv_setup);
@@ -655,7 +607,7 @@ activationalgo_to_str(const cudnnActivationDescriptor_t &desc)
     }
 }
 
-struct CudnnActivationFwd : public CudnnOperation {
+struct CudnnActivationFwd : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
     float m_beta{0};
 
@@ -664,7 +616,7 @@ struct CudnnActivationFwd : public CudnnOperation {
     CudnnActivationFwd(std::shared_ptr<CudaTensor> x,
                        std::shared_ptr<CudaTensor> y,
                        cudnnActivationMode_t mode, float alpha)
-      : CudnnOperation("actfwd"), x_(x), y_(y)
+      : CudaOperation("actfwd"), x_(x), y_(y)
     {
         chkCUDNN(cudnnCreateActivationDescriptor(&desc_));
         chkCUDNN(cudnnSetActivationDescriptor(desc_, mode, CUDNN_PROPAGATE_NAN,
@@ -676,13 +628,13 @@ struct CudnnActivationFwd : public CudnnOperation {
 
     ~CudnnActivationFwd() { chkCUDNN(cudnnDestroyActivationDescriptor(desc_)); }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
-        return cudnnActivationForward(p.m_ctx->m_cudnn, desc_, &alpha,
-                                      x_->desc(), x_->deviceMem(), &m_beta,
-                                      y_->desc(), y_->deviceMem());
+        chkCUDNN(cudnnActivationForward(p.m_ctx->m_cudnn, desc_, &alpha,
+                                        x_->desc(), x_->deviceMem(), &m_beta,
+                                        y_->desc(), y_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -699,7 +651,7 @@ struct CudnnActivationFwd : public CudnnOperation {
     }
 };
 
-struct CudnnActivationBwd : public CudnnOperation {
+struct CudnnActivationBwd : public CudaOperation {
     const std::shared_ptr<CudnnActivationFwd> fwd_;
     const std::shared_ptr<CudaTensor> x_, y_, dx_, dy_;
     float m_beta{0};
@@ -709,18 +661,18 @@ struct CudnnActivationBwd : public CudnnOperation {
                        std::shared_ptr<CudaTensor> y,
                        std::shared_ptr<CudaTensor> dx,
                        std::shared_ptr<CudaTensor> dy)
-      : CudnnOperation("actbwd"), fwd_(fwd), x_(x), y_(y), dx_(dx), dy_(dy)
+      : CudaOperation("actbwd"), fwd_(fwd), x_(x), y_(y), dx_(dx), dy_(dy)
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
-        return cudnnActivationBackward(
+        chkCUDNN(cudnnActivationBackward(
             p.m_ctx->m_cudnn, fwd_->desc_, &alpha, y_->desc(), y_->deviceMem(),
             dy_->desc(), dy_->deviceMem(), x_->desc(), x_->deviceMem(), &m_beta,
-            dx_->desc(), dx_->deviceMem());
+            dx_->desc(), dx_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override
@@ -743,65 +695,62 @@ struct CudnnActivationBwd : public CudnnOperation {
     }
 };
 
-static const char *
+static void
 activation_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n,
                  cudnnActivationMode_t mode, float alpha)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
     auto fwd = std::make_shared<CudnnActivationFwd>(x, y, mode, alpha);
 
     pu.fwd(fwd);
 
     if(p.m_pt == ProgramType::INFERENCE)
-        return NULL;
+        return;
 
-    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
-    if(!dx)
-        return NULL;
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto dx = p.lower_grad(pu, n.m_inputs["x"]);
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
 
     pu.bwd(std::make_shared<CudnnActivationBwd>(fwd, x, y, dx, dy));
-    return NULL;
 }
 
-static const char *
+static void
 relu_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    return activation_setup(p, pu, n, CUDNN_ACTIVATION_RELU, 0.0f);
+    activation_setup(p, pu, n, CUDNN_ACTIVATION_RELU, 0.0f);
 }
 
 REGISTER_CUDA_OP("relu", relu_setup);
 
-static const char *
+static void
 elu_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    return activation_setup(p, pu, n, CUDNN_ACTIVATION_ELU,
-                            n.m_attributes.get("alpha", 0.1f));
+    activation_setup(p, pu, n, CUDNN_ACTIVATION_ELU,
+                     n.m_attributes.get("alpha", 0.1f));
 }
 
 REGISTER_CUDA_OP("elu", relu_setup);
 
-static const char *
+static void
 sigmoid_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    return activation_setup(p, pu, n, CUDNN_ACTIVATION_SIGMOID, 0.0f);
+    activation_setup(p, pu, n, CUDNN_ACTIVATION_SIGMOID, 0.0f);
 }
 
 REGISTER_CUDA_OP("sigmoid", sigmoid_setup);
 
-static const char *
+static void
 tanh_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    return activation_setup(p, pu, n, CUDNN_ACTIVATION_TANH, 0.0f);
+    activation_setup(p, pu, n, CUDNN_ACTIVATION_TANH, 0.0f);
 }
 
 REGISTER_CUDA_OP("tanh", tanh_setup);
 
-static const char *
+static void
 swish_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    return activation_setup(p, pu, n, CUDNN_ACTIVATION_SWISH, 0.0f);
+    activation_setup(p, pu, n, CUDNN_ACTIVATION_SWISH, 0.0f);
 }
 
 REGISTER_CUDA_OP("swish", swish_setup);
@@ -823,7 +772,7 @@ struct CudaLeakyRelu : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         switch(x_->m_data_type) {
         case Tensor::DataType::FLOAT:
@@ -832,9 +781,8 @@ struct CudaLeakyRelu : public CudaOperation {
                              p.m_ctx->m_stream);
             break;
         default:
-            return "LeakyRelu: Unsupported datatype";
+            throw std::runtime_error{"Unsupported datatype"};
         }
-        return NULL;
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -842,25 +790,24 @@ struct CudaLeakyRelu : public CudaOperation {
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 };
 
-static const char *
+static void
 leakyrelu_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     if(p.m_pt != ProgramType::INFERENCE)
-        return "LeakRelu not supported for training";
+        throw std::runtime_error{"LeakRelu not supported for training"};
 
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
     float alpha = n.m_attributes.get("alpha", 0.01f);
     auto op = std::make_shared<CudaLeakyRelu>(x, y, alpha);
     pu.fwd(op);
-    return NULL;
 }
 
 REGISTER_CUDA_OP("leakyrelu", leakyrelu_setup);
 
 //------------------------------------------------------------------------
 
-struct CudnnPoolingFwd : public CudnnOperation {
+struct CudnnPoolingFwd : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
 
     cudnnPoolingDescriptor_t desc_;
@@ -868,7 +815,7 @@ struct CudnnPoolingFwd : public CudnnOperation {
     CudnnPoolingFwd(std::shared_ptr<CudaTensor> x,
                     std::shared_ptr<CudaTensor> y, cudnnPoolingMode_t mode,
                     int size, int pad, int stride)
-      : CudnnOperation("poolfwd"), x_(x), y_(y)
+      : CudaOperation("poolfwd"), x_(x), y_(y)
     {
         chkCUDNN(cudnnCreatePoolingDescriptor(&desc_));
 
@@ -879,14 +826,14 @@ struct CudnnPoolingFwd : public CudnnOperation {
 
     ~CudnnPoolingFwd() { chkCUDNN(cudnnDestroyPoolingDescriptor(desc_)); }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
 
-        return cudnnPoolingForward(p.m_ctx->m_cudnn, desc_, &alpha, x_->desc(),
-                                   x_->deviceMem(), &beta, y_->desc(),
-                                   y_->deviceMem());
+        chkCUDNN(cudnnPoolingForward(p.m_ctx->m_cudnn, desc_, &alpha,
+                                     x_->desc(), x_->deviceMem(), &beta,
+                                     y_->desc(), y_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -894,7 +841,7 @@ struct CudnnPoolingFwd : public CudnnOperation {
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 };
 
-struct CudnnPoolingBwd : public CudnnOperation {
+struct CudnnPoolingBwd : public CudaOperation {
     const std::shared_ptr<CudnnPoolingFwd> fwd_;
     const std::shared_ptr<CudaTensor> x_, y_, dx_, dy_;
     float m_beta{0};
@@ -904,18 +851,18 @@ struct CudnnPoolingBwd : public CudnnOperation {
                     std::shared_ptr<CudaTensor> y,
                     std::shared_ptr<CudaTensor> dx,
                     std::shared_ptr<CudaTensor> dy)
-      : CudnnOperation("poolbwd"), fwd_(fwd), x_(x), y_(y), dx_(dx), dy_(dy)
+      : CudaOperation("poolbwd"), fwd_(fwd), x_(x), y_(y), dx_(dx), dy_(dy)
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
-        return cudnnPoolingBackward(
+        chkCUDNN(cudnnPoolingBackward(
             p.m_ctx->m_cudnn, fwd_->desc_, &alpha, y_->desc(), y_->deviceMem(),
             dy_->desc(), dy_->deviceMem(), x_->desc(), x_->deviceMem(), &m_beta,
-            dx_->desc(), dx_->deviceMem());
+            dx_->desc(), dx_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override
@@ -933,12 +880,12 @@ struct CudnnPoolingBwd : public CudnnOperation {
     }
 };
 
-static const char *
+static void
 pooling_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n,
               cudnnPoolingMode_t mode)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
 
     int size;
     if(n.m_attributes.get("global", false)) {
@@ -954,29 +901,26 @@ pooling_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n,
     pu.fwd(fwd);
 
     if(p.m_pt == ProgramType::INFERENCE)
-        return NULL;
+        return;
 
-    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
-    if(!dx)
-        return NULL;
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto dx = p.lower_grad(pu, n.m_inputs["x"]);
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
 
     pu.bwd(std::make_shared<CudnnPoolingBwd>(fwd, x, y, dx, dy));
-    return NULL;
 }
 
-static const char *
+static void
 maxpool_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    return pooling_setup(p, pu, n, CUDNN_POOLING_MAX);
+    pooling_setup(p, pu, n, CUDNN_POOLING_MAX);
 }
 
 REGISTER_CUDA_OP("maxpool", maxpool_setup);
 
-static const char *
+static void
 avgpool_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    return pooling_setup(p, pu, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
+    pooling_setup(p, pu, n, CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING);
 }
 
 REGISTER_CUDA_OP("avgpool", avgpool_setup);
@@ -1054,7 +998,7 @@ struct CudaGemm : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f, beta = m_beta;
         __half halpha = 1.0f, hbeta = m_beta;
@@ -1062,7 +1006,6 @@ struct CudaGemm : public CudaOperation {
         cublasStatus_t s;
         switch(a_->m_type) {
         case CUDNN_DATA_FLOAT:
-
             s = cublasSgemm(p.m_ctx->m_cublas, transa_, transb_, m_, n_, k_,
                             &alpha, (const float *)a_->deviceMem(), lda_,
                             (const float *)b_->deviceMem(), ldb_, &beta,
@@ -1075,9 +1018,10 @@ struct CudaGemm : public CudaOperation {
                             (__half *)c_->deviceMem(), ldc_);
             break;
         default:
-            return "Unsupported tensor datatype";
+            throw std::runtime_error{"Unsupported tensor datatype"};
         }
-        return cublasErrStr(s);
+        if(s)
+            throw std::runtime_error{cublasErrStr(s)};
     }
 
     CudaOpArgs listInputs() const override { return {{"a", a_}, {"b", b_}}; }
@@ -1096,13 +1040,14 @@ struct CudaGemm : public CudaOperation {
  * https://docs.nvidia.com/deeplearning/performance/dl-performance-fully-connected/index.html#fullyconnected-layer
  */
 
-static const char *
+static void
 fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
-    auto w = p.lower_tensor(pu, n.m_inputs.get("w"));
-    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), 2);
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
+    auto w = p.lower_tensor(pu, n.m_inputs["w"]);
+    auto b =
+        n.m_inputs.has("b") ? p.lower_tensor(pu, n.m_inputs["b"], 2) : nullptr;
 
     const bool transW = n.m_attributes.get("transW", false);
     const int num_inputs = x->m_dims[1];
@@ -1126,11 +1071,11 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         pu.fwd(std::make_shared<CudnnAddTensor>(b, y));
 
     if(p.m_pt == ProgramType::INFERENCE)
-        return NULL;
+        return;
 
-    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
-    auto dw = p.lower_grad(pu, n.m_inputs.get("w"));
+    auto dx = p.lower_grad(pu, n.m_inputs["x"]);
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
+    auto dw = p.lower_grad(pu, n.m_inputs["w"]);
 
     // clang-format off
     if(transW) {
@@ -1160,7 +1105,7 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         auto ones = p.lower_tensor(
             pu, Tensor::make(x->m_data_type, {batch_size, 1}, 1, 0));
 
-        auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
+        auto db = p.lower_grad(pu, n.m_inputs["b"], 2);
         pu.bwd(std::make_shared<CudaGemm>(CUBLAS_OP_N, CUBLAS_OP_T, 1,
                                           num_outputs, batch_size, ones, 1, dy,
                                           num_outputs, db, 1, "fc.bwd.bias"));
@@ -1180,8 +1125,6 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
             transW ? "fc.bwd.data.t" : "fc.bwd.data.n"));
         // clang-format on
     }
-
-    return NULL;
 }
 
 REGISTER_CUDA_OP("fc", fc_setup);
@@ -1217,15 +1160,16 @@ struct CudaConvert : public CudaOperation {
                   y_->m_data_type == Tensor::DataType::HALF) {
             algo_ = convert_i16_half;
         } else {
-            algo_ = NULL;
+            throw std::runtime_error{fmt("Unable to convert %s -> %s",
+                                         Tensor::DataTypeStr(x_->m_data_type),
+                                         Tensor::DataTypeStr(y_->m_data_type))};
         }
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         algo_(x_->deviceMem(), y_->deviceMem(), m_elements, scale_,
               p.m_ctx->m_stream);
-        return NULL;
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -1233,33 +1177,26 @@ struct CudaConvert : public CudaOperation {
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 };
 
-static const char *
+static void
 convert_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     auto scale = n.m_attributes.get("scale", 1.0f);
 
-    auto xh = n.m_inputs.get("x");
+    auto xh = n.m_inputs["x"];
     auto x = p.lower_tensor(pu, xh);
 
-    auto yh = n.m_outputs.get("y");
+    auto yh = n.m_outputs["y"];
 
     if(xh->m_data_type == yh->m_data_type && scale == 1.0f) {
         auto y =
             std::make_shared<CudaTensor>(x, x->m_dims, std::vector<int64_t>{},
                                          xh->namePostfix("nop-convert"));
         p.m_ctx->m_tensors[yh] = y;
-        return NULL;
+        return;
     }
 
     auto y = p.lower_tensor(yh, *x);
-    auto op = std::make_shared<CudaConvert>(x, y, scale);
-
-    if(op->algo_ == NULL) {
-        return "Unable to convert between given formats";
-    }
-
-    pu.fwd(op);
-    return NULL;
+    pu.fwd(std::make_shared<CudaConvert>(x, y, scale));
 }
 
 REGISTER_CUDA_OP("convert", convert_setup);
@@ -1272,8 +1209,8 @@ convert_fuse_nodes(CudaProgram &p, std::shared_ptr<Node> a,
         a->m_attributes.get("scale", 1.0f) * b->m_attributes.get("scale", 1.0f);
 
     auto nn = std::make_shared<Node>("convert");
-    nn->m_inputs["x"] = a->m_inputs.get("x");
-    nn->m_outputs["y"] = b->m_outputs.get("y");
+    nn->m_inputs["x"] = a->m_inputs["x"];
+    nn->m_outputs["y"] = b->m_outputs["y"];
     nn->m_attributes["scale"] = scale;
     return nn;
 }
@@ -1313,7 +1250,7 @@ struct CudaCatClassifierFwd : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         switch(x_->m_type) {
         case CUDNN_DATA_FLOAT:
@@ -1327,9 +1264,8 @@ struct CudaCatClassifierFwd : public CudaOperation {
                 (int32_t *)y_->deviceMem(), x_->m_dims[1], p.m_ctx->m_stream);
             break;
         default:
-            return "Unsupported tensor datatype";
+            throw std::runtime_error{"Unsupported tensor datatype"};
         }
-        return NULL;
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -1354,7 +1290,7 @@ struct CudaCatClassifierBwd : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         const int n = x_->m_dims[0];
         const int c = x_->m_dims[1];
@@ -1380,9 +1316,8 @@ struct CudaCatClassifierBwd : public CudaOperation {
 
             break;
         default:
-            return "Unsupported tensor datatype";
+            throw std::runtime_error{"Unsupported tensor datatype"};
         }
-        return NULL;
     }
 
     CudaOpArgs listInputs() const override
@@ -1396,28 +1331,25 @@ struct CudaCatClassifierBwd : public CudaOperation {
     }
 };
 
-static const char *
+static void
 catclassifier_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
 
     auto op = std::make_shared<CudaCatClassifierFwd>(x, y);
 
     pu.fwd(op);
 
     if(p.m_pt == ProgramType::INFERENCE)
-        return NULL;
+        return;
 
-    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
-    if(!dx)
-        return NULL;
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto dx = p.lower_grad(pu, n.m_inputs["x"]);
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
 
-    auto loss = p.lower_tensor(pu, n.m_outputs.get("loss"));
+    auto loss = p.lower_tensor(pu, n.m_outputs["loss"]);
 
     pu.bwd(std::make_shared<CudaCatClassifierBwd>(x, y, dx, dy, loss));
-    return NULL;
 }
 
 REGISTER_CUDA_OP("catclassifier", catclassifier_setup);
@@ -1432,7 +1364,7 @@ struct CudaLossFwd : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         if(x_->m_type == CUDNN_DATA_HALF && y_->m_type == CUDNN_DATA_FLOAT) {
             convert_half_float(x_->deviceMem(), y_->deviceMem(), m_elements,
@@ -1450,9 +1382,8 @@ struct CudaLossFwd : public CudaOperation {
                             m_elements * sizeof(float), cudaMemcpyDefault,
                             p.m_ctx->m_stream);
         } else {
-            return "Unsupported tensor datatype";
+            throw std::runtime_error{"Unsupported tensor datatype"};
         }
-        return NULL;
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -1477,7 +1408,7 @@ struct CudaLossBwd : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         const int n = x_->m_dims[0];
 
@@ -1511,9 +1442,8 @@ struct CudaLossBwd : public CudaOperation {
                                  (float *)mmss_->deviceMem(), c,
                                  scale * p.m_mp_scaling, p.m_ctx->m_stream);
         } else {
-            return "Unsupported tensor datatype";
+            throw std::runtime_error{"Unsupported tensor datatype"};
         }
-        return NULL;
     }
 
     CudaOpArgs listInputs() const override
@@ -1527,39 +1457,33 @@ struct CudaLossBwd : public CudaOperation {
     }
 };
 
-static const char *
+static void
 loss_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
 
     auto op = std::make_shared<CudaLossFwd>(x, y);
 
     pu.fwd(op);
 
     if(p.m_pt == ProgramType::INFERENCE)
-        return NULL;
+        return;
 
-    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
-    if(!dx)
-        return NULL;
-    auto target = p.lower_tensor(pu, n.m_inputs.get("target"));
-    if(!target)
-        return NULL;
-
-    auto mmss = p.lower_tensor(pu, n.m_outputs.get("mmss"));
+    auto dx = p.lower_grad(pu, n.m_inputs["x"]);
+    auto target = p.lower_tensor(pu, n.m_inputs["target"]);
+    auto mmss = p.lower_tensor(pu, n.m_outputs["mmss"]);
     assert(mmss);
 
     const float strength = n.m_attributes.get("strength", 1.0f);
     pu.bwd(std::make_shared<CudaLossBwd>(x, dx, target, mmss, strength));
-    return NULL;
 }
 
 REGISTER_CUDA_OP("loss", loss_setup);
 
 //------------------------------------------------------------------------
 
-struct CudnnDropoutFwd : public CudnnOperation {
+struct CudnnDropoutFwd : public CudaOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudaTensor> x_, y_;
     cudnnDropoutDescriptor_t desc_;
@@ -1570,7 +1494,7 @@ struct CudnnDropoutFwd : public CudnnOperation {
 
     CudnnDropoutFwd(CudaProgram &p, std::shared_ptr<CudaTensor> x,
                     std::shared_ptr<CudaTensor> y, float prob)
-      : CudnnOperation("dropoutfwd"), ctx_(p.m_ctx), x_(x), y_(y)
+      : CudaOperation("dropoutfwd"), ctx_(p.m_ctx), x_(x), y_(y)
     {
         chkCUDNN(cudnnDropoutGetReserveSpaceSize(x_->desc(), &reserve_size_));
         chkCuda(cudaMalloc(&reserve_, reserve_size_));
@@ -1591,11 +1515,11 @@ struct CudnnDropoutFwd : public CudnnOperation {
         chkCuda(cudaFree(reserve_));
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
-        return cudnnDropoutForward(p.m_ctx->m_cudnn, desc_, x_->desc(),
-                                   x_->deviceMem(), y_->desc(), y_->deviceMem(),
-                                   reserve_, reserve_size_);
+        chkCUDNN(cudnnDropoutForward(p.m_ctx->m_cudnn, desc_, x_->desc(),
+                                     x_->deviceMem(), y_->desc(),
+                                     y_->deviceMem(), reserve_, reserve_size_));
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -1603,24 +1527,25 @@ struct CudnnDropoutFwd : public CudnnOperation {
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 };
 
-struct CudnnDropoutBwd : public CudnnOperation {
+struct CudnnDropoutBwd : public CudaOperation {
     const std::shared_ptr<CudnnDropoutFwd> fwd_;
     const std::shared_ptr<CudaTensor> dx_, dy_;
 
     CudnnDropoutBwd(std::shared_ptr<CudnnDropoutFwd> fwd,
                     std::shared_ptr<CudaTensor> dx,
                     std::shared_ptr<CudaTensor> dy)
-      : CudnnOperation("dropoutbwd"), fwd_(fwd), dx_(dx), dy_(dy)
+      : CudaOperation("dropoutbwd"), fwd_(fwd), dx_(dx), dy_(dy)
     {
     }
 
     ~CudnnDropoutBwd() {}
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
-        return cudnnDropoutBackward(
-            p.m_ctx->m_cudnn, fwd_->desc_, dy_->desc(), dy_->deviceMem(),
-            dx_->desc(), dx_->deviceMem(), fwd_->reserve_, fwd_->reserve_size_);
+        chkCUDNN(cudnnDropoutBackward(p.m_ctx->m_cudnn, fwd_->desc_,
+                                      dy_->desc(), dy_->deviceMem(),
+                                      dx_->desc(), dx_->deviceMem(),
+                                      fwd_->reserve_, fwd_->reserve_size_));
     }
 
     CudaOpArgs listInputs() const override { return {{"dy", dy_}}; }
@@ -1628,25 +1553,22 @@ struct CudnnDropoutBwd : public CudnnOperation {
     CudaOpArgs listOutputs() const override { return {{"dx", dx_}}; }
 };
 
-static const char *
+static void
 dropout_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     assert(p.m_pt == ProgramType::TRAINING);
 
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
     const float prob = n.m_attributes.get("prob", 0.5f);
 
     auto fwd = std::make_shared<CudnnDropoutFwd>(p, x, y, prob);
     pu.fwd(fwd);
 
-    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
-    if(!dx)
-        return NULL;
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto dx = p.lower_grad(pu, n.m_inputs["x"]);
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
 
     pu.bwd(std::make_shared<CudnnDropoutBwd>(fwd, dx, dy));
-    return NULL;
 }
 
 REGISTER_CUDA_OP("dropout", dropout_setup);
@@ -1655,18 +1577,18 @@ static std::vector<std::shared_ptr<Node>>
 dropout_transform_node(CudaProgram &p, CudaProgramUnit &pu,
                        std::shared_ptr<Node> n)
 {
-    auto y = n->m_outputs.get("y");
+    auto y = n->m_outputs["y"];
     auto ly = p.m_ctx->m_tensors[y];
 
     if(ly) {
-        auto x = n->m_inputs.get("x");
+        auto x = n->m_inputs["x"];
         auto lx = std::make_shared<CudaTensor>(ly->m_storage, ly->m_dims,
                                                p.tensorFormat(*ly),
                                                ly->namePostfix("dropout"));
         p.m_ctx->m_tensors[x] = ly;
 
     } else {
-        auto x = p.lower_tensor(pu, n->m_inputs.get("x"));
+        auto x = p.lower_tensor(pu, n->m_inputs["x"]);
         ly = std::make_shared<CudaTensor>(x->m_storage, x->m_dims,
                                           p.tensorFormat(*x),
                                           x->namePostfix("dropout"));
@@ -1695,7 +1617,7 @@ REGISTER_CUDA_TRANSFORM(500, ProgramType::INFERENCE, dropout_transform);
 
 //------------------------------------------------------------------------
 
-struct CudnnBatchNormInference : public CudnnOperation {
+struct CudnnBatchNormInference : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_;
     const float epsilon_;
 
@@ -1705,7 +1627,7 @@ struct CudnnBatchNormInference : public CudnnOperation {
                             std::shared_ptr<CudaTensor> m,
                             std::shared_ptr<CudaTensor> v,
                             std::shared_ptr<CudaTensor> y, float epsilon)
-      : CudnnOperation("bninf")
+      : CudaOperation("bninf")
       , x_(x)
       , s_(s)
       , b_(b)
@@ -1716,16 +1638,16 @@ struct CudnnBatchNormInference : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
 
-        return cudnnBatchNormalizationForwardInference(
+        chkCUDNN(cudnnBatchNormalizationForwardInference(
             p.m_ctx->m_cudnn, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta,
             x_->desc(), x_->deviceMem(), y_->desc(), y_->deviceMem(),
             s_->desc(), s_->deviceMem(), b_->deviceMem(), m_->deviceMem(),
-            v_->deviceMem(), epsilon_);
+            v_->deviceMem(), epsilon_));
     }
 
     CudaOpArgs listInputs() const override
@@ -1736,7 +1658,7 @@ struct CudnnBatchNormInference : public CudnnOperation {
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 };
 
-struct CudnnBatchNormTrain : public CudnnOperation {
+struct CudnnBatchNormTrain : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, s_, b_, m_, v_, y_, sm_, sv_;
     const float epsilon_;
     float expavgf_{NAN};
@@ -1751,7 +1673,7 @@ struct CudnnBatchNormTrain : public CudnnOperation {
                         std::shared_ptr<CudaTensor> y,
                         std::shared_ptr<CudaTensor> sm,
                         std::shared_ptr<CudaTensor> sv, float epsilon)
-      : CudnnOperation("bntrain")
+      : CudaOperation("bntrain")
       , x_(x)
       , s_(s)
       , b_(b)
@@ -1764,7 +1686,7 @@ struct CudnnBatchNormTrain : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -1776,15 +1698,14 @@ struct CudnnBatchNormTrain : public CudnnOperation {
         assert(m_m_beta == 1.0f);
         assert(m_v_beta == 1.0f);
 
-        auto s = cudnnBatchNormalizationForwardTraining(
+        chkCUDNN(cudnnBatchNormalizationForwardTraining(
             p.m_ctx->m_cudnn, CUDNN_BATCHNORM_SPATIAL, &alpha, &beta,
             x_->desc(), x_->deviceMem(), y_->desc(), y_->deviceMem(),
             s_->desc(), s_->deviceMem(), b_->deviceMem(), expavgf_,
             m_->deviceMem(), v_->deviceMem(), epsilon_, sm_->deviceMem(),
-            sv_->deviceMem());
+            sv_->deviceMem()));
 
         expavgf_ = p.m_pc.bn_expavg;
-        return s;
     }
 
     CudaOpArgs listInputs() const override
@@ -1807,7 +1728,7 @@ struct CudnnBatchNormTrain : public CudnnOperation {
     }
 };
 
-struct CudnnBatchNormBwd : public CudnnOperation {
+struct CudnnBatchNormBwd : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, dy_, dx_, s_, ds_, db_, sm_, sv_;
     const float epsilon_;
     float m_dx_beta{0};
@@ -1817,7 +1738,7 @@ struct CudnnBatchNormBwd : public CudnnOperation {
                       std::shared_ptr<CudaTensor> dx,
                       std::shared_ptr<CudaTensor> ds,
                       std::shared_ptr<CudaTensor> db)
-      : CudnnOperation("bnbwd")
+      : CudaOperation("bnbwd")
       , x_(fwd.x_)
       , dy_(dy)
       , dx_(dx)
@@ -1830,18 +1751,18 @@ struct CudnnBatchNormBwd : public CudnnOperation {
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
         assert(m_ds_beta == m_db_beta);
 
-        return cudnnBatchNormalizationBackward(
+        chkCUDNN(cudnnBatchNormalizationBackward(
             p.m_ctx->m_cudnn, CUDNN_BATCHNORM_SPATIAL, &alpha, &m_dx_beta,
             &alpha, &m_ds_beta, x_->desc(), x_->deviceMem(), dy_->desc(),
             dy_->deviceMem(), dx_->desc(), dx_->deviceMem(), s_->desc(),
             s_->deviceMem(), ds_->deviceMem(), db_->deviceMem(), epsilon_,
-            sm_->deviceMem(), sv_->deviceMem());
+            sm_->deviceMem(), sv_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override
@@ -1866,22 +1787,22 @@ struct CudnnBatchNormBwd : public CudnnOperation {
     }
 };
 
-static const char *
+static void
 batchnorm_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
-    auto s = p.lower_tensor(pu, n.m_inputs.get("s"), 2);
-    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), 2);
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
+    auto s = p.lower_tensor(pu, n.m_inputs["s"], 2);
+    auto b = p.lower_tensor(pu, n.m_inputs["b"], 2);
 
-    auto m = p.lower_tensor(pu, n.m_inputs.get("m"), 2);
-    auto v = p.lower_tensor(pu, n.m_inputs.get("v"), 2);
+    auto m = p.lower_tensor(pu, n.m_inputs["m"], 2);
+    auto v = p.lower_tensor(pu, n.m_inputs["v"], 2);
     const float epsilon = n.m_attributes.get("epsilon", 1e-5f);
 
     if(p.m_pt == ProgramType::INFERENCE) {
         pu.fwd(std::make_shared<CudnnBatchNormInference>(x, s, b, m, v, y,
                                                          epsilon));
-        return NULL;
+        return;
     }
 
     auto sm = std::make_shared<CudaTensor>(*m, m->namePostfix("smean"));
@@ -1891,24 +1812,22 @@ batchnorm_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
                                                    epsilon);
     pu.fwd(f);
 
-    auto dx = p.lower_grad(pu, n.m_inputs.get("x"));
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
-    auto ds = p.lower_grad(pu, n.m_inputs.get("s"), 2);
-    auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
+    auto dx = p.lower_grad(pu, n.m_inputs["x"]);
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
+    auto ds = p.lower_grad(pu, n.m_inputs["s"], 2);
+    auto db = p.lower_grad(pu, n.m_inputs["b"], 2);
 
     pu.bwd(std::make_shared<CudnnBatchNormBwd>(*f, dy, dx, ds, db));
 
     p.upd(s, ds);
     p.upd(b, db);
-
-    return NULL;
 }
 
 REGISTER_CUDA_OP("batchnorm", batchnorm_setup);
 
 //------------------------------------------------------------------------
 
-struct CudnnOpTensor : public CudnnOperation {
+struct CudnnOpTensor : public CudaOperation {
     const std::shared_ptr<CudaTensor> a_, b_, c_;
     cudnnOpTensorDescriptor_t desc_;
 
@@ -1928,13 +1847,14 @@ struct CudnnOpTensor : public CudnnOperation {
         case CUDNN_OP_TENSOR_NOT:
             return "not";
         default:
-            abort();
+            throw std::runtime_error(
+                fmt("Unsupported op %d in %s", (int)op, __PRETTY_FUNCTION__));
         }
     }
 
     CudnnOpTensor(std::shared_ptr<CudaTensor> a, std::shared_ptr<CudaTensor> b,
                   std::shared_ptr<CudaTensor> c, cudnnOpTensorOp_t op)
-      : CudnnOperation(opname(op)), a_(a), b_(b), c_(c)
+      : CudaOperation(opname(op)), a_(a), b_(b), c_(c)
     {
         cudnnCreateOpTensorDescriptor(&desc_);
         cudnnSetOpTensorDescriptor(desc_, op, CUDNN_DATA_FLOAT,
@@ -1943,15 +1863,15 @@ struct CudnnOpTensor : public CudnnOperation {
 
     ~CudnnOpTensor() { cudnnDestroyOpTensorDescriptor(desc_); }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
 
-        return cudnnOpTensor(p.m_ctx->m_cudnn, desc_, &alpha, a_->desc(),
-                             a_->deviceMem(), &alpha, b_->desc(),
-                             b_->deviceMem(), &beta, c_->desc(),
-                             c_->deviceMem());
+        chkCUDNN(cudnnOpTensor(p.m_ctx->m_cudnn, desc_, &alpha, a_->desc(),
+                               a_->deviceMem(), &alpha, b_->desc(),
+                               b_->deviceMem(), &beta, c_->desc(),
+                               c_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"a", a_}, {"b", b_}}; }
@@ -1959,73 +1879,69 @@ struct CudnnOpTensor : public CudnnOperation {
     CudaOpArgs listOutputs() const override { return {{"c", c_}}; }
 };
 
-static const char *
+static void
 sum_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x0 = p.lower_tensor(pu, n.m_inputs.get("x0"));
-    auto x1 = p.lower_tensor(pu, n.m_inputs.get("x1"));
+    auto x0 = p.lower_tensor(pu, n.m_inputs["x0"]);
+    auto x1 = p.lower_tensor(pu, n.m_inputs["x1"]);
 
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
 
     auto fwd = std::make_shared<CudnnOpTensor>(x0, x1, y, CUDNN_OP_TENSOR_ADD);
 
     pu.fwd(fwd);
 
     if(p.m_pt == ProgramType::INFERENCE)
-        return NULL;
+        return;
 
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
 
-    auto dx0 = p.lower_grad(pu, n.m_inputs.get("x0"));
-    if(dx0) {
-        pu.bwd(std::make_shared<CudnnTransform>(dy, dx0));
-    }
-    auto dx1 = p.lower_grad(pu, n.m_inputs.get("x1"));
-    if(dx1) {
-        pu.bwd(std::make_shared<CudnnTransform>(dy, dx1));
-    }
-    return NULL;
+    auto dx0 = p.lower_grad(pu, n.m_inputs["x0"]);
+    pu.bwd(std::make_shared<CudnnTransform>(dy, dx0));
+
+    auto dx1 = p.lower_grad(pu, n.m_inputs["x1"]);
+    pu.bwd(std::make_shared<CudnnTransform>(dy, dx1));
 }
 
 REGISTER_CUDA_OP("sum", sum_setup);
 
-static const char *
+static void
 add_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
-    auto b = p.lower_tensor(pu, n.m_inputs.get("b"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
+    auto b = p.lower_tensor(pu, n.m_inputs["b"]);
 
     auto fwd = std::make_shared<CudnnOpTensor>(x, b, y, CUDNN_OP_TENSOR_ADD);
 
     if(p.m_pt == ProgramType::INFERENCE) {
         pu.fwd(fwd);
-        return NULL;
+        return;
     }
-    return "Add not supported for backprop (yet)";
+    throw std::runtime_error{"Add not supported for backprop"};
 }
 
 REGISTER_CUDA_OP("add", add_setup);
 
 //------------------------------------------------------------------------
 
-struct CudnnSoftmaxFwd : public CudnnOperation {
+struct CudnnSoftmaxFwd : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, y_;
 
     CudnnSoftmaxFwd(std::shared_ptr<CudaTensor> x,
                     std::shared_ptr<CudaTensor> y)
-      : CudnnOperation("softmaxfwd"), x_(x), y_(y)
+      : CudaOperation("softmaxfwd"), x_(x), y_(y)
     {
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f, beta = 0.0f;
 
-        return cudnnSoftmaxForward(p.m_ctx->m_cudnn, CUDNN_SOFTMAX_ACCURATE,
-                                   CUDNN_SOFTMAX_MODE_CHANNEL, &alpha,
-                                   x_->desc(), x_->deviceMem(), &beta,
-                                   y_->desc(), y_->deviceMem());
+        chkCUDNN(cudnnSoftmaxForward(p.m_ctx->m_cudnn, CUDNN_SOFTMAX_ACCURATE,
+                                     CUDNN_SOFTMAX_MODE_CHANNEL, &alpha,
+                                     x_->desc(), x_->deviceMem(), &beta,
+                                     y_->desc(), y_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -2033,17 +1949,16 @@ struct CudnnSoftmaxFwd : public CudnnOperation {
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 };
 
-static const char *
+static void
 softmax_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     if(p.m_pt != ProgramType::INFERENCE) {
-        return "not supported for training";
+        throw std::runtime_error{"not supported for training"};
     }
 
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
     pu.fwd(std::make_shared<CudnnSoftmaxFwd>(x, y));
-    return NULL;
 }
 
 REGISTER_CUDA_OP("softmax", softmax_setup);
@@ -2065,7 +1980,7 @@ bnopsstr(cudnnBatchNormOps_t ops)
     }
 }
 
-struct CudnnBatchNormActTrain : public CudnnOperation {
+struct CudnnBatchNormActTrain : public CudaOperation {
     const std::shared_ptr<CudaContext> ctx_;
     const std::shared_ptr<CudaTensor> x_, z_, s_, b_, m_, v_, y_, sm_, sv_;
     const float epsilon_;
@@ -2086,7 +2001,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         std::shared_ptr<CudaTensor> sm, std::shared_ptr<CudaTensor> sv,
         float epsilon, cudnnBatchNormOps_t ops,
         cudnnActivationMode_t activation_mode, float actalpha)
-      : CudnnOperation(std::string(bnopsstr(ops)) + "_fwd.persistent")
+      : CudaOperation(std::string(bnopsstr(ops)) + "_fwd.persistent")
       , ctx_(p.m_ctx)
       , x_(x)
       , z_(z)
@@ -2123,7 +2038,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         chkCUDNN(cudnnDestroyActivationDescriptor(desc_));
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
         float beta = 0.0f;
@@ -2138,26 +2053,19 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
         assert(m_m_beta == 1.0f);
         assert(m_v_beta == 1.0f);
 
-        auto s = cudnnBatchNormalizationForwardTrainingEx(
+        chkCUDNN(cudnnBatchNormalizationForwardTrainingEx(
             ctx_->m_cudnn, mode_, ops_, &alpha, &beta, x_->desc(),
             x_->deviceMem(), z_ ? z_->desc() : NULL,
             z_ ? z_->deviceMem() : NULL, y_->desc(), y_->deviceMem(),
             s_->desc(), s_->deviceMem(), b_->deviceMem(), expavgf_,
             m_->deviceMem(), v_->deviceMem(), epsilon_, sm_->deviceMem(),
             sv_->deviceMem(), desc_, ctx_->m_workspace.ptr(),
-            ctx_->m_workspace.size(), reserve, reserve_size);
+            ctx_->m_workspace.size(), reserve, reserve_size));
 
         expavgf_ = p.m_pc.bn_expavg;
 
         if(!p.m_pc.anomaly_detect)
-            return s;
-
-        s = cudnnQueryRuntimeError(ctx_->m_cudnn, &s, CUDNN_ERRQUERY_BLOCKING,
-                                   NULL);
-        if(s)
-            return s;
-
-        return s;
+            return;
     }
 
     CudaOpArgs listInputs() const override
@@ -2196,7 +2104,7 @@ struct CudnnBatchNormActTrain : public CudnnOperation {
     }
 };
 
-struct CudnnBatchNormActBwd : public CudnnOperation {
+struct CudnnBatchNormActBwd : public CudaOperation {
     const std::shared_ptr<CudnnBatchNormActTrain> fwd_;
     std::shared_ptr<CudaTensor> dy_, dx_, dz_, ds_, db_;
     float m_dx_beta{0};
@@ -2210,7 +2118,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
         std::shared_ptr<CudaTensor> dy, std::shared_ptr<CudaTensor> dx,
         std::shared_ptr<CudaTensor> dz, std::shared_ptr<CudaTensor> ds,
         std::shared_ptr<CudaTensor> db, cudnnBatchNormOps_t ops)
-      : CudnnOperation(std::string(bnopsstr(ops)) + "_bwd.persistent")
+      : CudaOperation(std::string(bnopsstr(ops)) + "_bwd.persistent")
       , fwd_(fwd)
       , dy_(dy)
       , dx_(dx)
@@ -2227,7 +2135,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
         p.m_ctx->m_workspace.request(workspace);
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f;
 
@@ -2238,7 +2146,7 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
 
         assert(m_ds_beta == m_db_beta);
 
-        auto s = cudnnBatchNormalizationBackwardEx(
+        chkCUDNN(cudnnBatchNormalizationBackwardEx(
             p.m_ctx->m_cudnn, fwd_->mode_, ops_, &alpha, &m_dx_beta, &alpha,
             &m_ds_beta, fwd_->x_->desc(), fwd_->x_->deviceMem(),
             fwd_->y_->desc(), fwd_->y_->deviceMem(), dy_->desc(),
@@ -2248,17 +2156,10 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
             ds_->deviceMem(), db_->deviceMem(), fwd_->epsilon_,
             fwd_->sm_->deviceMem(), fwd_->sv_->deviceMem(), fwd_->desc_,
             p.m_ctx->m_workspace.ptr(), p.m_ctx->m_workspace.size(), reserve,
-            reserve_size);
+            reserve_size));
 
         if(!p.m_pc.anomaly_detect)
-            return s;
-
-        s = cudnnQueryRuntimeError(p.m_ctx->m_cudnn, &s,
-                                   CUDNN_ERRQUERY_BLOCKING, NULL);
-        if(s)
-            return s;
-
-        return s;
+            return;
     }
 
     CudaOpArgs listInputs() const override
@@ -2312,21 +2213,22 @@ struct CudnnBatchNormActBwd : public CudnnOperation {
     }
 };
 
-static const char *
+static void
 batchnorm_persistent_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     if(p.m_pt == ProgramType::INFERENCE) {
-        return "not supported for inferenece";
+        throw std::runtime_error{"not supported for inferenece"};
     }
 
-    auto x0 = p.lower_tensor(pu, n.m_inputs.get("x0"));
-    auto x1 = p.lower_tensor(pu, n.m_inputs.get("x1"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
-    auto s = p.lower_tensor(pu, n.m_inputs.get("s"), 2);
-    auto b = p.lower_tensor(pu, n.m_inputs.get("b"), 2);
+    auto x0 = p.lower_tensor(pu, n.m_inputs["x0"]);
+    auto x1 =
+        n.m_inputs.has("x1") ? p.lower_tensor(pu, n.m_inputs["x1"]) : nullptr;
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
+    auto s = p.lower_tensor(pu, n.m_inputs["s"], 2);
+    auto b = p.lower_tensor(pu, n.m_inputs["b"], 2);
 
-    auto m = p.lower_tensor(pu, n.m_inputs.get("m"), 2);
-    auto v = p.lower_tensor(pu, n.m_inputs.get("v"), 2);
+    auto m = p.lower_tensor(pu, n.m_inputs["m"], 2);
+    auto v = p.lower_tensor(pu, n.m_inputs["v"], 2);
     const float epsilon = n.m_attributes.get("epsilon", 1e-5f);
 
     auto sm = std::make_shared<CudaTensor>(*m, m->namePostfix("smean"));
@@ -2349,19 +2251,17 @@ batchnorm_persistent_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         activation_alpha);
     pu.fwd(f);
 
-    auto dx0 = p.lower_grad(pu, n.m_inputs.get("x0"));
-    auto dx1 = p.lower_grad(pu, n.m_inputs.get("x1"));
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
-    auto ds = p.lower_grad(pu, n.m_inputs.get("s"), 2);
-    auto db = p.lower_grad(pu, n.m_inputs.get("b"), 2);
+    auto dx0 = p.lower_grad(pu, n.m_inputs["x0"]);
+    auto dx1 = x1 ? p.lower_grad(pu, n.m_inputs["x1"]) : nullptr;
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
+    auto ds = p.lower_grad(pu, n.m_inputs["s"], 2);
+    auto db = p.lower_grad(pu, n.m_inputs["b"], 2);
 
     pu.bwd(std::make_shared<CudnnBatchNormActBwd>(p, f, dy, dx0, dx1, ds, db,
                                                   ops));
 
     p.upd(s, ds);
     p.upd(b, db);
-
-    return NULL;
 }
 
 REGISTER_CUDA_OP("batchnorm.persistent", batchnorm_persistent_setup);
@@ -2470,7 +2370,7 @@ REGISTER_CUDA_TRANSFORM(500, ProgramType::TRAINING, batchnorm_relu_transform);
 
 //------------------------------------------------------------------------
 
-struct CudnnSpatialTransformFwd : public CudnnOperation {
+struct CudnnSpatialTransformFwd : public CudaOperation {
     const std::shared_ptr<CudaTensor> x_, theta_, y_, grid_;
     cudnnSpatialTransformerDescriptor_t desc_;
 
@@ -2478,7 +2378,7 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
                              std::shared_ptr<CudaTensor> x,
                              std::shared_ptr<CudaTensor> theta,
                              std::shared_ptr<CudaTensor> y)
-      : CudnnOperation("spatialtransform")
+      : CudaOperation("spatialtransform")
       , x_(x)
       , theta_(theta)
       , y_(y)
@@ -2504,18 +2404,15 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
         chkCUDNN(cudnnDestroySpatialTransformerDescriptor(desc_));
     }
 
-    cudnnStatus_t exec(CudaProgram &p) override
+    void exec(CudaProgram &p) override
     {
         float alpha = 1.0f, beta = 0.0f;
-        cudnnStatus_t s;
 
-        s = cudnnSpatialTfGridGeneratorForward(
-            p.m_ctx->m_cudnn, desc_, theta_->deviceMem(), grid_->deviceMem());
-        if(s)
-            return s;
-        return cudnnSpatialTfSamplerForward(
+        chkCUDNN(cudnnSpatialTfGridGeneratorForward(
+            p.m_ctx->m_cudnn, desc_, theta_->deviceMem(), grid_->deviceMem()));
+        chkCUDNN(cudnnSpatialTfSamplerForward(
             p.m_ctx->m_cudnn, desc_, &alpha, x_->desc(), x_->deviceMem(),
-            grid_->deviceMem(), &beta, y_->desc(), y_->deviceMem());
+            grid_->deviceMem(), &beta, y_->desc(), y_->deviceMem()));
     }
 
     CudaOpArgs listInputs() const override
@@ -2526,11 +2423,11 @@ struct CudnnSpatialTransformFwd : public CudnnOperation {
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 };
 
-static const char *
+static void
 spatialtransform_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"));
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto x = p.lower_tensor(pu, n.m_inputs["x"]);
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
 
     const bool disable = p.m_pt == ProgramType::INFERENCE &&
                          !n.m_attributes.get("inference", false);
@@ -2538,10 +2435,10 @@ spatialtransform_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
     if(bypass) {
         pu.fwd(std::make_shared<CudnnTransform>(x, y));
-        return NULL;
+        return;
     }
 
-    auto th = n.m_inputs.get("theta");
+    auto th = n.m_inputs["theta"];
 
     std::shared_ptr<CudaTensor> theta;
 
@@ -2558,7 +2455,6 @@ spatialtransform_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
     auto op = std::make_shared<CudnnSpatialTransformFwd>(p.m_ctx, x, theta, y);
     pu.fwd(op);
-    return NULL;
 }
 
 REGISTER_CUDA_OP("spatialtransform", spatialtransform_setup);
@@ -2575,7 +2471,7 @@ spatialtransform_transform(CudaProgram &p, CudaProgramUnit &pu,
     for(size_t i = 0; i < nodes.size(); i++) {
         auto &n = nodes[i];
         if(n->m_type == "spatialtransform") {
-            auto x = n->m_inputs.get("x");
+            auto x = n->m_inputs["x"];
             if(x && x->m_data_type != Tensor::DataType::FLOAT) {
                 Tensors emptyset;
                 auto n0 = Node::make(
@@ -2583,12 +2479,12 @@ spatialtransform_transform(CudaProgram &p, CudaProgramUnit &pu,
                     {{"datatype", (int)Tensor::DataType::FLOAT}}, emptyset)[0];
                 auto n1 = Node::make(
                     "spatialtransform",
-                    {{"x", n0->y()}, {"theta", n->m_inputs.get("theta")}},
+                    {{"x", n0->y()}, {"theta", n->m_inputs["theta"]}},
                     n->m_attributes, emptyset)[0];
                 auto n2 = Node::make("convert", {{"x", n1->y()}},
                                      {{"datatype", (int)x->m_data_type}},
                                      emptyset)[0];
-                n2->m_outputs["y"] = n->m_outputs.get("y");
+                n2->m_outputs["y"] = n->m_outputs["y"];
                 r.push_back(n0);
                 r.push_back(n1);
                 r.push_back(n2);
@@ -2609,8 +2505,8 @@ static std::vector<std::shared_ptr<Node>>
 reshape_transform_node(CudaProgram &p, CudaProgramUnit &pu,
                        std::shared_ptr<Node> n)
 {
-    auto xh = n->m_inputs.get("x");
-    auto yh = n->m_outputs.get("y");
+    auto xh = n->m_inputs["x"];
+    auto yh = n->m_outputs["y"];
 
     auto fmt = p.tensorFormat(xh->m_data_type);
     auto x = p.lower_tensor(pu, xh, fmt);
@@ -2653,9 +2549,9 @@ REGISTER_CUDA_TRANSFORM(110, ProgramType::INFERENCE | ProgramType::TRAINING,
 static void
 window_transform_node(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto x = p.lower_tensor(pu, n.m_inputs.get("x"), CUDNN_TENSOR_NCHW);
-    auto dx = p.lower_grad(pu, n.m_inputs.get("x"), CUDNN_TENSOR_NCHW);
-    auto y = n.m_outputs.get("y");
+    auto x = p.lower_tensor(pu, n.m_inputs["x"], CUDNN_TENSOR_NCHW);
+    auto dx = p.lower_grad(pu, n.m_inputs["x"], CUDNN_TENSOR_NCHW);
+    auto y = n.m_outputs["y"];
 
     Dims offset(n.m_attributes.get("offset", std::vector<int>{}));
 
@@ -2697,8 +2593,8 @@ concat_transform_node(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
     const int axis = n.m_attributes.get("axis", 1);
 
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
-    auto dy = p.lower_grad(pu, n.m_outputs.get("y"));
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
+    auto dy = p.lower_grad(pu, n.m_outputs["y"]);
     auto element_offset = std::vector<int64_t>(y->m_dims.size(), 0);
 
     for(const auto &xh : n.m_inputs.getv("x")) {
@@ -2747,7 +2643,7 @@ struct CudaStats : public CudaOperation {
     {
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         switch(x_->m_data_type) {
         case Tensor::DataType::FLOAT:
@@ -2759,9 +2655,8 @@ struct CudaStats : public CudaOperation {
                               (float *)y_->deviceMem(), p.m_ctx->m_stream);
             break;
         default:
-            return "Unsupported datatype";
+            throw std::runtime_error{"Unsupported datatype"};
         }
-        return NULL;
     }
 
     CudaOpArgs listInputs() const override { return {{"x", x_}}; }
@@ -2769,18 +2664,17 @@ struct CudaStats : public CudaOperation {
     CudaOpArgs listOutputs() const override { return {{"y", y_}}; }
 };
 
-static const char *
+static void
 stats_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 {
-    auto it = p.m_ctx->m_tensors.find(n.m_inputs.get("x"));
+    auto it = p.m_ctx->m_tensors.find(n.m_inputs["x"]);
     if(it == p.m_ctx->m_tensors.end())
-        return "x-tensor not found";
+        throw std::runtime_error{"x-tensor not found"};
 
     auto x = it->second;
 
-    auto y = p.lower_tensor(pu, n.m_outputs.get("y"));
+    auto y = p.lower_tensor(pu, n.m_outputs["y"]);
     pu.tail(std::make_shared<CudaStats>(x, y));
-    return NULL;
 }
 
 REGISTER_CUDA_OP("stats", stats_setup);

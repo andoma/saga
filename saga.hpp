@@ -36,6 +36,7 @@
 #include <unordered_set>
 #include <optional>
 #include <string>
+#include <stdexcept>
 
 #include <assert.h>
 
@@ -62,8 +63,8 @@ struct Dim : public std::variant<int64_t, DimParam> {
         if(auto v = std::get_if<int64_t>(&*this)) {
             return *v;
         } else {
-            fprintf(stderr, "Unable to convert parameterized dim to int\n");
-            abort();
+            throw std::runtime_error(
+                "Unable to convert parameterized dim to scalar");
         }
     }
     Dim &operator++();
@@ -239,11 +240,11 @@ public:
     using std::unordered_map<std::string,
                              std::shared_ptr<Tensor>>::unordered_map;
 
-    std::shared_ptr<Tensor> get(const std::string &n) const
-    {
-        auto it = find(n);
-        return it == end() ? nullptr : it->second;
-    }
+    bool has(const std::string &n) const;
+
+    const std::shared_ptr<Tensor> operator[](const std::string &n) const;
+
+    std::shared_ptr<Tensor> &operator[](const std::string &n);
 
     std::vector<std::shared_ptr<Tensor>> getv(const std::string &n) const
     {
@@ -305,7 +306,7 @@ public:
     static std::vector<std::shared_ptr<Node>> make(
         const std::string &type, Loader loader, const Attributes &attributes);
 
-    std::shared_ptr<Tensor> y();
+    std::shared_ptr<Tensor> y() const;
 };
 
 class Nodes : public std::vector<std::shared_ptr<Node>> {
@@ -514,11 +515,7 @@ struct ProgramConfig {
     bool disable_op_fusing{false};
 };
 
-enum class ExecResult {
-    OK,
-    STOPPED,
-    ERROR,
-};
+enum class ExecResult { OK, STOPPED };
 
 class Program {
 public:
@@ -605,6 +602,8 @@ std::shared_ptr<Publisher> make_tcp_publisher(int bind_port);
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-int64_t Now();
+int64_t now();
+
+std::string fmt(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 };  // namespace saga

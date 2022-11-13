@@ -171,9 +171,8 @@ cudnnDataType_from_dataType(Tensor::DataType data_type)
     case Tensor::DataType::I32:
         return CUDNN_DATA_INT32;
     default:
-        fprintf(stderr, "Unsupported data_type %d for cuda tensor\n",
-                (int)data_type);
-        abort();
+        throw std::runtime_error(fmt("Unsupported data_type %s for cuda tensor",
+                                     Tensor::DataTypeStr(data_type)));
     }
 }
 
@@ -445,7 +444,8 @@ CudaTensor::hashkey() const
         dt = "i32";
         break;
     default:
-        abort();
+        throw std::runtime_error(fmt("Unsupported datatype %d in %s", data_type,
+                                     __PRETTY_FUNCTION__));
     }
 
     switch(rank) {
@@ -471,7 +471,8 @@ CudaTensor::hashkey() const
                  strides[2], strides[3], strides[4], dt);
         break;
     default:
-        abort();
+        throw std::runtime_error(
+            fmt("Unsupported rank %d in %s", rank, __PRETTY_FUNCTION__));
     }
     return buf;
 }
@@ -571,17 +572,14 @@ CudaTensor::format() const
     if(rank < 4)
         return CUDNN_TENSOR_NCHW;
 
-    if(rank >= 4) {
-        if(strides[1] != 1)
-            return CUDNN_TENSOR_NCHW;
+    if(strides[1] != 1)
+        return CUDNN_TENSOR_NCHW;
 
-        for(int i = 2; i < rank; i++) {
-            if(strides[i] == 1)
-                return CUDNN_TENSOR_NCHW;
-        }
-        return CUDNN_TENSOR_NHWC;
+    for(int i = 2; i < rank; i++) {
+        if(strides[i] == 1)
+            return CUDNN_TENSOR_NCHW;
     }
-    abort();
+    return CUDNN_TENSOR_NHWC;
 }
 
 void
@@ -612,12 +610,11 @@ CudaTensor::copyFromLocked(Tensor &t, int dst_broadcast_dimension)
     if(!copy_tensor(m_storage->deviceMem(m_offset), m_dims.size(),
                     &m_dims.i32()[0], &strides[0], m_data_type, t, ta.get(),
                     dst_broadcast_dimension)) {
-        fprintf(stderr,
-                "Cuda Tensor copy failed\n"
-                "From: %s\n"
-                "  To: %s\n",
-                t.info().c_str(), info().c_str());
-        abort();
+        throw std::runtime_error(
+            fmt("Cuda Tensor copy failed  "
+                "From: %s  "
+                "To: %s",
+                t.info().c_str(), info().c_str()));
     }
 }
 
@@ -733,11 +730,10 @@ CudaTensor::detect_anomaly(uint32_t *ptr)
             return;
         }
     } else {
-        fprintf(stderr,
-                "CudaTensor::detect_anomaly(): Dimensionality of %zd not "
-                "supported\n",
-                dv.size());
-        abort();
+        throw std::runtime_error(
+            fmt("Collapsed rank %zd not "
+                "supported in %s",
+                dv.size(), __PRETTY_FUNCTION__));
     }
 }
 
@@ -759,11 +755,10 @@ CudaTensor::invalidate(void)
             p += dv[0].second * s->m_element_size;
         }
     } else {
-        fprintf(stderr,
-                "CudaTensor::invalidate(): Dimensionality of %zd not "
-                "supported\n",
-                dv.size());
-        abort();
+        throw std::runtime_error(
+            fmt("Collapsed rank %zd not "
+                "supported in %s",
+                dv.size(), __PRETTY_FUNCTION__));
     }
 }
 

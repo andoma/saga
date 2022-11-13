@@ -51,14 +51,10 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
     const int group = n.m_attributes.get("group", 1);
     const int transpose = n.m_attributes.get("transpose", false);
 
-    auto w = n.m_inputs.get("w");
-    if(w == nullptr)
-        return nullptr;
+    auto w = n.m_inputs["w"];
     const int features = w->m_dims[transpose ? 1 : 0] * group;
 
-    auto x = n.m_inputs.get("x");
-    if(x == nullptr)
-        return nullptr;
+    auto x = n.m_inputs["x"];
 
     const size_t spatial_dims = w->m_dims.size() - 2;
     Dims odims{x->m_dims[0], features};
@@ -85,18 +81,17 @@ conv_y(const Node &n, const std::optional<const std::string> &name)
 }
 
 static std::vector<std::shared_ptr<Node>>
-conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+conv_setup(std::shared_ptr<Node> n, std::shared_ptr<Tensor> x,
+           Tensors &named_tensors)
 {
-    auto x = n->m_inputs.get("x");
-    if(!x)
-        return {};
-
-    assert(x->m_dims.size() >= 4);
+    if(x->m_dims.size() < 4)
+        throw std::runtime_error(
+            fmt("x-tensor rank < 4 (%s)", x->m_dims.to_string().c_str()));
 
     int spatial_dims = x->m_dims.size() - 2;
 
-    auto w = n->m_inputs.get("w");
-    auto b = n->m_inputs.get("b");
+    auto w = n->m_inputs["w"];
+    //    auto b = n->m_inputs["b"];
 
     if(!w) {
         const int activations = n->m_attributes.get("activations", 1);
@@ -120,7 +115,7 @@ conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
                          named_tensors, node_tensor_name(n->m_name, "w"));
     }
 
-    if(!b && n->m_attributes.get("bias", false)) {
+    if(!n->m_inputs.has("b") && n->m_attributes.get("bias", false)) {
         const int transpose = n->m_attributes.get("transpose", false);
         const int group = n->m_attributes.get("group", 1);
 
@@ -135,33 +130,30 @@ conv_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 //------------------------------------------------------------------------
 
 static std::vector<std::shared_ptr<Node>>
-batchnorm_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+batchnorm_setup(std::shared_ptr<Node> n, std::shared_ptr<Tensor> x,
+                Tensors &named_tensors)
 {
-    auto x = n->m_inputs.get("x");
-    if(!x)
-        return {};
-
     Dims dims{1, x->m_dims[1]};
 
-    if(!n->m_inputs.get("s")) {
+    if(!n->m_inputs["s"]) {
         n->m_inputs["s"] =
             Tensor::find(Tensor::DataType::FLOAT, dims, 1.0, 0, named_tensors,
                          node_tensor_name(n->m_name, "s"));
     }
 
-    if(!n->m_inputs.get("b")) {
+    if(!n->m_inputs["b"]) {
         n->m_inputs["b"] =
             Tensor::find(Tensor::DataType::FLOAT, dims, 0.0, 0, named_tensors,
                          node_tensor_name(n->m_name, "b"));
     }
 
-    if(!n->m_inputs.get("m")) {
+    if(!n->m_inputs["m"]) {
         n->m_inputs["m"] =
             Tensor::find(Tensor::DataType::FLOAT, dims, 0.0, 0, named_tensors,
                          node_tensor_name(n->m_name, "m"));
     }
 
-    if(!n->m_inputs.get("v")) {
+    if(!n->m_inputs["v"]) {
         n->m_inputs["v"] =
             Tensor::find(Tensor::DataType::FLOAT, dims, 1.0, 0, named_tensors,
                          node_tensor_name(n->m_name, "v"));
@@ -178,10 +170,7 @@ pooling_y(const Node &n, const std::optional<const std::string> &name)
 
     const int pad = n.m_attributes.get("pad", 0);
     const int stride = n.m_attributes.get("stride", 1);
-    auto x = n.m_inputs.get("x");
-    if(x == nullptr)
-        return nullptr;
-
+    auto x = n.m_inputs["x"];
     int size;
 
     if(n.m_attributes.get("global", false)) {
@@ -208,21 +197,14 @@ pooling_y(const Node &n, const std::optional<const std::string> &name)
 static std::shared_ptr<Tensor>
 reshape_y(const Node &n, const std::optional<const std::string> &name)
 {
-    auto x = n.m_inputs.get("x");
-    if(x == nullptr)
-        return nullptr;
+    auto x = n.m_inputs["x"];
     auto it = n.m_attributes.find("shape");
-    if(it == n.m_attributes.end()) {
-        fprintf(stderr, "Shape attribute not found\n");
-        abort();
-        return nullptr;
-    }
+    if(it == n.m_attributes.end())
+        throw std::runtime_error{"Shape attribute missing"};
 
     auto shapep = std::get_if<Dims>(&it->second);
-    if(!shapep) {
-        fprintf(stderr, "Shape attribute not Dimension object\n");
-        return nullptr;
-    }
+    if(!shapep)
+        throw std::runtime_error{"Shape attribute not a dimension value"};
 
     const auto xshape = x->m_dims;
 
@@ -250,9 +232,10 @@ concat_y(const Node &n, const std::optional<const std::string> &name)
     Dims dims;
     Tensor::DataType data_type = Tensor::DataType::U8;
     while(1) {
-        auto x = n.m_inputs.get("x" + std::to_string(i));
-        if(x == nullptr)
+        auto it = n.m_inputs.find("x" + std::to_string(i));
+        if(it == n.m_inputs.end())
             break;
+        auto x = it->second;
         if(i == 0) {
             dims = x->m_dims;
             data_type = x->m_data_type;
@@ -269,14 +252,13 @@ concat_y(const Node &n, const std::optional<const std::string> &name)
 static std::shared_ptr<Tensor>
 window_y(const Node &n, const std::optional<const std::string> &name)
 {
-    auto o = n.m_inputs.get("x");
-    if(o == nullptr)
-        return nullptr;
-
+    auto x = n.m_inputs["x"];
     auto shape = n.m_attributes.get("shape", std::vector<int>{});
-    if(shape.size() != o->m_dims.size())
-        return nullptr;
-    return makeTensor(o->m_data_type, shape, name);
+    if(shape.size() != x->m_dims.size())
+        throw std::runtime_error(fmt("shape rank %zd mismatches input %s",
+                                     shape.size(),
+                                     x->m_dims.to_string().c_str()));
+    return makeTensor(x->m_data_type, shape, name);
 }
 
 //------------------------------------------------------------------------
@@ -284,10 +266,8 @@ window_y(const Node &n, const std::optional<const std::string> &name)
 static std::shared_ptr<Tensor>
 fc_y(const Node &n, const std::optional<const std::string> &name)
 {
-    auto w = n.m_inputs.get("w");
-    if(w == nullptr)
-        return nullptr;
-    auto x = n.m_inputs.get("x");
+    auto w = n.m_inputs["w"];
+    auto x = n.m_inputs["x"];
     const bool transW = n.m_attributes.get("transW", false);
 
     return makeTensor(w->m_data_type,
@@ -295,13 +275,10 @@ fc_y(const Node &n, const std::optional<const std::string> &name)
 }
 
 static std::vector<std::shared_ptr<Node>>
-fc_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+fc_setup(std::shared_ptr<Node> n, std::shared_ptr<Tensor> x,
+         Tensors &named_tensors)
 {
     std::vector<std::shared_ptr<Node>> nodes;
-
-    auto x = n->m_inputs.get("x");
-    if(!x)
-        return nodes;
 
     if(x->m_dims.size() > 2) {
         // Auto-insert a reshape node
@@ -315,8 +292,7 @@ fc_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
         nodes.push_back(r);
     }
 
-    auto w = n->m_inputs.get("w");
-    auto b = n->m_inputs.get("b");
+    auto w = n->m_inputs["w"];
 
     const bool transW = n->m_attributes.get("transW", false);
 
@@ -335,7 +311,7 @@ fc_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
                          named_tensors, node_tensor_name(n->m_name, "w"));
     }
 
-    if(!b && n->m_attributes.get("bias", false)) {
+    if(!n->m_inputs.has("b") && n->m_attributes.get("bias", false)) {
         n->m_inputs["b"] = Tensor::find(
             x->m_data_type, {transW ? w->m_dims[0] : w->m_dims[1]}, 0, 0,
             named_tensors, node_tensor_name(n->m_name, transW ? "bt" : "b"));
@@ -349,14 +325,13 @@ fc_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 static std::shared_ptr<Tensor>
 catclassifier_y(const Node &n, const std::optional<const std::string> &name)
 {
-    auto x = n.m_inputs.get("x");
-    if(x == nullptr)
-        return nullptr;
+    auto x = n.m_inputs["x"];
     return makeTensor(Tensor::DataType::I32, Dims({x->m_dims[0], 1}), name);
 }
 
 static std::vector<std::shared_ptr<Node>>
-catclassifier_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+catclassifier_setup(std::shared_ptr<Node> n, std::shared_ptr<Tensor> x,
+                    Tensors &named_tensors)
 {
     n->m_outputs["loss"] =
         makeTensor(Tensor::DataType::FLOAT, Dims({1, 1}), "loss");
@@ -368,21 +343,16 @@ catclassifier_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 static std::shared_ptr<Tensor>
 loss_y(const Node &n, const std::optional<const std::string> &name)
 {
-    auto o = n.m_inputs.get("x");
-    if(o == nullptr)
-        return nullptr;
-
-    auto target = n.m_inputs.get("target");
-    if(target == nullptr)
-        return nullptr;
+    auto o = n.m_inputs["x"];
+    auto target = n.m_inputs["target"];
 
     return makeTensor(target->m_data_type, target->m_dims, name);
 }
 
 static std::vector<std::shared_ptr<Node>>
-loss_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
+loss_setup(std::shared_ptr<Node> n, std::shared_ptr<Tensor> x,
+           Tensors &named_tensors)
 {
-    auto x = n->m_inputs.get("x");
     n->m_outputs["mmss"] =
         makeTensor(Tensor::DataType::FLOAT, Dims({x->m_dims[0], 4}));
     return {n};
@@ -393,9 +363,7 @@ loss_setup(std::shared_ptr<Node> n, Tensors &named_tensors)
 static std::shared_ptr<Tensor>
 passthru_y(const Node &n, const std::optional<const std::string> &name)
 {
-    auto o = n.m_inputs.get("x");
-    if(o == nullptr)
-        return nullptr;
+    auto o = n.m_inputs["x"];
     return makeTensor(o->m_data_type, o->m_dims, name);
 }
 
@@ -404,13 +372,18 @@ passthru_y(const Node &n, const std::optional<const std::string> &name)
 static std::shared_ptr<Tensor>
 sum_y(const Node &n, const std::optional<const std::string> &name)
 {
-    auto x0 = n.m_inputs.get("x0");
-    auto x1 = n.m_inputs.get("x0");
-    if(x0 == nullptr || x1 == nullptr)
-        return nullptr;
+    auto x0 = n.m_inputs["x0"];
+    auto x1 = n.m_inputs["x1"];
 
-    if(x0->m_dims != x1->m_dims || x0->m_data_type != x1->m_data_type)
-        return nullptr;
+    if(x0->m_data_type != x1->m_data_type)
+        throw std::runtime_error(fmt("x0 datatype %s != x1 datatype %s",
+                                     Tensor::DataTypeStr(x0->m_data_type),
+                                     Tensor::DataTypeStr(x1->m_data_type)));
+
+    if(x0->m_dims != x1->m_dims)
+        throw std::runtime_error(fmt("x0 dimensions %s != x1 dimensions %s",
+                                     x0->m_dims.to_string().c_str(),
+                                     x1->m_dims.to_string().c_str()));
 
     return makeTensor(x0->m_data_type, x0->m_dims, name);
 }
@@ -420,28 +393,25 @@ sum_y(const Node &n, const std::optional<const std::string> &name)
 static std::shared_ptr<Tensor>
 convert_y(const Node &n, const std::optional<const std::string> &name)
 {
-    auto x = n.m_inputs.get("x");
-    if(x == nullptr)
-        return nullptr;
-
+    auto x = n.m_inputs["x"];
     auto datatype = n.m_attributes.get("datatype", -1);
     if(datatype == -1)
-        return nullptr;
+        throw std::runtime_error("No target datatype given");
 
     return makeTensor((Tensor::DataType)datatype, x->m_dims, name);
 }
 
 //------------------------------------------------------------------------
 
-static std::shared_ptr<Tensor>
-jpegdecoder_y(const Node &n, const std::optional<const std::string> &name)
+static std::shared_ptr<Tensor> jpegdecoder_y(
+    const Node &n, const std::optional<const std::string> &name)
 {
     const int width = n.m_attributes.get("width", 0);
     if(width < 1)
-        return nullptr;
+        throw std::runtime_error("Missing or invalid width");
     const int height = n.m_attributes.get("height", 0);
     if(height < 1)
-        return nullptr;
+        throw std::runtime_error("Missing or invalid height");
     const int channels = n.m_attributes.get("channels", 3);
 
     return makeTensor(Tensor::DataType::U8, Dims({1, channels, width, height}),
@@ -450,24 +420,22 @@ jpegdecoder_y(const Node &n, const std::optional<const std::string> &name)
 
 //------------------------------------------------------------------------
 
-static std::shared_ptr<Tensor>
-spatialtransform_y(const Node &n, const std::optional<const std::string> &name)
+static std::shared_ptr<Tensor> spatialtransform_y(
+    const Node &n, const std::optional<const std::string> &name)
 {
-    auto o = n.m_inputs.get("x");
-    if(o == nullptr)
-        return nullptr;
+    auto x = n.m_inputs["x"];
 
-    const int height = n.m_attributes.get("height", (int)o->m_dims[2]);
-    const int width = n.m_attributes.get("width", (int)o->m_dims[3]);
+    const int height = n.m_attributes.get("height", (int)x->m_dims[2]);
+    const int width = n.m_attributes.get("width", (int)x->m_dims[3]);
 
-    return makeTensor(o->m_data_type,
-                      Dims({o->m_dims[0], o->m_dims[1], height, width}));
+    return makeTensor(x->m_data_type,
+                      Dims({x->m_dims[0], x->m_dims[1], height, width}));
 }
 
 //------------------------------------------------------------------------
 
-static std::shared_ptr<Tensor>
-stats_y(const Node &n, const std::optional<const std::string> &name)
+static std::shared_ptr<Tensor> stats_y(
+    const Node &n, const std::optional<const std::string> &name)
 {
     return makeTensor(Tensor::DataType::FLOAT, Dims{4}, "stats");
 }
@@ -482,6 +450,7 @@ static const struct {
         const Node &n, const std::optional<const std::string> &name);
 
     std::vector<std::shared_ptr<Node>> (*setup)(std::shared_ptr<Node> node,
+                                                std::shared_ptr<Tensor> x,
                                                 Tensors &named_tensors);
 
 } nodetypes[] = {
@@ -512,8 +481,8 @@ static const struct {
     {"window", window_y},
 };
 
-std::shared_ptr<Tensor>
-Node::inferTensor_y(const std::optional<const std::string> &name)
+std::shared_ptr<Tensor> Node::inferTensor_y(
+    const std::optional<const std::string> &name)
 {
     for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
         if(m_type == nodetypes[i].name) {
@@ -527,8 +496,7 @@ Node::inferTensor_y(const std::optional<const std::string> &name)
     abort();
 }
 
-std::string
-Attribute::to_string() const
+std::string Attribute::to_string() const
 {
     if(auto v = std::get_if<int>(this)) {
         return std::to_string(*v);
@@ -552,8 +520,7 @@ Attribute::to_string() const
     return "?";
 }
 
-void
-Node::print() const
+void Node::print() const
 {
     printf("%s:\n", m_type.c_str());
 
@@ -584,25 +551,23 @@ Node::make(const std::string &type, const Tensors &inputs,
 
     for(size_t i = 0; i < sizeof(nodetypes) / sizeof(nodetypes[0]); i++) {
         if(type == nodetypes[i].name && nodetypes[i].setup) {
-            nodes = nodetypes[i].setup(n, named_tensors);
+            auto xit = n->m_inputs.find("x");
+            if(xit == n->m_inputs.end()) {
+                throw std::runtime_error("x-tensor missing");
+            }
+            nodes = nodetypes[i].setup(n, xit->second, named_tensors);
         }
     }
 
     if(!nodes.empty()) {
-        auto &last = nodes.back();
-        auto y = last->inferTensor_y();
-        if(!y) {
-            fprintf(stderr, "%s: Unable to infer y tensor\n", __FUNCTION__);
-            last->print();
-            exit(1);
-        }
-        last->m_outputs["y"] = y;
+        auto last = nodes.back();
+        last->m_outputs["y"] = last->inferTensor_y();
     }
     return nodes;
 }
 
-std::vector<std::shared_ptr<Node>>
-Node::make(const std::string &type, Loader loader, const Attributes &attributes)
+std::vector<std::shared_ptr<Node>> Node::make(
+    const std::string &type, Loader loader, const Attributes &attributes)
 {
     auto n = std::make_shared<Node>(type);
     n->m_loader = loader;
@@ -614,9 +579,9 @@ Node::make(const std::string &type, Loader loader, const Attributes &attributes)
 }
 
 std::shared_ptr<Tensor>
-Node::y()
+Node::y() const
 {
-    return m_outputs.get("y");
+    return m_outputs["y"];
 }
 
 Nodes::iterator

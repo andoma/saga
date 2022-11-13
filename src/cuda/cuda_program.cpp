@@ -84,16 +84,14 @@ CudaProgram::tensorFormat(Tensor::DataType data_type)
     case TensorLayout::NCHW:
         return CUDNN_TENSOR_NCHW;
     }
-    abort();
+    throw std::runtime_error(fmt("Unsupported tensorFormat %d in %s",
+                                 (int)m_pc.tensor_layout, __PRETTY_FUNCTION__));
 }
 
 std::shared_ptr<CudaTensor>
 CudaProgram::lower_tensor(const CudaProgramUnit &pu,
                           std::shared_ptr<Tensor> src, size_t minimum_rank)
 {
-    if(src == nullptr)
-        return nullptr;
-
     auto it = m_ctx->m_tensors.find(src);
     if(it != m_ctx->m_tensors.end()) {
         return it->second;
@@ -124,9 +122,6 @@ std::shared_ptr<CudaTensor>
 CudaProgram::lower_tensor(std::shared_ptr<Tensor> src,
                           const CudaTensor &blueprint)
 {
-    if(src == nullptr)
-        return nullptr;
-
     auto it = m_ctx->m_tensors.find(src);
     if(it != m_ctx->m_tensors.end()) {
         return it->second;
@@ -142,10 +137,10 @@ std::shared_ptr<CudaTensor>
 CudaProgram::lower_grad(const CudaProgramUnit &pu, std::shared_ptr<Tensor> src,
                         size_t minimum_rank)
 {
-    if(src == nullptr)
-        return nullptr;
     src = src->grad();
-    assert(src.get());
+    if(!src)
+        throw std::runtime_error(
+            fmt("Tensor %s lacks gradient", src->info().c_str()));
     return lower_tensor(pu, src, minimum_rank);
 }
 
@@ -216,7 +211,7 @@ CudaProgram::detect_anomaly(
     }
 }
 
-bool
+void
 CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
 {
     for(const auto &op : ops) {
@@ -227,11 +222,11 @@ CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
             detect_anomaly(*op, op->getInputs(), "input");
         }
 
-        const char *err = op->exec(*this, batch);
-        if(err) {
-            fprintf(stderr, "\nOp %s failed: %s\n", op->name().c_str(), err);
-            op->dump(stderr, true);
-            return false;
+        try {
+            op->exec(*this);
+        } catch(const std::exception &e) {
+            throw std::runtime_error(
+                fmt("Op %s failed -- %s", op->name().c_str(), e.what()));
         }
 
         if(anomaly_detect) {
@@ -241,7 +236,6 @@ CudaProgram::runOps(const CudaOps &ops, long batch, bool anomaly_detect)
             }
         }
     }
-    return true;
 }
 
 void
@@ -260,15 +254,13 @@ CudaProgram::prep(long batches, long batch_offset)
 
     setupTensorStorage(m_memory_layout);
     m_total_samples = 0;
-    m_epoch_start = Now();
+    m_epoch_start = now();
 }
 
 ExecResult
 CudaProgram::step(long batch, long batches, long batch_offset)
 {
-    if(!runOps(m_ops, batch, m_pc.anomaly_detect)) {
-        return ExecResult::ERROR;
-    }
+    runOps(m_ops, batch, m_pc.anomaly_detect);
 
     if(batch > 0) {
         run_batched_tensor_callbacks(m_pc.post_ops, batch - 1 + batch_offset,
@@ -302,7 +294,7 @@ CudaProgram::step(long batch, long batches, long batch_offset)
         m_aux->nan = 0;
     }
 
-    float sps = m_total_samples / (1e-6 * (Now() - m_epoch_start));
+    float sps = m_total_samples / (1e-6 * (now() - m_epoch_start));
 
     m_ctx->m_ui->updateCell(m_ctx->m_ui_page, m_ui_row, 7, UI::Align::LEFT,
                             "%ld (%.1f/s)", m_total_samples, sps);
@@ -436,12 +428,11 @@ CudaProgram::finalize()
                 wrset.insert(t.second);
             } else {
                 float *betap = op->getBeta(t.second);
-                if(betap == NULL) {
-                    fprintf(stderr,
-                            "Operation ''%s'' does not support beta for %s\n",
-                            op->str().c_str(), t.first);
-                    abort();
-                }
+                if(betap == NULL)
+                    throw std::runtime_error(
+                        fmt("Operation ''%s'' does not support beta for %s",
+                            op->str().c_str(), t.first));
+
                 if(*betap == 0) {
                     *betap = 1.0f;
                 }

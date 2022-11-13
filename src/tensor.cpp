@@ -713,7 +713,7 @@ Tensor::printRGB(const char *prefix,
 }
 
 struct DimInfo {
-    int size;
+    int dst_size;
     int dst_stride;
     int src_size;
     int src_stride;
@@ -729,22 +729,22 @@ DimInfo::reduce(std::vector<DimInfo> &dis)
     for(size_t i = 0; i < dis.size(); i++) {
         printf(
             "Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
-            i, dis[i].dst_stride, dis[i].size, dis[i].src_stride,
+            i, dis[i].dst_stride, dis[i].dst_size, dis[i].src_stride,
             dis[i].src_size);
     }
 #endif
     // Any dimensions with a size of 1 which is not the innermost
     // is redundant from a copy perspective
     for(ssize_t i = dis.size() - 2; i >= 0; i--) {
-        if(dis[i].size == 1)
+        if(dis[i].dst_size == 1)
             dis.erase(dis.begin() + i);
     }
 
     // If size*stride == outer dimensions stride, we can merge them
     for(ssize_t i = dis.size() - 1; i > 0; i--) {
-        if(dis[i].size * dis[i].dst_stride == dis[i - 1].dst_stride &&
-           dis[i].size * dis[i].src_stride == dis[i - 1].src_stride) {
-            dis[i - 1].size *= dis[i].size;
+        if(dis[i].dst_size * dis[i].dst_stride == dis[i - 1].dst_stride &&
+           dis[i].dst_size * dis[i].src_stride == dis[i - 1].src_stride) {
+            dis[i - 1].dst_size *= dis[i].dst_size;
             dis[i - 1].dst_stride = dis[i].dst_stride;
             dis[i - 1].src_stride = dis[i].src_stride;
 
@@ -756,7 +756,7 @@ DimInfo::reduce(std::vector<DimInfo> &dis)
     for(size_t i = 0; i < dis.size(); i++) {
         printf(
             "Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
-            i, dis[i].dst_stride, dis[i].size, dis[i].src_stride,
+            i, dis[i].dst_stride, dis[i].dst_size, dis[i].src_stride,
             dis[i].src_size);
     }
 #endif
@@ -764,13 +764,14 @@ DimInfo::reduce(std::vector<DimInfo> &dis)
 
 template <typename T>
 static void
-copy_tensor_T(T *dst, const T *src, int rank, const DimInfo *di)
+copy_tensor_T(T *dst, T *end, const T *src, int rank, const DimInfo *di)
 {
-    const int n = di->size;
+    const int n = di->dst_size;
     const int src_stride = di->src_stride;
     const int dst_stride = di->dst_stride;
     if(rank == 1) {
         assert(dst_stride == 1);
+        assert(dst + n <= end);
         if(src_stride == 1 && n >= 64) {
             memcpy(dst, src, n * sizeof(T));
         } else {
@@ -783,21 +784,23 @@ copy_tensor_T(T *dst, const T *src, int rank, const DimInfo *di)
     rank--;
     di++;
     for(int i = 0; i < n; i++) {
-        copy_tensor_T(dst + i * dst_stride, src + i * src_stride, rank, di);
+        copy_tensor_T(dst + i * dst_stride, end, src + i * src_stride, rank,
+                      di);
     }
 }
 
 template <typename T>
 static void
-copy_tensor_T(T *dst, TensorAccess *ta, Dims &selem, int rank,
+copy_tensor_T(T *dst, T *end, TensorAccess *ta, Dims &selem, int rank,
               const DimInfo *di)
 {
-    const int n = di->size;
+    const int n = di->dst_size;
     const int dst_stride = di->dst_stride;
     const int src_dim = di->src_dim;
 
     if(rank == 1) {
         assert(dst_stride == 1);
+        assert(dst + n <= end);
         for(int i = 0; i < n; i++) {
             selem[src_dim] = i;
             dst[i] = ta->get(selem);
@@ -808,20 +811,21 @@ copy_tensor_T(T *dst, TensorAccess *ta, Dims &selem, int rank,
     di++;
     for(int i = 0; i < n; i++) {
         selem[src_dim] = i;
-        copy_tensor_T(dst + i * dst_stride, ta, selem, rank, di);
+        copy_tensor_T(dst + i * dst_stride, end, ta, selem, rank, di);
     }
 }
 
 static void
-copy_tensor_half(fp16 *dst, TensorAccess *ta, Dims &selem, int rank,
+copy_tensor_half(fp16 *dst, fp16 *end, TensorAccess *ta, Dims &selem, int rank,
                  const DimInfo *di)
 {
-    const int n = di->size;
+    const int n = di->dst_size;
     const int dst_stride = di->dst_stride;
     const int src_dim = di->src_dim;
 
     if(rank == 1) {
         assert(dst_stride == 1);
+        assert(dst + n <= end);
         for(int i = 0; i < n; i++) {
             selem[src_dim] = i;
             fp16_write(dst + i, ta->get(selem));
@@ -832,7 +836,7 @@ copy_tensor_half(fp16 *dst, TensorAccess *ta, Dims &selem, int rank,
     di++;
     for(int i = 0; i < n; i++) {
         selem[src_dim] = i;
-        copy_tensor_half(dst + i * dst_stride, ta, selem, rank, di);
+        copy_tensor_half(dst + i * dst_stride, end, ta, selem, rank, di);
     }
 }
 
@@ -841,10 +845,12 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
             const int *dst_strides, Tensor::DataType datatype, const Tensor &t,
             TensorAccess *ta, int broadcast_dimension)
 {
+    void *end = (void *)((uint8_t *)dst + Tensor::DataTypeSize(datatype) *
+                                              dst_sizes[0] * dst_strides[0]);
+
     int dst_dim = dst_rank;
     int src_dim = t.m_dims.size();
     auto src_strides = ta->strides();
-
     const int rank = std::max(dst_dim, src_dim);
     std::vector<DimInfo> dis;
     dis.reserve(rank);
@@ -890,7 +896,7 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
     size_t dst_elements = 1;
     size_t src_elements = 1;
     for(const auto &d : dis) {
-        dst_elements *= d.size;
+        dst_elements *= d.dst_size;
         src_elements *= d.src_size;
     }
 
@@ -905,21 +911,21 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
         // We can copy using recursive strided copies
         switch(datatype) {
         case Tensor::DataType::U8:
-            copy_tensor_T((uint8_t *)dst, (const uint8_t *)src, dis.size(),
-                          &dis[0]);
+            copy_tensor_T((uint8_t *)dst, (uint8_t *)end, (const uint8_t *)src,
+                          dis.size(), &dis[0]);
             break;
         case Tensor::DataType::HALF:
-            copy_tensor_T((uint16_t *)dst, (const uint16_t *)src, dis.size(),
-                          &dis[0]);
+            copy_tensor_T((uint16_t *)dst, (uint16_t *)end,
+                          (const uint16_t *)src, dis.size(), &dis[0]);
             break;
         case Tensor::DataType::FLOAT:
         case Tensor::DataType::I32:
-            copy_tensor_T((uint32_t *)dst, (const uint32_t *)src, dis.size(),
-                          &dis[0]);
+            copy_tensor_T((uint32_t *)dst, (uint32_t *)end,
+                          (const uint32_t *)src, dis.size(), &dis[0]);
             break;
         case Tensor::DataType::INT64:
-            copy_tensor_T((uint64_t *)dst, (const uint64_t *)src, dis.size(),
-                          &dis[0]);
+            copy_tensor_T((uint64_t *)dst, (uint64_t *)end,
+                          (const uint64_t *)src, dis.size(), &dis[0]);
             break;
         default:
             fprintf(stderr, "%s can't handle %s\n", __FUNCTION__,
@@ -932,19 +938,24 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
     Dims selem(t.m_dims.size(), 0);
     switch(datatype) {
     case Tensor::DataType::U8:
-        copy_tensor_T((uint8_t *)dst, ta, selem, dis.size(), &dis[0]);
+        copy_tensor_T((uint8_t *)dst, (uint8_t *)end, ta, selem, dis.size(),
+                      &dis[0]);
         break;
     case Tensor::DataType::HALF:
-        copy_tensor_half((fp16 *)dst, ta, selem, dis.size(), &dis[0]);
+        copy_tensor_half((fp16 *)dst, (fp16 *)end, ta, selem, dis.size(),
+                         &dis[0]);
         break;
     case Tensor::DataType::FLOAT:
-        copy_tensor_T((float *)dst, ta, selem, dis.size(), &dis[0]);
+        copy_tensor_T((float *)dst, (float *)end, ta, selem, dis.size(),
+                      &dis[0]);
         break;
     case Tensor::DataType::I32:
-        copy_tensor_T((int32_t *)dst, ta, selem, dis.size(), &dis[0]);
+        copy_tensor_T((int32_t *)dst, (int32_t *)end, ta, selem, dis.size(),
+                      &dis[0]);
         break;
     case Tensor::DataType::INT64:
-        copy_tensor_T((int64_t *)dst, ta, selem, dis.size(), &dis[0]);
+        copy_tensor_T((int64_t *)dst, (int64_t *)end, ta, selem, dis.size(),
+                      &dis[0]);
         break;
     default:
         fprintf(stderr, "%s can't handle %s\n", __FUNCTION__,
@@ -961,12 +972,11 @@ Tensor::copyFrom(Tensor &t)
     auto src_ta = t.access();
     if(!copy_tensor(dst->data(), m_dims.size(), &m_dims.i32()[0],
                     &dst->strides().i32()[0], m_data_type, t, src_ta.get())) {
-        fprintf(stderr,
-                "Tensor copy failed\n"
-                "From: %s\n"
-                "  To: %s\n",
-                t.info().c_str(), info().c_str());
-        abort();
+        throw std::runtime_error(
+            fmt("Cuda Tensor copy failed  "
+                "From: %s  "
+                "To: %s",
+                t.info().c_str(), info().c_str()));
     }
 }
 
@@ -1071,7 +1081,7 @@ public:
     GenTensorAccess(size_t rank, double mean, double stddev)
       : rank_(rank), distribution_(mean, stddev)
     {
-        generator_.seed(Now());
+        generator_.seed(now());
     }
 
     Dims strides() { return Dims(rank_, 0); }

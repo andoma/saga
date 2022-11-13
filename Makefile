@@ -11,8 +11,8 @@ SONAME=libsaga.so.0
 
 PKG_CONFIG ?= pkg-config
 
-CPPFLAGS += -g -O2 -Wall -Werror -I. -I$(O) -Isrc -fPIC
-CXXFLAGS += --std=c++17 -march=native -fno-exceptions
+CPPFLAGS += -g -Og -Wall -Werror -I. -I$(O) -Isrc -fPIC
+CXXFLAGS += --std=c++17 -march=native -Wno-terminate
 CXXFLAGS += -Wno-deprecated-declarations
 
 LDFLAGS += -lpthread

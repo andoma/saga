@@ -73,7 +73,7 @@ struct AdamF32 : public Optimizer {
         m_gradients = m_weights + elements;
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         const int i = ++m_iter;
         const float b1t = 1.0 / (1.0 - pow(ADAM_B1, i));
@@ -109,7 +109,6 @@ struct AdamF32 : public Optimizer {
                           engine.m_nccl_comms[rank], p.m_ctx->m_stream);
         }
 #endif
-        return NULL;
     }
 
     float *m_weights;
@@ -145,7 +144,7 @@ struct AdamMixed : public Optimizer {
         }
     }
 
-    const char *exec(CudaProgram &p, long batch) override
+    void exec(CudaProgram &p) override
     {
         const int i = ++m_iter;
         const float b1t = 1.0 / (1.0 - pow(ADAM_B1, i));
@@ -184,8 +183,6 @@ struct AdamMixed : public Optimizer {
                           engine.m_nccl_comms[rank], p.m_ctx->m_stream);
         }
 #endif
-
-        return NULL;
     }
 
     __half *m_weights;
@@ -270,7 +267,9 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
         return std::make_shared<AdamMixed>(*this, inputs, outputs, mem,
                                            total_elements);
     default:
-        abort();
+        throw std::runtime_error(fmt("Unsupported datatype %s in %s",
+                                     Tensor::DataTypeStr(dt),
+                                     __PRETTY_FUNCTION__));
     }
 }
 
