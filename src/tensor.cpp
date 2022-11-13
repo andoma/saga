@@ -725,12 +725,13 @@ void
 DimInfo::reduce(std::vector<DimInfo> &dis)
 {
 #if 0
-  printf("Initial copy plan\n");
-  for(size_t i = 0; i < dis.size(); i++) {
-    printf("Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
-           i, dis[i].dst_stride, dis[i].size, dis[i].src_stride,
-           dis[i].src_size);
-  }
+    printf("Initial copy plan\n");
+    for(size_t i = 0; i < dis.size(); i++) {
+        printf(
+            "Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
+            i, dis[i].dst_stride, dis[i].size, dis[i].src_stride,
+            dis[i].src_size);
+    }
 #endif
     // Any dimensions with a size of 1 which is not the innermost
     // is redundant from a copy perspective
@@ -751,12 +752,13 @@ DimInfo::reduce(std::vector<DimInfo> &dis)
         }
     }
 #if 0
-  printf("Reduced copy plan\n");
-  for(size_t i = 0; i < dis.size(); i++) {
-    printf("Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
-           i, dis[i].dst_stride, dis[i].size, dis[i].src_stride,
-           dis[i].src_size);
-  }
+    printf("Reduced copy plan\n");
+    for(size_t i = 0; i < dis.size(); i++) {
+        printf(
+            "Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
+            i, dis[i].dst_stride, dis[i].size, dis[i].src_stride,
+            dis[i].src_size);
+    }
 #endif
 }
 
@@ -847,14 +849,28 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
     std::vector<DimInfo> dis;
     dis.reserve(rank);
 
-    dst_dim -= rank;
-    src_dim -= rank;
+    dst_dim = 0;
+    src_dim = 0;
 
     for(int i = 0; i < rank; i++, dst_dim++, src_dim++) {
-        int dst_size = dst_dim >= 0 ? dst_sizes[dst_dim] : 1;
-        int dst_stride = dst_strides[std::max(dst_dim, 0)];
-        int src_size = src_dim >= 0 ? (int)t.m_dims[src_dim] : 1;
-        int src_stride = src_strides[std::max(src_dim, 0)];
+        int dst_size, dst_stride;
+        int src_size, src_stride;
+
+        if(dst_dim < dst_rank) {
+            dst_size = dst_sizes[dst_dim];
+            dst_stride = dst_strides[dst_dim];
+        } else {
+            dst_size = 1;
+            dst_stride = 1;
+        }
+
+        if(src_dim < (int)t.m_dims.size()) {
+            src_size = t.m_dims[src_dim];
+            src_stride = src_strides[src_dim];
+        } else {
+            src_size = 1;
+            src_stride = 1;
+        }
 
         if(broadcast_dimension == dst_dim) {
             if(src_size == 1 && src_stride == dst_stride && dst_size > 1) {
