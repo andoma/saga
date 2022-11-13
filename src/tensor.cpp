@@ -724,15 +724,6 @@ struct DimInfo {
 void
 DimInfo::reduce(std::vector<DimInfo> &dis)
 {
-#if 0
-    printf("Initial copy plan\n");
-    for(size_t i = 0; i < dis.size(); i++) {
-        printf(
-            "Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
-            i, dis[i].dst_stride, dis[i].dst_size, dis[i].src_stride,
-            dis[i].src_size);
-    }
-#endif
     // Any dimensions with a size of 1 which is not the innermost
     // is redundant from a copy perspective
     for(ssize_t i = dis.size() - 2; i >= 0; i--) {
@@ -886,7 +877,7 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
         }
 
         dis.push_back(DimInfo{dst_size, dst_stride, src_size, src_stride,
-                              std::max(src_dim, 0)});
+                              std::min(src_dim, (int)t.m_dims.size() - 1)});
     }
 
     std::sort(dis.begin(), dis.end(), [](const DimInfo &a, const DimInfo &b) {
@@ -903,6 +894,15 @@ copy_tensor(void *dst, int dst_rank, const int *dst_sizes,
     if(src_elements != dst_elements) {
         return false;
     }
+#if 0
+    printf("Copy plan\n");
+    for(size_t i = 0; i < dis.size(); i++) {
+        printf(
+            "Dim %zd DstStride:%-5d DstSize:%-5d SrcStride:%-5d SrcSize:%-5d\n",
+            i, dis[i].dst_stride, dis[i].dst_size, dis[i].src_stride,
+            dis[i].src_size);
+    }
+#endif
 
     const void *src = ta->data();
 
