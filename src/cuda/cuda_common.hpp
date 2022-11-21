@@ -29,14 +29,15 @@
         }                                                                   \
     }
 
-#define chkCuda(expression)                                                 \
-    {                                                                       \
-        cudaError_t cuda_status__ = (expression);                           \
-        if(cuda_status__) {                                                 \
-            throw std::runtime_error(fmt(                                   \
-                "%s at %s:%d in %s: %s\n", #expression, __FILE__, __LINE__, \
-                __FUNCTION__, cudaGetErrorString(cuda_status__)));          \
-        }                                                                   \
+#define chkCuda(expression)                                                   \
+    {                                                                         \
+        cudaError_t cuda_status__ = (expression);                             \
+        if(cuda_status__) {                                                   \
+            fprintf(stderr, "%s at %s:%d in %s: %s\n", #expression, __FILE__, \
+                    __LINE__, __FUNCTION__,                                   \
+                    cudaGetErrorString(cuda_status__));                       \
+            abort();                                                          \
+        }                                                                     \
     }
 
 namespace saga {
@@ -171,7 +172,7 @@ struct CudaEngine : public Engine,
 #ifdef HAVE_NCCL
     std::vector<ncclComm_t> m_nccl_comms;
 #endif
-    size_t m_nodes{1};
+    size_t m_nodes{0};
 };
 
 using CudaOp = std::shared_ptr<CudaOperation>;

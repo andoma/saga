@@ -119,16 +119,6 @@ stop(int x)
     g_run = 0;
 }
 
-struct Barrier {
-    Barrier(size_t count) { pthread_barrier_init(&m_barrier, NULL, count); }
-
-    ~Barrier() { pthread_barrier_destroy(&m_barrier); }
-
-    void wait(void) { pthread_barrier_wait(&m_barrier); }
-
-    pthread_barrier_t m_barrier;
-};
-
 static void
 addStats(Graph &g, std::shared_ptr<Tensor> src, Stats *out, bool gradient)
 {
@@ -694,7 +684,7 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
     signal(SIGINT, stop);
     auto stop_check = [&]() { return !g_run; };
 
-    Barrier barrier(contexts.size());
+    auto barrier = Barrier::make(contexts.size());
 
     for(size_t thread_index = 0; thread_index < contexts.size();
         thread_index++) {
@@ -810,12 +800,12 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
 #endif
                     // Train
 
-                    barrier.wait();
+                    barrier->wait();
                     if(!g_run)
                         break;
                     if(thread_index == 0)
                         epoch_begin(batch_size, false);
-                    barrier.wait();
+                    barrier->wait();
 
                     if(training->run(train_batches, stop_check,
                                      train_batch_offset) != ExecResult::OK) {
@@ -827,12 +817,12 @@ test_classifier(int argc, char **argv, std::shared_ptr<Tensor> x,
                 }
 
                 // Test
-                barrier.wait();
+                barrier->wait();
                 if(!g_run)
                     break;
                 if(thread_index == 0)
                     epoch_begin(batch_size, true);
-                barrier.wait();
+                barrier->wait();
 
                 correct = 0;
                 if(testing->run(test_batches, stop_check, test_batch_offset) !=

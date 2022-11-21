@@ -606,4 +606,12 @@ int64_t now();
 
 std::string fmt(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
+struct Barrier {
+    virtual ~Barrier(){};
+
+    virtual void wait() = 0;
+
+    static std::shared_ptr<Barrier> make(size_t count);
+};
+
 };  // namespace saga

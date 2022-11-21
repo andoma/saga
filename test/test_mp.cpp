@@ -15,16 +15,6 @@
 
 using namespace saga;
 
-struct Barrier {
-    Barrier(size_t count) { pthread_barrier_init(&m_barrier, NULL, count); }
-
-    ~Barrier() { pthread_barrier_destroy(&m_barrier); }
-
-    void wait(void) { pthread_barrier_wait(&m_barrier); }
-
-    pthread_barrier_t m_barrier;
-};
-
 struct TensorData {
     Dims dims;
     std::vector<float> data;
@@ -59,7 +49,7 @@ load_tensor(Tensor::DataType dt, const TensorData &td)
     return t;
 }
 
-#define BATCH_SIZE 2
+#define BATCH_SIZE 1
 
 // clang-format off
 
@@ -72,11 +62,11 @@ static const TensorData input_data = {
     }
 };
 
-static const TensorData target_data = {
+static TensorData target_data = {
     {BATCH_SIZE, 1},
     {
-        6e4,
-        6e4
+        2e4,
+        4e4
     }
 };
 
@@ -97,11 +87,17 @@ mp_main(int argc, char **argv)
     int opt;
     auto dt = Tensor::DataType::HALF;
     int batch_size = 1;
-
-    while((opt = getopt(argc, argv, "v")) != -1) {
+    bool multi = false;
+    while((opt = getopt(argc, argv, "vmt:")) != -1) {
         switch(opt) {
         case 'v':
             verbose++;
+            break;
+        case 'm':
+            multi = true;
+            break;
+        case 't':
+            target_data.data[0] = atoi(optarg);
             break;
         }
     }
@@ -110,7 +106,7 @@ mp_main(int argc, char **argv)
     argv += optind;
 
     auto engine = createEngine(saga::make_nui());
-    auto contexts = engine->createContexts(true);
+    auto contexts = engine->createContexts(multi);
 
     auto ctx = createContext();
 
@@ -130,7 +126,9 @@ mp_main(int argc, char **argv)
     if(verbose)
         g.print();
 
-    Barrier barrier(contexts.size());
+    printf("Target: %f\n", target_data.data[0]);
+
+    auto barrier = saga::Barrier::make(contexts.size());
     std::vector<std::thread> threads;
     for(size_t thread_index = 0; thread_index < contexts.size();
         thread_index++) {
@@ -142,22 +140,25 @@ mp_main(int argc, char **argv)
                     .graph = g,
                     .batch_size = batch_size,
                 },
-                ProgramType::TRAINING, {});
+                ProgramType::TRAINING, {.learning_rate = 0.01});
 
             auto mmss = ctx->resolveTensor(n->m_outputs["mmss"]);
             auto out = ctx->resolveTensor(n->y());
             auto dx = ctx->resolveTensor(x->grad());
             auto dy = ctx->resolveTensor(y->grad());
+            auto wl = ctx->resolveTensor(w);
 
             if(verbose)
                 p->dump(stdout, verbose > 1);
 
-            if(p->run() != ExecResult::OK)
-                return;
+            barrier->wait();
+            p->run();
+            barrier->wait();
 
             out->print(" y");
             dy->print("dy");
             dx->print("dx");
+            wl->print(" w");
         }));
     }
 

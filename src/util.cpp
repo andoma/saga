@@ -29,4 +29,24 @@ fmt(const char* fmt, ...)
     return r;
 }
 
+namespace impl {
+
+struct Barrier : public saga::Barrier {
+    Barrier(size_t count) { pthread_barrier_init(&m_barrier, NULL, count); }
+
+    ~Barrier() { pthread_barrier_destroy(&m_barrier); }
+
+    void wait(void) { pthread_barrier_wait(&m_barrier); }
+
+    pthread_barrier_t m_barrier;
+};
+
+}  // namespace impl
+
+std::shared_ptr<Barrier>
+Barrier::make(size_t count)
+{
+    return std::make_shared<impl::Barrier>(count);
+}
+
 }  // namespace saga

@@ -87,7 +87,7 @@ struct AdamF32 : public Optimizer {
 
 #ifdef HAVE_NCCL
         if(engine.m_nodes > 1) {
-            ncclReduceScatter(gradients, gradients + offset, elements,
+            ncclReduceScatter(m_gradients, m_gradients + offset, local_elements,
                               ncclFloat32, ncclSum, engine.m_nccl_comms[rank],
                               p.m_ctx->m_stream);
         }
@@ -105,8 +105,9 @@ struct AdamF32 : public Optimizer {
 
 #ifdef HAVE_NCCL
         if(engine.m_nodes > 1) {
-            ncclAllGather(weights + offset, weights, elements, ncclFloat32,
-                          engine.m_nccl_comms[rank], p.m_ctx->m_stream);
+            ncclAllGather(m_weights + offset, m_weights, local_elements,
+                          ncclFloat32, engine.m_nccl_comms[rank],
+                          p.m_ctx->m_stream);
         }
 #endif
     }
@@ -139,7 +140,7 @@ struct AdamMixed : public Optimizer {
         const size_t offset = local_elements * rank;
 
         float *cvec = (float *)m_cvec.m_mem;
-        for(size_t i = 0; i < elements; i++) {
+        for(size_t i = 0; i < local_elements; i++) {
             cvec[i] = m_weights[i + offset];
         }
     }
@@ -158,14 +159,13 @@ struct AdamMixed : public Optimizer {
 
 #ifdef HAVE_NCCL
         if(engine.m_nodes > 1) {
-            ncclReduceScatter(gradients, gradients + offset, elements,
+            ncclReduceScatter(m_gradients, m_gradients + offset, local_elements,
                               ncclFloat16, ncclSum, engine.m_nccl_comms[rank],
                               p.m_ctx->m_stream);
         }
 #endif
-
         // clang-format off
-        adam_mixed(m_elements,
+        adam_mixed(local_elements,
                    1.0f / p.m_mp_scaling,
                    m_weights + offset,
                    m_gradients + offset,
@@ -176,11 +176,11 @@ struct AdamMixed : public Optimizer {
                    p.m_pc.l2_lambda, p.m_aux, p.m_ctx->m_stream,
                    p.m_ctx->m_num_sm);
         // clang-format on
-
 #ifdef HAVE_NCCL
         if(engine.m_nodes > 1) {
-            ncclAllGather(weights + offset, weights, elements, ncclFloat16,
-                          engine.m_nccl_comms[rank], p.m_ctx->m_stream);
+            ncclAllGather(m_weights + offset, m_weights, local_elements,
+                          ncclFloat16, engine.m_nccl_comms[rank],
+                          p.m_ctx->m_stream);
         }
 #endif
     }

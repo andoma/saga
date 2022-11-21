@@ -278,6 +278,17 @@ CudaProgram::step(long batch, long batches, long batch_offset)
         m_total_samples += u.m_batch_size;
     }
 
+    if(m_mp_enabled) {
+#ifdef HAVE_NCCL
+        const auto &engine = *m_ctx->m_engine;
+        if(engine.m_nodes > 1) {
+            ncclAllReduce(m_aux, m_aux, 3, ncclUint32, ncclSum,
+                          engine.m_nccl_comms[m_ctx->m_nccl_rank],
+                          m_ctx->m_stream);
+        }
+#endif
+    }
+
     chkCuda(cudaStreamSynchronize(m_ctx->m_stream));
 
     if(m_mp_enabled) {

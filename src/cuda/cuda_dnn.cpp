@@ -2438,7 +2438,7 @@ spatialtransform_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         return;
     }
 
-    auto th = n.m_inputs["theta"];
+    auto th = n.m_inputs.has("theta") ? n.m_inputs["theta"] : nullptr;
 
     std::shared_ptr<CudaTensor> theta;
 
