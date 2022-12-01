@@ -525,13 +525,13 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         if(b) {
             auto db = p.lower_grad(pu, n.m_inputs["b"], y->m_dims.size());
             pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
-            p.upd(b, db);
+            p.upd(n.m_inputs["b"], b, db);
         }
 
         auto dw = p.lower_grad(pu, n.m_inputs["w"], y->format());
         pu.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, x, dy,
                                                            dw));
-        p.upd(w, dw);
+        p.upd(n.m_inputs["w"], w, dw);
 
         auto dx = p.lower_grad(pu, n.m_inputs["x"]);
         if(dx) {
@@ -556,14 +556,14 @@ conv_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
         if(b) {
             auto db = p.lower_grad(pu, n.m_inputs["b"], y->m_dims.size());
             pu.bwd(std::make_shared<CudnnConvolutionBwdBias>(p.m_ctx, dy, db));
-            p.upd(b, db);
+            p.upd(n.m_inputs["b"], b, db);
         }
 
         // Update weights
         auto dw = p.lower_grad(pu, n.m_inputs["w"], y->format());
         pu.bwd(std::make_shared<CudnnConvolutionBwdFilter>(p.m_ctx, desc, dy, x,
                                                            dw));
-        p.upd(w, dw);
+        p.upd(n.m_inputs["w"], w, dw);
 
         // Backprop
         auto dx = p.lower_grad(pu, n.m_inputs["x"]);
@@ -1099,7 +1099,7 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     }
     // clang-format on
 
-    p.upd(w, dw);
+    p.upd(n.m_inputs["w"], w, dw);
 
     if(b) {
         auto ones = p.lower_tensor(
@@ -1110,7 +1110,7 @@ fc_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
                                           num_outputs, batch_size, ones, 1, dy,
                                           num_outputs, db, 1, "fc.bwd.bias"));
 
-        p.upd(b, db);
+        p.upd(n.m_inputs["b"], b, db);
     }
 
     if(dx) {
@@ -1819,8 +1819,8 @@ batchnorm_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
 
     pu.bwd(std::make_shared<CudnnBatchNormBwd>(*f, dy, dx, ds, db));
 
-    p.upd(s, ds);
-    p.upd(b, db);
+    p.upd(n.m_inputs["s"], s, ds);
+    p.upd(n.m_inputs["b"], b, db);
 }
 
 REGISTER_CUDA_OP("batchnorm", batchnorm_setup);
@@ -2260,8 +2260,8 @@ batchnorm_persistent_setup(CudaProgram &p, CudaProgramUnit &pu, const Node &n)
     pu.bwd(std::make_shared<CudnnBatchNormActBwd>(p, f, dy, dx0, dx1, ds, db,
                                                   ops));
 
-    p.upd(s, ds);
-    p.upd(b, db);
+    p.upd(n.m_inputs["s"], s, ds);
+    p.upd(n.m_inputs["b"], b, db);
 }
 
 REGISTER_CUDA_OP("batchnorm.persistent", batchnorm_persistent_setup);

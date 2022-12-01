@@ -282,10 +282,12 @@ public:
                                            std::shared_ptr<Tensor> src,
                                            size_t minimum_rank = 0);
 
-    void upd(const std::shared_ptr<CudaTensor> &weights,
+    void upd(const std::shared_ptr<Tensor> &key,
+             const std::shared_ptr<CudaTensor> &weights,
              const std::shared_ptr<CudaTensor> &gradient);
 
-    std::map<std::shared_ptr<CudaTensor>, std::shared_ptr<CudaTensor>>
+    std::map<std::shared_ptr<Tensor>, std::pair<std::shared_ptr<CudaTensor>,
+                                                std::shared_ptr<CudaTensor>>>
         m_updates;
 
     void flipDoubleBufferedTensors();

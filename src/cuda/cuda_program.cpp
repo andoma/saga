@@ -56,10 +56,11 @@ CudaProgramUnit::tail(const std::shared_ptr<CudaOperation> &op)
 }
 
 void
-CudaProgram::upd(const std::shared_ptr<CudaTensor> &weights,
+CudaProgram::upd(const std::shared_ptr<Tensor> &key,
+                 const std::shared_ptr<CudaTensor> &weights,
                  const std::shared_ptr<CudaTensor> &gradient)
 {
-    m_updates[weights] = gradient;
+    m_updates[key] = std::make_pair(weights, gradient);
 }
 
 cudnnTensorFormat_t

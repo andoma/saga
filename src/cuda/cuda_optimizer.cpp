@@ -201,8 +201,8 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
     size_t total_elements = 0;
 
     for(auto it : m_updates) {
-        auto &w = it.first;
-        auto &g = it.second;
+        auto &w = it.second.first;
+        auto &g = it.second.second;
 
         if(w->m_data_type != dt)
             continue;
@@ -233,8 +233,8 @@ CudaProgram::create_optimizer(Tensor::DataType dt)
     CudaOpArgs inputs, outputs;
 
     for(auto it : m_updates) {
-        auto &w = it.first;
-        auto &g = it.second;
+        auto &w = it.second.first;
+        auto &g = it.second.second;
 
         if(w->m_data_type != dt)
             continue;
